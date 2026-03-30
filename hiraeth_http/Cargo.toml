@@ -1,0 +1,9 @@
+[package]
+name = "hiraeth_http"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+http = { version = "1.4" }
+http-body-util = "0.1"
+hyper = "1.8.1"

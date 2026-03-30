@@ -1,0 +1,12 @@
+[package]
+name = "hiraeth_auth"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4"
+hex = "0.3"
+hmac = "0.13"
+hiraeth_http = { path = '../hiraeth_http'}
+urlencoding = "2.1"
+sha2 = "0.11"
