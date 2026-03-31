@@ -1,10 +1,8 @@
-pub enum AuthRequirement {
-    RequiredSigV4,
-    OptionalSigV4,
-    AnonymousAllowed,
-    Disabled,
-}
+use hiraeth_auth::ResolvedRequest;
+
+use crate::ServiceResponse;
 
 pub trait Service {
-    fn auth_requirement(&self) -> AuthRequirement;
+    fn can_handle(&self, request: &ResolvedRequest) -> bool;
+    fn handle_request(&self, request: ResolvedRequest) -> ServiceResponse;
 }

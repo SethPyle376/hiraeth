@@ -4,3 +4,9 @@ CREATE TABLE access_keys (
   secret_key TEXT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+INSERT INTO access_keys (key_id, secret_key)
+  VALUES (
+    'AKIAIOSFODNN7EXAMPLE',
+    'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+  );

@@ -8,8 +8,8 @@ pub struct SqliteAccessKeyStore {
 }
 
 impl SqliteAccessKeyStore {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(pool: &sqlx::SqlitePool) -> Self {
+        Self { pool: pool.clone() }
     }
 }
 
@@ -69,7 +69,7 @@ mod tests {
             .await
             .expect("migrations should run for temp sqlite db");
 
-        (temp_dir, SqliteAccessKeyStore::new(pool))
+        (temp_dir, SqliteAccessKeyStore::new(&pool))
     }
 
     #[tokio::test]
