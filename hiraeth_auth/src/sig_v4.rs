@@ -4,12 +4,18 @@ use sha2::{Digest, Sha256};
 
 use crate::AuthError;
 
-pub fn authenticate_request(request: &IncomingRequest) -> Result<(), AuthError> {
-    let provided_signature = extract_sigv4_params(request)?.signature;
+/**
+ * Implements AWS Signature Version 4 authentication for incoming HTTP requests.
+**/
+pub(crate) fn authenticate_request(
+    request: &IncomingRequest,
+) -> Result<SigV4AuthParameters, AuthError> {
+    let sig_v4_params = extract_sigv4_params(request)?;
+    let provided_signature = sig_v4_params.signature.clone();
     let calculated_signature = hash_request(request)?;
 
     if provided_signature == calculated_signature {
-        Ok(())
+        Ok(sig_v4_params)
     } else {
         Err(AuthError::InvalidSignature)
     }
@@ -49,14 +55,15 @@ fn hash_request(request: &IncomingRequest) -> Result<String, AuthError> {
     Ok(signature)
 }
 
-struct SigV4AuthParameters {
-    algorithm: String,
-    access_key: String,
-    date: String,
-    region: String,
-    service: String,
-    signed_headers: Vec<String>,
-    signature: String,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SigV4AuthParameters {
+    pub algorithm: String,
+    pub access_key: String,
+    pub date: String,
+    pub region: String,
+    pub service: String,
+    pub signed_headers: Vec<String>,
+    pub signature: String,
 }
 
 fn extract_sigv4_params(request: &IncomingRequest) -> Result<SigV4AuthParameters, AuthError> {
@@ -169,9 +176,9 @@ fn extract_query_params(request: &IncomingRequest) -> Vec<(String, String)> {
             let left_key = aws_uri_encode(left_key, true);
             let right_key = aws_uri_encode(right_key, true);
 
-            left_key
-                .cmp(&right_key)
-                .then_with(|| aws_uri_encode(left_value, true).cmp(&aws_uri_encode(right_value, true)))
+            left_key.cmp(&right_key).then_with(|| {
+                aws_uri_encode(left_value, true).cmp(&aws_uri_encode(right_value, true))
+            })
         });
         params
     } else {
@@ -205,7 +212,13 @@ fn canonical_uri(path: &str) -> String {
 fn canonical_query_string(request: &IncomingRequest) -> String {
     extract_query_params(request)
         .into_iter()
-        .map(|(key, value)| format!("{}={}", aws_uri_encode(&key, true), aws_uri_encode(&value, true)))
+        .map(|(key, value)| {
+            format!(
+                "{}={}",
+                aws_uri_encode(&key, true),
+                aws_uri_encode(&value, true)
+            )
+        })
         .collect::<Vec<_>>()
         .join("&")
 }
@@ -369,7 +382,10 @@ mod tests {
     #[test]
     fn create_canonical_request_sorts_query_params_after_encoding() {
         let mut headers = HashMap::new();
-        headers.insert("host".to_string(), "sqs.us-east-1.amazonaws.com".to_string());
+        headers.insert(
+            "host".to_string(),
+            "sqs.us-east-1.amazonaws.com".to_string(),
+        );
         headers.insert("x-amz-date".to_string(), "20260330T120000Z".to_string());
 
         let request = IncomingRequest {
@@ -380,11 +396,9 @@ mod tests {
             body: Vec::new(),
         };
 
-        let canonical_request = create_canonical_request(
-            &request,
-            &["x-amz-date".to_string(), "host".to_string()],
-        )
-        .expect("canonical request");
+        let canonical_request =
+            create_canonical_request(&request, &["x-amz-date".to_string(), "host".to_string()])
+                .expect("canonical request");
 
         assert!(canonical_request.starts_with(
             "GET\n/\na%7B=1&aZ=2\nhost:sqs.us-east-1.amazonaws.com\nx-amz-date:20260330T120000Z\n\nhost;x-amz-date\n"
@@ -394,7 +408,10 @@ mod tests {
     #[test]
     fn create_canonical_request_normalizes_header_values_and_sorts_signed_headers() {
         let mut headers = HashMap::new();
-        headers.insert("host".to_string(), "  sqs.us-east-1.amazonaws.com  ".to_string());
+        headers.insert(
+            "host".to_string(),
+            "  sqs.us-east-1.amazonaws.com  ".to_string(),
+        );
         headers.insert("x-amz-date".to_string(), "20260330T120000Z".to_string());
         headers.insert("x-amz-meta-test".to_string(), "a   b\tc".to_string());
 
@@ -455,7 +472,13 @@ mod tests {
 
         let result = authenticate_request(&request);
 
-        assert_eq!(result, Ok(()));
+        assert!(matches!(
+            result,
+            Ok(ref params)
+                if params.access_key == "AKIAIOSFODNN7EXAMPLE"
+                    && params.region == "us-east-1"
+                    && params.service == "sqs"
+        ));
     }
 
     #[test]
