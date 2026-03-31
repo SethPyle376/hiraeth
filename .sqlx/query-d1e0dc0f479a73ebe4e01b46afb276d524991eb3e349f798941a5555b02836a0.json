@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO access_keys (key_id, secret_key) VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d1e0dc0f479a73ebe4e01b46afb276d524991eb3e349f798941a5555b02836a0"
+}

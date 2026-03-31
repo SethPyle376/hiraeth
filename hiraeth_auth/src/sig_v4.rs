@@ -1,4 +1,5 @@
 use hiraeth_http::IncomingRequest;
+use hiraeth_store::auth::AccessKeyStore;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
@@ -7,12 +8,13 @@ use crate::AuthError;
 /**
  * Implements AWS Signature Version 4 authentication for incoming HTTP requests.
 **/
-pub(crate) fn authenticate_request(
+pub(crate) async fn authenticate_request<S: AccessKeyStore>(
     request: &IncomingRequest,
+    store: &S,
 ) -> Result<SigV4AuthParameters, AuthError> {
     let sig_v4_params = extract_sigv4_params(request)?;
     let provided_signature = sig_v4_params.signature.clone();
-    let calculated_signature = hash_request(request)?;
+    let calculated_signature = hash_request(request, store).await?;
 
     if provided_signature == calculated_signature {
         Ok(sig_v4_params)
@@ -21,7 +23,10 @@ pub(crate) fn authenticate_request(
     }
 }
 
-fn hash_request(request: &IncomingRequest) -> Result<String, AuthError> {
+async fn hash_request<S: AccessKeyStore>(
+    request: &IncomingRequest,
+    store: &S,
+) -> Result<String, AuthError> {
     let sigv4_params = extract_sigv4_params(request)?;
     let canonical_request = create_canonical_request(request, &sigv4_params.signed_headers)?;
     let hashed_canonical_request = hex::encode(Sha256::digest(canonical_request.as_bytes()));
@@ -40,8 +45,14 @@ fn hash_request(request: &IncomingRequest) -> Result<String, AuthError> {
         hashed_canonical_request
     );
 
+    let access_key = store
+        .get_secret_key(&sigv4_params.access_key)
+        .await
+        .map_err(|err| AuthError::StoreError(err))?
+        .ok_or(AuthError::SecretKeyNotFound)?;
+
     let signing_key = derive_signing_key(
-        lookup_secret_key(&sigv4_params.access_key)?.as_str(),
+        access_key.secret_key.as_str(),
         &sigv4_params.date,
         &sigv4_params.region,
         &sigv4_params.service,
@@ -284,6 +295,7 @@ mod tests {
     use std::collections::HashMap;
 
     use hiraeth_http::IncomingRequest;
+    use hiraeth_store::auth::{AccessKey, InMemoryAccessKeyStore};
 
     use crate::AuthError;
 
@@ -291,6 +303,14 @@ mod tests {
         authenticate_request, create_canonical_request, derive_signing_key, extract_sigv4_params,
         hash_request,
     };
+
+    fn access_key_store() -> InMemoryAccessKeyStore {
+        InMemoryAccessKeyStore::new([AccessKey {
+            key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+            created_at: chrono::Utc::now().naive_utc(),
+        }])
+    }
 
     fn signed_request(signature: &str) -> IncomingRequest {
         let mut headers = HashMap::new();
@@ -453,11 +473,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hash_request_matches_expected_signature() {
+    #[tokio::test]
+    async fn hash_request_matches_expected_signature() {
         let request = signed_request("placeholder");
+        let store = access_key_store();
 
-        let signature = hash_request(&request).expect("request should hash");
+        let signature = hash_request(&request, &store)
+            .await
+            .expect("request should hash");
 
         assert_eq!(
             signature,
@@ -465,12 +488,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn authenticate_request_accepts_matching_signature() {
+    #[tokio::test]
+    async fn authenticate_request_accepts_matching_signature() {
         let request =
             signed_request("ffff699a5016d0166b23b26521afd5147ba0d923ca7ec1153d95db81e1cbce6c");
+        let store = access_key_store();
 
-        let result = authenticate_request(&request);
+        let result = authenticate_request(&request, &store).await;
 
         assert!(matches!(
             result,
@@ -481,11 +505,12 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn authenticate_request_rejects_invalid_signature() {
+    #[tokio::test]
+    async fn authenticate_request_rejects_invalid_signature() {
         let request = signed_request("not-the-right-signature");
+        let store = access_key_store();
 
-        let result = authenticate_request(&request);
+        let result = authenticate_request(&request, &store).await;
 
         assert_eq!(result, Err(AuthError::InvalidSignature));
     }

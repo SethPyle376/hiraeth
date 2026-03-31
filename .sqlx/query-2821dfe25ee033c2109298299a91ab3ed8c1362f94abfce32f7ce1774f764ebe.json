@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT key_id, secret_key, created_at FROM access_keys WHERE key_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "key_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "secret_key",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 2,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2821dfe25ee033c2109298299a91ab3ed8c1362f94abfce32f7ce1774f764ebe"
+}

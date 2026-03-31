@@ -1,4 +1,5 @@
 use hiraeth_http::IncomingRequest;
+use hiraeth_store::auth::{AccessKeyStore, AccessKeyStoreError};
 
 mod sig_v4;
 
@@ -8,6 +9,8 @@ pub enum AuthError {
     InvalidAuthorizationHeader,
     MissingSignedHeader(String),
     InvalidSignature,
+    SecretKeyNotFound,
+    StoreError(AccessKeyStoreError),
 }
 
 pub struct ResolvedRequest {
@@ -20,8 +23,11 @@ pub struct ResolvedRequest {
 
 /// Authenticates an incoming request with SigV4 and attaches the resolved
 /// request context needed by downstream service handlers.
-pub fn resolve_request(request: IncomingRequest) -> Result<ResolvedRequest, AuthError> {
-    let sig_v4_params = sig_v4::authenticate_request(&request)?;
+pub async fn resolve_request<S: AccessKeyStore>(
+    request: IncomingRequest,
+    store: &S,
+) -> Result<ResolvedRequest, AuthError> {
+    let sig_v4_params = sig_v4::authenticate_request(&request, store).await?;
     let request_timestamp = request
         .headers
         .get("x-amz-date")
@@ -39,21 +45,26 @@ pub fn resolve_request(request: IncomingRequest) -> Result<ResolvedRequest, Auth
     })
 }
 
-trait AcessKeyStore {
-    fn get_secret_key(&self, access_key: &str) -> Result<Option<String>, AuthError>;
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
+    use hiraeth_store::auth::{AccessKey, InMemoryAccessKeyStore};
 
     use super::resolve_request;
     use hiraeth_http::IncomingRequest;
 
-    #[test]
-    fn resolve_request_returns_authenticated_request_context() {
+    fn access_key_store() -> InMemoryAccessKeyStore {
+        InMemoryAccessKeyStore::new([AccessKey {
+            key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+            created_at: Utc.with_ymd_and_hms(2026, 3, 30, 12, 0, 0).unwrap().naive_utc(),
+        }])
+    }
+
+    #[tokio::test]
+    async fn resolve_request_returns_authenticated_request_context() {
         let mut headers = HashMap::new();
         headers.insert("content-type".to_string(), "application/json".to_string());
         headers.insert(
@@ -74,7 +85,10 @@ mod tests {
             body: "hello world".to_string().into_bytes(),
         };
 
-        let resolved = resolve_request(request).expect("request should resolve");
+        let store = access_key_store();
+        let resolved = resolve_request(request, &store)
+            .await
+            .expect("request should resolve");
 
         assert_eq!(resolved.service, "sqs");
         assert_eq!(resolved.region, "us-east-1");
