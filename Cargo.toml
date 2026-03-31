@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
 members = ["hiraeth_http","hiraeth_queuing", "hiraeth_router", "hiraeth_runtime",
-    "hiraeth_auth"]
+    "hiraeth_auth", "hiraeth_store"]

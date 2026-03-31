@@ -39,6 +39,10 @@ pub fn resolve_request(request: IncomingRequest) -> Result<ResolvedRequest, Auth
     })
 }
 
+trait AcessKeyStore {
+    fn get_secret_key(&self, access_key: &str) -> Result<Option<String>, AuthError>;
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -75,7 +79,10 @@ mod tests {
         assert_eq!(resolved.service, "sqs");
         assert_eq!(resolved.region, "us-east-1");
         assert_eq!(resolved.access_key, "AKIAIOSFODNN7EXAMPLE");
-        assert_eq!(resolved.date, Utc.with_ymd_and_hms(2026, 3, 30, 12, 0, 0).unwrap());
+        assert_eq!(
+            resolved.date,
+            Utc.with_ymd_and_hms(2026, 3, 30, 12, 0, 0).unwrap()
+        );
         assert_eq!(resolved.request.method, "POST");
         assert_eq!(resolved.request.path, "/hello");
         assert_eq!(resolved.request.query, Some("b=two&a=one".to_string()));
