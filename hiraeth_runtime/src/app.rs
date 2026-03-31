@@ -1,5 +1,6 @@
 use hiraeth_http::IncomingRequest;
 use hiraeth_router::{ServiceResponse, ServiceRouter};
+use hiraeth_sqs::SqsService;
 use hiraeth_store_sqlx::SqlxStore;
 
 pub(crate) struct App {
@@ -10,7 +11,8 @@ pub(crate) struct App {
 impl App {
     pub async fn new(db_url: &str) -> Self {
         let mut router = ServiceRouter::default();
-        // TODO: Register services here
+        router.register_service(Box::new(SqsService::new()));
+
         Self {
             store: SqlxStore::new(db_url)
                 .await

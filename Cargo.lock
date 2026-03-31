@@ -548,13 +548,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hiraeth_queuing"
-version = "0.1.0"
-dependencies = [
- "uuid",
-]
-
-[[package]]
 name = "hiraeth_router"
 version = "0.1.0"
 dependencies = [
@@ -569,6 +562,7 @@ dependencies = [
  "hiraeth_auth",
  "hiraeth_http",
  "hiraeth_router",
+ "hiraeth_sqs",
  "hiraeth_store",
  "hiraeth_store_sqlx",
  "http",
@@ -576,6 +570,15 @@ dependencies = [
  "hyper",
  "hyper-util",
  "tokio",
+]
+
+[[package]]
+name = "hiraeth_sqs"
+version = "0.1.0"
+dependencies = [
+ "hiraeth_auth",
+ "hiraeth_router",
+ "uuid",
 ]
 
 [[package]]
