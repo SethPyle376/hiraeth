@@ -1,6 +1,7 @@
 mod service;
 
 use hiraeth_auth::ResolvedRequest;
+use hiraeth_core::ApiError;
 pub use service::Service;
 
 pub struct ServiceResponse {}
@@ -8,6 +9,14 @@ pub struct ServiceResponse {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceRouterError {
     NoServiceFound,
+}
+
+impl Into<ApiError> for ServiceRouterError {
+    fn into(self) -> ApiError {
+        match self {
+            ServiceRouterError::NoServiceFound => ApiError::NotFound,
+        }
+    }
 }
 
 pub struct ServiceRouter {
@@ -23,14 +32,14 @@ impl Default for ServiceRouter {
 }
 
 impl ServiceRouter {
-    pub fn route(&self, request: ResolvedRequest) -> Result<ServiceResponse, ServiceRouterError> {
+    pub fn route(&self, request: ResolvedRequest) -> Result<ServiceResponse, ApiError> {
         let service = self
             .services
             .iter()
             .find(|s| s.can_handle(&request))
-            .ok_or(ServiceRouterError::NoServiceFound)?;
+            .ok_or(ServiceRouterError::NoServiceFound.into())?;
 
-        Ok(service.handle_request(request))
+        service.handle_request(request)
     }
 
     pub fn register_service(&mut self, service: Box<dyn Service + Send + Sync>) {

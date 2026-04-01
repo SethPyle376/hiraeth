@@ -1,3 +1,4 @@
+use hiraeth_core::ApiError;
 use hiraeth_http::IncomingRequest;
 use hiraeth_store::auth::{AccessKeyStore, AccessKeyStoreError};
 
@@ -6,11 +7,36 @@ mod sig_v4;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthError {
     MissingAuthorizationHeader,
-    InvalidAuthorizationHeader,
+    InvalidAuthorizationHeader(String),
     MissingSignedHeader(String),
     InvalidSignature,
     SecretKeyNotFound,
     StoreError(AccessKeyStoreError),
+}
+
+impl Into<ApiError> for AuthError {
+    fn into(self) -> ApiError {
+        match self {
+            AuthError::MissingAuthorizationHeader => {
+                ApiError::NotAuthenticated("Missing Authorization header".to_string())
+            }
+            AuthError::InvalidAuthorizationHeader(msg) => {
+                ApiError::NotAuthenticated(format!("Invalid Authorization header: {}", msg))
+            }
+            AuthError::MissingSignedHeader(header) => {
+                ApiError::NotAuthenticated(format!("Missing signed header: {}", header))
+            }
+            AuthError::InvalidSignature => {
+                ApiError::NotAuthenticated("Invalid signature".to_string())
+            }
+            AuthError::SecretKeyNotFound => {
+                ApiError::NotAuthenticated("Secret key not found for access key".to_string())
+            }
+            AuthError::StoreError(e) => {
+                ApiError::InternalServerError(format!("Access key store error: {:?}", e))
+            }
+        }
+    }
 }
 
 pub struct ResolvedRequest {
@@ -33,7 +59,7 @@ pub async fn resolve_request<S: AccessKeyStore>(
         .get("x-amz-date")
         .ok_or(AuthError::MissingSignedHeader("x-amz-date".to_string()))?;
     let date = chrono::NaiveDateTime::parse_from_str(request_timestamp, "%Y%m%dT%H%M%SZ")
-        .map_err(|_| AuthError::InvalidAuthorizationHeader)?
+        .map_err(|_| AuthError::InvalidAuthorizationHeader("Date format incorrect".to_string()))?
         .and_utc();
 
     Ok(ResolvedRequest {
@@ -59,7 +85,10 @@ mod tests {
         InMemoryAccessKeyStore::new([AccessKey {
             key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
             secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
-            created_at: Utc.with_ymd_and_hms(2026, 3, 30, 12, 0, 0).unwrap().naive_utc(),
+            created_at: Utc
+                .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
         }])
     }
 
@@ -74,7 +103,7 @@ mod tests {
         headers.insert("x-amz-date".to_string(), "20260330T120000Z".to_string());
         headers.insert(
             "authorization".to_string(),
-            "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/sqs/aws4_request,SignedHeaders=content-type;host;x-amz-date,Signature=ffff699a5016d0166b23b26521afd5147ba0d923ca7ec1153d95db81e1cbce6c".to_string(),
+            "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/sqs/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=ffff699a5016d0166b23b26521afd5147ba0d923ca7ec1153d95db81e1cbce6c".to_string(),
         );
 
         let request = IncomingRequest {

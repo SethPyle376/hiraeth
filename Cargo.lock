@@ -530,6 +530,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "hex 0.3.2",
+ "hiraeth_core",
  "hiraeth_http",
  "hiraeth_store",
  "hmac 0.13.0",
@@ -537,6 +538,10 @@ dependencies = [
  "tokio",
  "urlencoding",
 ]
+
+[[package]]
+name = "hiraeth_core"
+version = "0.1.0"
 
 [[package]]
 name = "hiraeth_http"
@@ -552,6 +557,7 @@ name = "hiraeth_router"
 version = "0.1.0"
 dependencies = [
  "hiraeth_auth",
+ "hiraeth_core",
 ]
 
 [[package]]
@@ -560,6 +566,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hiraeth_auth",
+ "hiraeth_core",
  "hiraeth_http",
  "hiraeth_router",
  "hiraeth_sqs",
@@ -577,6 +584,7 @@ name = "hiraeth_sqs"
 version = "0.1.0"
 dependencies = [
  "hiraeth_auth",
+ "hiraeth_core",
  "hiraeth_router",
  "uuid",
 ]

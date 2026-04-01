@@ -5,5 +5,6 @@ edition = "2024"
 
 [dependencies]
 hiraeth_auth = { path = "../hiraeth_auth" }
+hiraeth_core = { path = "../hiraeth_core" }
 hiraeth_router = { path = "../hiraeth_router" }
 uuid = {  version="1.18.1", features = ["v4"] }

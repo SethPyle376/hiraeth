@@ -7,6 +7,7 @@ edition = "2024"
 chrono = "0.4"
 hex = "0.3"
 hmac = "0.13"
+hiraeth_core = { path = '../hiraeth_core' }
 hiraeth_http = { path = '../hiraeth_http'}
 hiraeth_store = { path = '../hiraeth_store' }
 urlencoding = "2.1"

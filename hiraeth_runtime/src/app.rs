@@ -1,3 +1,4 @@
+use hiraeth_core::ApiError;
 use hiraeth_http::IncomingRequest;
 use hiraeth_router::{ServiceResponse, ServiceRouter};
 use hiraeth_sqs::SqsService;
@@ -22,13 +23,15 @@ impl App {
         }
     }
 
-    pub async fn handle_request(&self, incoming_request: IncomingRequest) -> ServiceResponse {
+    pub async fn handle_request(
+        &self,
+        incoming_request: IncomingRequest,
+    ) -> Result<ServiceResponse, ApiError> {
         let resolved_request =
             hiraeth_auth::resolve_request(incoming_request, &self.store.access_key_store)
                 .await
-                .inspect_err(|e| eprintln!("Failed to resolve request: {:?}", e))
-                .unwrap();
+                .map_err(|e| e.into())?;
 
-        return self.router.route(resolved_request).unwrap();
+        return self.router.route(resolved_request);
     }
 }

@@ -83,59 +83,76 @@ fn extract_sigv4_params(request: &IncomingRequest) -> Result<SigV4AuthParameters
         .get("authorization")
         .ok_or(AuthError::MissingAuthorizationHeader)?;
 
-    let mut split = auth_header.split_whitespace();
-    let algorithm = split
-        .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
-        .to_string();
-    let key_value_pairs = split.next().ok_or(AuthError::InvalidAuthorizationHeader)?;
-
-    let mut kv_split = key_value_pairs.split(',').map(str::trim);
+    let split = auth_header.split_once(' ');
+    let (algorithm, key_value_pairs) = split.ok_or(AuthError::InvalidAuthorizationHeader(
+        "Authorization header format invalid".to_string(),
+    ))?;
+    let mut kv_split = key_value_pairs.trim().split(',').map(str::trim);
     let mut credential = kv_split
         .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Credential missing".to_string(),
+        ))?
         .split('=')
         .nth(1)
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Credential value missing".to_string(),
+        ))?
         .split('/');
 
     let access_key = credential
         .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Key ID Missing".to_string(),
+        ))?
         .to_string();
     let date = credential
         .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Date missing".to_string(),
+        ))?
         .to_string();
     let region = credential
         .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Region missing".to_string(),
+        ))?
         .to_string();
     let service = credential
         .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Service missing".to_string(),
+        ))?
         .to_string();
 
     let signed_headers = kv_split
         .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Signed headers missing".to_string(),
+        ))?
         .split('=')
         .nth(1)
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Signed headers value missing".to_string(),
+        ))?
         .split(';')
         .map(|s| s.to_string())
         .collect();
 
     let signature = kv_split
         .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Signature missing".to_string(),
+        ))?
         .split('=')
         .nth(1)
-        .ok_or(AuthError::InvalidAuthorizationHeader)?
+        .ok_or(AuthError::InvalidAuthorizationHeader(
+            "Signature value missing".to_string(),
+        ))?
         .to_string();
 
     Ok(SigV4AuthParameters {
-        algorithm,
+        algorithm: algorithm.to_string(),
         access_key,
         date,
         region,
@@ -323,7 +340,7 @@ mod tests {
         headers.insert(
             "authorization".to_string(),
             format!(
-                "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/sqs/aws4_request,SignedHeaders=content-type;host;x-amz-date,Signature={signature}"
+                "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260330/us-east-1/sqs/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature={signature}"
             ),
         );
 
@@ -341,7 +358,7 @@ mod tests {
         let mut headers = HashMap::new();
         headers.insert(
             "authorization".to_string(),
-            "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260328/us-east-1/sqs/aws4_request,SignedHeaders=content-type;host;x-amz-date,Signature=deadbeef1234".to_string(),
+            "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260328/us-east-1/sqs/aws4_request, SignedHeaders=content-type;host;x-amz-date, Signature=deadbeef1234".to_string(),
         );
 
         let request = IncomingRequest {

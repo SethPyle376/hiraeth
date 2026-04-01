@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncomingRequest {
     pub method: String,
     pub path: String,

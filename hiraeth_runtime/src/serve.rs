@@ -4,10 +4,11 @@ use http_body_util::Full;
 use hyper::{
     Request,
     body::{Bytes, Incoming},
+    server::conn::http1,
     service::service_fn,
 };
-use tokio::net::TcpListener;
 use hyper_util::rt::TokioIo;
+use tokio::net::TcpListener;
 
 use crate::app::App;
 
@@ -21,10 +22,7 @@ pub async fn serve(addr: SocketAddr, app: Arc<App>) -> anyhow::Result<()> {
         let service = service_fn(move |request| handle_request(Arc::clone(&app), request));
         tokio::spawn(async move {
             let io = TokioIo::new(stream);
-            if let Err(e) = hyper::server::conn::http1::Builder::new()
-                .serve_connection(io, service)
-                .await
-            {
+            if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
                 eprintln!("Error serving connection: {:?}", e);
             }
         });
@@ -41,8 +39,16 @@ async fn handle_request(
         .unwrap();
 
     let response = app.handle_request(incoming_request).await;
-    let _ = response;
 
-    let mut builder = hyper::Response::builder().status(200);
-    Ok(builder.body(Full::from("hello world")).unwrap())
+    match response {
+        Ok(_) => {
+            let mut builder = hyper::Response::builder().status(200);
+            Ok(builder.body(Full::from("hello world")).unwrap())
+        }
+        Err(e) => {
+            eprintln!("Error handling request: {:?}", e);
+            let mut builder = hyper::Response::builder().status(e.status_code());
+            Ok(builder.body(Full::from(e.message())).unwrap())
+        }
+    }
 }

@@ -7,6 +7,6 @@ CREATE TABLE access_keys (
 
 INSERT INTO access_keys (key_id, secret_key)
   VALUES (
-    'AKIAIOSFODNN7EXAMPLE',
-    'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+    'test',
+    'test'
   );
