@@ -14,9 +14,9 @@ pub enum AuthError {
     StoreError(AccessKeyStoreError),
 }
 
-impl Into<ApiError> for AuthError {
-    fn into(self) -> ApiError {
-        match self {
+impl From<AuthError> for ApiError {
+    fn from(value: AuthError) -> ApiError {
+        match value {
             AuthError::MissingAuthorizationHeader => {
                 ApiError::NotAuthenticated("Missing Authorization header".to_string())
             }

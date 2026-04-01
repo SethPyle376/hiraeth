@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+async-trait = "0.1"
 hiraeth_store = { path = "../hiraeth_store" }
 sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "migrate", "chrono" ] }
 

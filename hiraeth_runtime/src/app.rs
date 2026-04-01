@@ -11,14 +11,16 @@ pub(crate) struct App {
 
 impl App {
     pub async fn new(db_url: &str) -> Self {
+        let store = SqlxStore::new(db_url)
+            .await
+            .inspect_err(|e| eprintln!("Failed to initialize store: {:?}", e))
+            .expect("Store should be initialized");
+
         let mut router = ServiceRouter::default();
-        router.register_service(Box::new(SqsService::new()));
+        router.register_service(Box::new(SqsService::new(store.sqs_store.clone())));
 
         Self {
-            store: SqlxStore::new(db_url)
-                .await
-                .inspect_err(|e| eprintln!("Failed to initialize store: {:?}", e))
-                .expect("Store should be initialized"),
+            store,
             router,
         }
     }
@@ -30,8 +32,8 @@ impl App {
         let resolved_request =
             hiraeth_auth::resolve_request(incoming_request, &self.store.access_key_store)
                 .await
-                .map_err(|e| e.into())?;
+                .map_err(ApiError::from)?;
 
-        return self.router.route(resolved_request);
+        self.router.route(resolved_request).await
     }
 }

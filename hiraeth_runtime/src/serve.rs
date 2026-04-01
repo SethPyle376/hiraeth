@@ -41,9 +41,9 @@ async fn handle_request(
     let response = app.handle_request(incoming_request).await;
 
     match response {
-        Ok(_) => {
-            let mut builder = hyper::Response::builder().status(200);
-            Ok(builder.body(Full::from("hello world")).unwrap())
+        Ok(response) => {
+            let mut builder = hyper::Response::builder().status(response.status_code);
+            Ok(builder.body(Full::from(response.body)).unwrap())
         }
         Err(e) => {
             eprintln!("Error handling request: {:?}", e);
