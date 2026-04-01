@@ -596,12 +596,15 @@ name = "hiraeth_sqs"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "hiraeth_auth",
  "hiraeth_core",
+ "hiraeth_http",
  "hiraeth_router",
  "hiraeth_store",
  "serde",
  "serde_json",
+ "tokio",
  "uuid",
 ]
 

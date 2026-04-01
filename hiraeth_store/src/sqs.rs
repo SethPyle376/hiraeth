@@ -1,23 +1,29 @@
-use async_trait::async_trait;
 use crate::StorageError;
+use async_trait::async_trait;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqsStoreError {
     StorageError(StorageError),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqsQueue {
     pub name: String,
     pub region: String,
     pub account_id: String,
     pub queue_type: String,
-    pub visibility_timeout_seconds: u32,
-    pub delay_seconds: u32,
-    pub message_retention_period_seconds: u32,
-    pub receive_message_wait_time_seconds: u32,
+    pub visibility_timeout_seconds: i64,
+    pub delay_seconds: i64,
+    pub message_retention_period_seconds: i64,
+    pub receive_message_wait_time_seconds: i64,
 }
 
 #[async_trait]
 pub trait SqsStore {
     async fn create_queue(&self, queue: SqsQueue) -> Result<(), SqsStoreError>;
+    async fn get_queue(
+        &self,
+        queue_name: &str,
+        region: &str,
+    ) -> Result<Option<SqsQueue>, SqsStoreError>;
 }

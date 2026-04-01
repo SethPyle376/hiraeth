@@ -21,11 +21,10 @@ struct CreateQueueResponse {
     queue_url: String,
 }
 
-pub async fn create_queue<S: SqsStore>(
+pub(crate) async fn create_queue<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_text = String::from_utf8(request.request.body.clone());
     let request_body = serde_json::from_str::<CreateQueueRequest>(
         String::from_utf8(request.request.body.clone())
             .map_err(|e| SqsError::BadRequest(e.to_string()))?
@@ -41,22 +40,22 @@ pub async fn create_queue<S: SqsStore>(
         visibility_timeout_seconds: request_body
             .attributes
             .get("VisibilityTimeout")
-            .and_then(|v| v.parse::<u32>().ok())
+            .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(30),
         delay_seconds: request_body
             .attributes
             .get("DelaySeconds")
-            .and_then(|v| v.parse::<u32>().ok())
+            .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(0),
         message_retention_period_seconds: request_body
             .attributes
             .get("MessageRetentionPeriod")
-            .and_then(|v| v.parse::<u32>().ok())
+            .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(345600),
         receive_message_wait_time_seconds: request_body
             .attributes
             .get("ReceiveMessageWaitTimeSeconds")
-            .and_then(|v| v.parse::<u32>().ok())
+            .and_then(|v| v.parse::<i64>().ok())
             .unwrap_or(0),
     };
 
@@ -77,4 +76,51 @@ pub async fn create_queue<S: SqsStore>(
             }
         })
         .map_err(|e| SqsError::StoreError(e))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct GetQueueUrlRequest {
+    queue_name: String,
+    queue_owner_aws_account_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct GetQueueUrlResponse {
+    queue_url: String,
+}
+
+pub(crate) async fn get_queue_url<S: SqsStore>(
+    request: &ResolvedRequest,
+    store: &S,
+) -> Result<ServiceResponse, SqsError> {
+    let request_body = serde_json::from_str::<GetQueueUrlRequest>(
+        String::from_utf8(request.request.body.clone())
+            .map_err(|e| SqsError::BadRequest(e.to_string()))?
+            .as_str(),
+    )
+    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
+
+    let queue = store
+        .get_queue(&request_body.queue_name, &request.region)
+        .await
+        .map_err(|e| SqsError::StoreError(e))?;
+
+    match queue {
+        Some(queue) => {
+            let response = GetQueueUrlResponse {
+                queue_url: format!(
+                    "http://localhost:8080/{}/{}",
+                    "123456789012", request_body.queue_name
+                ),
+            };
+            Ok(ServiceResponse {
+                status_code: 200,
+                headers: vec![],
+                body: serde_json::to_vec(&response).unwrap_or_default(),
+            })
+        }
+        None => Err(SqsError::QueueNotFound),
+    }
 }

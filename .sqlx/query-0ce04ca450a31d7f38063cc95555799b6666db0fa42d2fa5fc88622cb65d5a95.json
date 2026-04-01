@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds FROM sqs_queues WHERE name = ? AND region = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "name",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "region",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "queue_type",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "visibility_timeout_seconds",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "delay_seconds",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "message_retention_period_seconds",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "receive_message_wait_time_seconds",
+        "ordinal": 7,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0ce04ca450a31d7f38063cc95555799b6666db0fa42d2fa5fc88622cb65d5a95"
+}
