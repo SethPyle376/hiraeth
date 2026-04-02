@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT key_id, secret_key, created_at FROM access_keys WHERE key_id = ?",
+  "query": "SELECT key_id, secret_key, principal_id, created_at FROM access_keys WHERE key_id = ?",
   "describe": {
     "columns": [
       {
@@ -14,8 +14,13 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "principal_id",
         "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 3,
         "type_info": "Datetime"
       }
     ],
@@ -25,8 +30,9 @@
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "2821dfe25ee033c2109298299a91ab3ed8c1362f94abfce32f7ce1774f764ebe"
+  "hash": "f4952f604280a007ed20964e94ba98f99852b73867f6441d26bdfdf218187faa"
 }

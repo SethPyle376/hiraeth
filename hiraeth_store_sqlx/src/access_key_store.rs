@@ -1,6 +1,6 @@
 use hiraeth_store::{
     StorageError::StorageFailure,
-    auth::{AccessKey, AccessKeyStore, AccessKeyStoreError},
+    access_key_store::{AccessKey, AccessKeyStore, AccessKeyStoreError},
 };
 
 pub struct SqliteAccessKeyStore {
@@ -20,7 +20,7 @@ impl AccessKeyStore for SqliteAccessKeyStore {
     ) -> Result<Option<AccessKey>, AccessKeyStoreError> {
         sqlx::query_as!(
             AccessKey,
-            "SELECT key_id, secret_key, created_at FROM access_keys WHERE key_id = ?",
+            "SELECT key_id, secret_key, principal_id, created_at FROM access_keys WHERE key_id = ?",
             access_key
         )
         .fetch_optional(&self.pool)
@@ -32,11 +32,13 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         &mut self,
         access_key: &str,
         secret_key: &str,
+        principal_id: i64,
     ) -> Result<(), AccessKeyStoreError> {
         sqlx::query!(
-            "INSERT INTO access_keys (key_id, secret_key) VALUES (?, ?)",
+            "INSERT INTO access_keys (key_id, secret_key, principal_id) VALUES (?, ?, ?)",
             access_key,
-            secret_key
+            secret_key,
+            principal_id
         )
         .execute(&self.pool)
         .await
@@ -53,7 +55,7 @@ mod tests {
     use crate::{get_store_pool, run_migrations};
     use hiraeth_store::{
         StorageError::StorageFailure,
-        auth::{AccessKeyStore, AccessKeyStoreError},
+        access_key_store::{AccessKeyStore, AccessKeyStoreError},
     };
 
     async fn test_store() -> (TempDir, SqliteAccessKeyStore) {
@@ -91,7 +93,7 @@ mod tests {
         let (_temp_dir, mut store) = test_store().await;
 
         store
-            .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "example-secret")
+            .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "example-secret", 1)
             .await
             .expect("insert should succeed");
 
@@ -122,12 +124,12 @@ mod tests {
         let (_temp_dir, mut store) = test_store().await;
 
         store
-            .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "example-secret")
+            .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "example-secret", 1)
             .await
             .expect("first insert should succeed");
 
         let duplicate_insert = store
-            .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "other-secret")
+            .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "other-secret", 1)
             .await;
 
         assert!(matches!(

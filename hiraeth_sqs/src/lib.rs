@@ -83,9 +83,12 @@ mod tests {
     };
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::ResolvedRequest;
+    use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
-    use hiraeth_store::sqs::{SqsQueue, SqsStore};
+    use hiraeth_store::{
+        principal::Principal,
+        sqs::{SqsQueue, SqsStore},
+    };
     use serde_json::Value;
 
     use super::{queue, Service, ServiceResponse, SqsError, SqsService};
@@ -159,7 +162,16 @@ mod tests {
             },
             service: "sqs".to_string(),
             region: "us-east-1".to_string(),
-            access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            auth_context: AuthContext {
+                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal: Principal {
+                    id: 1,
+                    account_id: "123456789012".to_string(),
+                    kind: "user".to_string(),
+                    name: "test-user".to_string(),
+                    created_at: Utc.with_ymd_and_hms(2026, 4, 1, 12, 0, 0).unwrap().naive_utc(),
+                },
+            },
             date: Utc.with_ymd_and_hms(2026, 4, 1, 12, 0, 0).unwrap(),
         }
     }

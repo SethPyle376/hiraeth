@@ -1,10 +1,13 @@
 use std::str::FromStr;
 
 mod access_key_store;
+mod principal;
 mod sqs;
 
 pub use access_key_store::SqliteAccessKeyStore;
 pub use sqs::SqliteSqsStore;
+
+use crate::principal::SqlitePrincipalStore;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {
@@ -14,6 +17,7 @@ pub enum StoreError {
 
 pub struct SqlxStore {
     pub access_key_store: SqliteAccessKeyStore,
+    pub principal_store: SqlitePrincipalStore,
     pub sqs_store: SqliteSqsStore,
 }
 
@@ -27,6 +31,7 @@ impl SqlxStore {
             .map_err(|err| StoreError::MigrationError(err.to_string()))?;
         Ok(Self {
             access_key_store: SqliteAccessKeyStore::new(&pool),
+            principal_store: SqlitePrincipalStore::new(&pool),
             sqs_store: SqliteSqsStore::new(&pool),
         })
     }

@@ -35,7 +35,7 @@ pub(crate) async fn create_queue<S: SqsStore>(
     let queue = SqsQueue {
         name: request_body.queue_name.clone(),
         region: request.region.clone(),
-        account_id: "123456789012".to_string(),
+        account_id: request.auth_context.principal.account_id.clone(),
         queue_type: "standard".to_string(),
         visibility_timeout_seconds: request_body
             .attributes
@@ -66,7 +66,8 @@ pub(crate) async fn create_queue<S: SqsStore>(
             let response = CreateQueueResponse {
                 queue_url: format!(
                     "http://localhost:8080/{}/{}",
-                    "123456789012", request_body.queue_name
+                    request.auth_context.principal.account_id.clone(),
+                    request_body.queue_name
                 ),
             };
             ServiceResponse {
@@ -112,7 +113,8 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
             let response = GetQueueUrlResponse {
                 queue_url: format!(
                     "http://localhost:8080/{}/{}",
-                    "123456789012", request_body.queue_name
+                    request.auth_context.principal.account_id.clone(),
+                    request_body.queue_name
                 ),
             };
             Ok(ServiceResponse {

@@ -19,6 +19,7 @@ target/
 # Misc logs
 *.log
 
+.local/db.sqlite
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

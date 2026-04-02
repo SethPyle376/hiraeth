@@ -1,6 +1,9 @@
 use hiraeth_core::ApiError;
 use hiraeth_http::IncomingRequest;
-use hiraeth_store::auth::{AccessKeyStore, AccessKeyStoreError};
+use hiraeth_store::{
+    access_key_store::{AccessKeyStore, AccessKeyStoreError},
+    principal::{Principal, PrincipalStore, PrincipalStoreError},
+};
 
 mod sig_v4;
 
@@ -11,7 +14,9 @@ pub enum AuthError {
     MissingSignedHeader(String),
     InvalidSignature,
     SecretKeyNotFound,
-    StoreError(AccessKeyStoreError),
+    KeyStoreError(AccessKeyStoreError),
+    PrincipalStoreError(PrincipalStoreError),
+    PrincipalNotFound,
 }
 
 impl From<AuthError> for ApiError {
@@ -32,8 +37,14 @@ impl From<AuthError> for ApiError {
             AuthError::SecretKeyNotFound => {
                 ApiError::NotAuthenticated("Secret key not found for access key".to_string())
             }
-            AuthError::StoreError(e) => {
+            AuthError::KeyStoreError(e) => {
                 ApiError::InternalServerError(format!("Access key store error: {:?}", e))
+            }
+            AuthError::PrincipalStoreError(principal_store_error) => ApiError::InternalServerError(
+                format!("Principal store error: {:?}", principal_store_error),
+            ),
+            AuthError::PrincipalNotFound => {
+                ApiError::NotAuthenticated("Principal not found for access key".to_string())
             }
         }
     }
@@ -43,17 +54,24 @@ pub struct ResolvedRequest {
     pub request: IncomingRequest,
     pub service: String,
     pub region: String,
-    pub access_key: String,
+    pub auth_context: AuthContext,
     pub date: chrono::DateTime<chrono::Utc>,
+}
+
+pub struct AuthContext {
+    pub access_key: String,
+    pub principal: Principal,
 }
 
 /// Authenticates an incoming request with SigV4 and attaches the resolved
 /// request context needed by downstream service handlers.
-pub async fn resolve_request<S: AccessKeyStore>(
+pub async fn resolve_request<KS: AccessKeyStore, PS: PrincipalStore>(
     request: IncomingRequest,
-    store: &S,
+    access_key_store: &KS,
+    principal_store: &PS,
 ) -> Result<ResolvedRequest, AuthError> {
-    let sig_v4_params = sig_v4::authenticate_request(&request, store).await?;
+    let (sig_v4_params, access_key) =
+        sig_v4::authenticate_request(&request, access_key_store).await?;
     let request_timestamp = request
         .headers
         .get("x-amz-date")
@@ -62,11 +80,22 @@ pub async fn resolve_request<S: AccessKeyStore>(
         .map_err(|_| AuthError::InvalidAuthorizationHeader("Date format incorrect".to_string()))?
         .and_utc();
 
+    let principal = principal_store
+        .get_principal(access_key.principal_id)
+        .await
+        .map_err(AuthError::PrincipalStoreError)?
+        .ok_or(AuthError::PrincipalNotFound)?;
+
+    let auth_context = AuthContext {
+        access_key: access_key.key_id.clone(),
+        principal,
+    };
+
     Ok(ResolvedRequest {
         request,
         service: sig_v4_params.service,
         region: sig_v4_params.region,
-        access_key: sig_v4_params.access_key,
+        auth_context,
         date,
     })
 }
@@ -76,7 +105,10 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_store::auth::{AccessKey, InMemoryAccessKeyStore};
+    use hiraeth_store::{
+        access_key_store::{AccessKey, InMemoryAccessKeyStore},
+        principal::{InMemoryPrincipalStore, Principal},
+    };
 
     use super::resolve_request;
     use hiraeth_http::IncomingRequest;
@@ -84,7 +116,21 @@ mod tests {
     fn access_key_store() -> InMemoryAccessKeyStore {
         InMemoryAccessKeyStore::new([AccessKey {
             key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            principal_id: 1,
             secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+            created_at: Utc
+                .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+        }])
+    }
+
+    fn principal_store() -> InMemoryPrincipalStore {
+        InMemoryPrincipalStore::new([Principal {
+            id: 1,
+            account_id: "123456789012".to_string(),
+            kind: "user".to_string(),
+            name: "test-user".to_string(),
             created_at: Utc
                 .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
                 .unwrap()
@@ -114,14 +160,17 @@ mod tests {
             body: "hello world".to_string().into_bytes(),
         };
 
-        let store = access_key_store();
-        let resolved = resolve_request(request, &store)
+        let access_key_store = access_key_store();
+        let principal_store = principal_store();
+        let resolved = resolve_request(request, &access_key_store, &principal_store)
             .await
             .expect("request should resolve");
 
         assert_eq!(resolved.service, "sqs");
         assert_eq!(resolved.region, "us-east-1");
-        assert_eq!(resolved.access_key, "AKIAIOSFODNN7EXAMPLE");
+        assert_eq!(resolved.auth_context.access_key, "AKIAIOSFODNN7EXAMPLE");
+        assert_eq!(resolved.auth_context.principal.id, 1);
+        assert_eq!(resolved.auth_context.principal.account_id, "123456789012");
         assert_eq!(
             resolved.date,
             Utc.with_ymd_and_hms(2026, 3, 30, 12, 0, 0).unwrap()

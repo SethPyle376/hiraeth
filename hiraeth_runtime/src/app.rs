@@ -19,20 +19,20 @@ impl App {
         let mut router = ServiceRouter::default();
         router.register_service(Box::new(SqsService::new(store.sqs_store.clone())));
 
-        Self {
-            store,
-            router,
-        }
+        Self { store, router }
     }
 
     pub async fn handle_request(
         &self,
         incoming_request: IncomingRequest,
     ) -> Result<ServiceResponse, ApiError> {
-        let resolved_request =
-            hiraeth_auth::resolve_request(incoming_request, &self.store.access_key_store)
-                .await
-                .map_err(ApiError::from)?;
+        let resolved_request = hiraeth_auth::resolve_request(
+            incoming_request,
+            &self.store.access_key_store,
+            &self.store.principal_store,
+        )
+        .await
+        .map_err(ApiError::from)?;
 
         self.router.route(resolved_request).await
     }

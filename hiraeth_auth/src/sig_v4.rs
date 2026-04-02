@@ -1,5 +1,5 @@
 use hiraeth_http::IncomingRequest;
-use hiraeth_store::auth::AccessKeyStore;
+use hiraeth_store::access_key_store::{AccessKey, AccessKeyStore};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
@@ -11,21 +11,28 @@ use crate::AuthError;
 pub(crate) async fn authenticate_request<S: AccessKeyStore>(
     request: &IncomingRequest,
     store: &S,
-) -> Result<SigV4AuthParameters, AuthError> {
+) -> Result<(SigV4AuthParameters, AccessKey), AuthError> {
     let sig_v4_params = extract_sigv4_params(request)?;
+
+    let access_key = store
+        .get_secret_key(&sig_v4_params.access_key)
+        .await
+        .map_err(|err| AuthError::KeyStoreError(err))?
+        .ok_or(AuthError::SecretKeyNotFound)?;
+
     let provided_signature = sig_v4_params.signature.clone();
-    let calculated_signature = hash_request(request, store).await?;
+    let calculated_signature = hash_request(request, &access_key).await?;
 
     if provided_signature == calculated_signature {
-        Ok(sig_v4_params)
+        Ok((sig_v4_params, access_key))
     } else {
         Err(AuthError::InvalidSignature)
     }
 }
 
-async fn hash_request<S: AccessKeyStore>(
+async fn hash_request(
     request: &IncomingRequest,
-    store: &S,
+    access_key: &AccessKey,
 ) -> Result<String, AuthError> {
     let sigv4_params = extract_sigv4_params(request)?;
     let canonical_request = create_canonical_request(request, &sigv4_params.signed_headers)?;
@@ -44,12 +51,6 @@ async fn hash_request<S: AccessKeyStore>(
         sigv4_params.service,
         hashed_canonical_request
     );
-
-    let access_key = store
-        .get_secret_key(&sigv4_params.access_key)
-        .await
-        .map_err(|err| AuthError::StoreError(err))?
-        .ok_or(AuthError::SecretKeyNotFound)?;
 
     let signing_key = derive_signing_key(
         access_key.secret_key.as_str(),
@@ -312,7 +313,7 @@ mod tests {
     use std::collections::HashMap;
 
     use hiraeth_http::IncomingRequest;
-    use hiraeth_store::auth::{AccessKey, InMemoryAccessKeyStore};
+    use hiraeth_store::access_key_store::{AccessKey, InMemoryAccessKeyStore};
 
     use crate::AuthError;
 
@@ -321,12 +322,17 @@ mod tests {
         hash_request,
     };
 
-    fn access_key_store() -> InMemoryAccessKeyStore {
-        InMemoryAccessKeyStore::new([AccessKey {
+    fn access_key_record() -> AccessKey {
+        AccessKey {
             key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            principal_id: 1,
             secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
             created_at: chrono::Utc::now().naive_utc(),
-        }])
+        }
+    }
+
+    fn access_key_store() -> InMemoryAccessKeyStore {
+        InMemoryAccessKeyStore::new([access_key_record()])
     }
 
     fn signed_request(signature: &str) -> IncomingRequest {
@@ -493,9 +499,9 @@ mod tests {
     #[tokio::test]
     async fn hash_request_matches_expected_signature() {
         let request = signed_request("placeholder");
-        let store = access_key_store();
+        let access_key = access_key_record();
 
-        let signature = hash_request(&request, &store)
+        let signature = hash_request(&request, &access_key)
             .await
             .expect("request should hash");
 
@@ -515,10 +521,11 @@ mod tests {
 
         assert!(matches!(
             result,
-            Ok(ref params)
+            Ok((ref params, ref access_key))
                 if params.access_key == "AKIAIOSFODNN7EXAMPLE"
                     && params.region == "us-east-1"
                     && params.service == "sqs"
+                    && access_key.principal_id == 1
         ));
     }
 
