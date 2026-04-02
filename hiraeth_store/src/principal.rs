@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PrincipalStoreError {
-    StorageError(String),
-}
+use crate::StoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Principal {
@@ -16,10 +13,7 @@ pub struct Principal {
 
 #[allow(async_fn_in_trait)]
 pub trait PrincipalStore {
-    async fn get_principal(
-        &self,
-        principal_id: i64,
-    ) -> Result<Option<Principal>, PrincipalStoreError>;
+    async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError>;
 }
 
 pub struct InMemoryPrincipalStore {
@@ -35,10 +29,7 @@ impl InMemoryPrincipalStore {
 }
 
 impl PrincipalStore for InMemoryPrincipalStore {
-    async fn get_principal(
-        &self,
-        principal_id: i64,
-    ) -> Result<Option<Principal>, PrincipalStoreError> {
+    async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError> {
         Ok(self.principals.get(&principal_id).cloned())
     }
 }

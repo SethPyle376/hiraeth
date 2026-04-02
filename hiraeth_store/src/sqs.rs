@@ -1,10 +1,6 @@
-use crate::StorageError;
 use async_trait::async_trait;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SqsStoreError {
-    StorageError(StorageError),
-}
+use crate::StoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqsQueue {
@@ -20,10 +16,10 @@ pub struct SqsQueue {
 
 #[async_trait]
 pub trait SqsStore {
-    async fn create_queue(&self, queue: SqsQueue) -> Result<(), SqsStoreError>;
+    async fn create_queue(&self, queue: SqsQueue) -> Result<(), StoreError>;
     async fn get_queue(
         &self,
         queue_name: &str,
         region: &str,
-    ) -> Result<Option<SqsQueue>, SqsStoreError>;
+    ) -> Result<Option<SqsQueue>, StoreError>;
 }

@@ -1,4 +1,7 @@
-use hiraeth_store::principal::{Principal, PrincipalStore, PrincipalStoreError};
+use hiraeth_store::{
+    StoreError,
+    principal::{Principal, PrincipalStore},
+};
 
 pub struct SqlitePrincipalStore {
     pool: sqlx::SqlitePool,
@@ -11,10 +14,7 @@ impl SqlitePrincipalStore {
 }
 
 impl PrincipalStore for SqlitePrincipalStore {
-    async fn get_principal(
-        &self,
-        principal_id: i64,
-    ) -> Result<Option<Principal>, PrincipalStoreError> {
+    async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError> {
         sqlx::query_as!(
             Principal,
             "SELECT id, account_id, kind, name, created_at FROM principals WHERE id = ?",
@@ -22,7 +22,7 @@ impl PrincipalStore for SqlitePrincipalStore {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|err| PrincipalStoreError::StorageError(err.to_string()))
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))
     }
 }
 

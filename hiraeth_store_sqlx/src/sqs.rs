@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use hiraeth_store::sqs::{SqsQueue, SqsStore, SqsStoreError};
+use hiraeth_store::StoreError;
+use hiraeth_store::sqs::{SqsQueue, SqsStore};
 
 #[derive(Clone)]
 pub struct SqliteSqsStore {
@@ -17,7 +18,7 @@ impl SqsStore for SqliteSqsStore {
     async fn create_queue(
         &self,
         queue: hiraeth_store::sqs::SqsQueue,
-    ) -> Result<(), hiraeth_store::sqs::SqsStoreError> {
+    ) -> Result<(), hiraeth_store::StoreError> {
         sqlx::query!(
             "INSERT INTO sqs_queues (name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             queue.name,
@@ -31,7 +32,7 @@ impl SqsStore for SqliteSqsStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|err| hiraeth_store::sqs::SqsStoreError::StorageError(hiraeth_store::StorageError::StorageFailure(err.to_string())))?;
+        .map_err(|err| hiraeth_store::StoreError::StorageFailure(err.to_string()))?;
         Ok(())
     }
 
@@ -39,7 +40,7 @@ impl SqsStore for SqliteSqsStore {
         &self,
         queue_name: &str,
         region: &str,
-    ) -> Result<Option<SqsQueue>, SqsStoreError> {
+    ) -> Result<Option<SqsQueue>, StoreError> {
         let queue = sqlx::query_as!(
             SqsQueue,
             "SELECT name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds FROM sqs_queues WHERE name = ? AND region = ?",
@@ -48,7 +49,7 @@ impl SqsStore for SqliteSqsStore {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|err| SqsStoreError::StorageError(hiraeth_store::StorageError::StorageFailure(err.to_string())))?;
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
         Ok(queue)
     }
 }

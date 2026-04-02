@@ -3,6 +3,6 @@ pub mod principal;
 pub mod sqs;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StorageError {
+pub enum StoreError {
     StorageFailure(String),
 }

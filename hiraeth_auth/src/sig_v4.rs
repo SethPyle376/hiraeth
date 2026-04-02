@@ -301,13 +301,6 @@ fn derive_signing_key(secret_key: &str, date: &str, region: &str, service: &str)
     k_signing
 }
 
-fn lookup_secret_key(access_key: &str) -> Result<String, AuthError> {
-    match access_key {
-        "AKIAIOSFODNN7EXAMPLE" => Ok("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string()),
-        _ => Err(AuthError::InvalidSignature),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

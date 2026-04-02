@@ -2,14 +2,14 @@ use async_trait::async_trait;
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_core::ApiError;
 use hiraeth_router::{Service, ServiceResponse};
-use hiraeth_store::sqs::{SqsStore, SqsStoreError};
+use hiraeth_store::{StoreError, sqs::SqsStore};
 
 mod queue;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SqsError {
     QueueNotFound,
-    StoreError(SqsStoreError),
+    StoreError(StoreError),
     BadRequest(String),
 }
 
@@ -91,7 +91,7 @@ mod tests {
     };
     use serde_json::Value;
 
-    use super::{queue, Service, ServiceResponse, SqsError, SqsService};
+    use super::{Service, ServiceResponse, SqsError, SqsService, queue};
 
     #[derive(Default)]
     struct TestSqsStore {
@@ -117,10 +117,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl SqsStore for TestSqsStore {
-        async fn create_queue(
-            &self,
-            queue: SqsQueue,
-        ) -> Result<(), hiraeth_store::sqs::SqsStoreError> {
+        async fn create_queue(&self, queue: SqsQueue) -> Result<(), hiraeth_store::StoreError> {
             self.queues
                 .lock()
                 .expect("queues mutex")
@@ -136,7 +133,7 @@ mod tests {
             &self,
             queue_name: &str,
             region: &str,
-        ) -> Result<Option<SqsQueue>, hiraeth_store::sqs::SqsStoreError> {
+        ) -> Result<Option<SqsQueue>, hiraeth_store::StoreError> {
             Ok(self
                 .queues
                 .lock()
@@ -169,7 +166,10 @@ mod tests {
                     account_id: "123456789012".to_string(),
                     kind: "user".to_string(),
                     name: "test-user".to_string(),
-                    created_at: Utc.with_ymd_and_hms(2026, 4, 1, 12, 0, 0).unwrap().naive_utc(),
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 1, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
                 },
             },
             date: Utc.with_ymd_and_hms(2026, 4, 1, 12, 0, 0).unwrap(),

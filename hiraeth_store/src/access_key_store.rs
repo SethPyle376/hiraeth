@@ -1,13 +1,6 @@
 use std::collections::HashMap;
 
-use crate::StorageError;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AccessKeyStoreError {
-    KeyNotFound,
-    InvalidKey,
-    StorageError(StorageError),
-}
+use crate::StoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessKey {
@@ -19,16 +12,13 @@ pub struct AccessKey {
 
 #[allow(async_fn_in_trait)]
 pub trait AccessKeyStore {
-    async fn get_secret_key(
-        &self,
-        access_key: &str,
-    ) -> Result<Option<AccessKey>, AccessKeyStoreError>;
+    async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError>;
     async fn insert_secret_key(
         &mut self,
         access_key: &str,
         secret_key: &str,
         principal_id: i64,
-    ) -> Result<(), AccessKeyStoreError>;
+    ) -> Result<(), StoreError>;
 }
 
 pub struct InMemoryAccessKeyStore {
@@ -44,10 +34,7 @@ impl InMemoryAccessKeyStore {
 }
 
 impl AccessKeyStore for InMemoryAccessKeyStore {
-    async fn get_secret_key(
-        &self,
-        access_key: &str,
-    ) -> Result<Option<AccessKey>, AccessKeyStoreError> {
+    async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError> {
         Ok(self.keys.get(access_key).cloned())
     }
 
@@ -56,7 +43,7 @@ impl AccessKeyStore for InMemoryAccessKeyStore {
         access_key: &str,
         secret_key: &str,
         principal_id: i64,
-    ) -> Result<(), AccessKeyStoreError> {
+    ) -> Result<(), StoreError> {
         let new_key = AccessKey {
             key_id: access_key.to_string(),
             secret_key: secret_key.to_string(),

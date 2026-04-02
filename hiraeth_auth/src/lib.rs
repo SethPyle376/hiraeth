@@ -1,8 +1,9 @@
 use hiraeth_core::ApiError;
 use hiraeth_http::IncomingRequest;
 use hiraeth_store::{
-    access_key_store::{AccessKeyStore, AccessKeyStoreError},
-    principal::{Principal, PrincipalStore, PrincipalStoreError},
+    StoreError,
+    access_key_store::AccessKeyStore,
+    principal::{Principal, PrincipalStore},
 };
 
 mod sig_v4;
@@ -14,8 +15,8 @@ pub enum AuthError {
     MissingSignedHeader(String),
     InvalidSignature,
     SecretKeyNotFound,
-    KeyStoreError(AccessKeyStoreError),
-    PrincipalStoreError(PrincipalStoreError),
+    KeyStoreError(StoreError),
+    PrincipalStoreError(StoreError),
     PrincipalNotFound,
 }
 

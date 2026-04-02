@@ -1,6 +1,6 @@
 use hiraeth_store::{
-    StorageError::StorageFailure,
-    access_key_store::{AccessKey, AccessKeyStore, AccessKeyStoreError},
+    StoreError,
+    access_key_store::{AccessKey, AccessKeyStore},
 };
 
 pub struct SqliteAccessKeyStore {
@@ -14,10 +14,7 @@ impl SqliteAccessKeyStore {
 }
 
 impl AccessKeyStore for SqliteAccessKeyStore {
-    async fn get_secret_key(
-        &self,
-        access_key: &str,
-    ) -> Result<Option<AccessKey>, AccessKeyStoreError> {
+    async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError> {
         sqlx::query_as!(
             AccessKey,
             "SELECT key_id, secret_key, principal_id, created_at FROM access_keys WHERE key_id = ?",
@@ -25,7 +22,7 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|err| AccessKeyStoreError::StorageError(StorageFailure(err.to_string())))
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))
     }
 
     async fn insert_secret_key(
@@ -33,7 +30,7 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         access_key: &str,
         secret_key: &str,
         principal_id: i64,
-    ) -> Result<(), AccessKeyStoreError> {
+    ) -> Result<(), StoreError> {
         sqlx::query!(
             "INSERT INTO access_keys (key_id, secret_key, principal_id) VALUES (?, ?, ?)",
             access_key,
@@ -42,7 +39,7 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|err| AccessKeyStoreError::StorageError(StorageFailure(err.to_string())))?;
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
         Ok(())
     }
 }
@@ -53,10 +50,7 @@ mod tests {
 
     use super::SqliteAccessKeyStore;
     use crate::{get_store_pool, run_migrations};
-    use hiraeth_store::{
-        StorageError::StorageFailure,
-        access_key_store::{AccessKeyStore, AccessKeyStoreError},
-    };
+    use hiraeth_store::{StoreError, access_key_store::AccessKeyStore};
 
     async fn test_store() -> (TempDir, SqliteAccessKeyStore) {
         let temp_dir = TempDir::new().expect("temp dir should be created");
@@ -132,9 +126,6 @@ mod tests {
             .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "other-secret", 1)
             .await;
 
-        assert!(matches!(
-            duplicate_insert,
-            Err(AccessKeyStoreError::StorageError(StorageFailure(_)))
-        ));
+        assert!(matches!(duplicate_insert, Err(StoreError::StorageFailure(_))));
     }
 }
