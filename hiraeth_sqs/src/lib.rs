@@ -5,10 +5,12 @@ use hiraeth_router::{Service, ServiceResponse};
 use hiraeth_store::{StoreError, sqs::SqsStore};
 
 mod queue;
+mod send_message;
+mod util;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SqsError {
-    QueueNotFound,
+    QueueNotFound(String, String, String),
     StoreError(StoreError),
     BadRequest(String),
 }
@@ -16,7 +18,10 @@ enum SqsError {
 impl From<SqsError> for ApiError {
     fn from(value: SqsError) -> ApiError {
         match value {
-            SqsError::QueueNotFound => ApiError::NotFound("Queue not found".to_string()),
+            SqsError::QueueNotFound(name, region, account) => ApiError::NotFound(format!(
+                "Queue not found: Name: {}, Region: {}, Account: {}",
+                name, region, account
+            )),
             SqsError::StoreError(sqs_store_error) => {
                 ApiError::InternalServerError(format!("SQS store error: {:?}", sqs_store_error))
             }
@@ -58,9 +63,9 @@ where
                 "AmazonSQS.GetQueueUrl" => queue::get_queue_url(&request, &self.store)
                     .await
                     .map_err(Into::into),
-                "AmazonSQS.SendMessage" => {
-                    todo!()
-                }
+                "AmazonSQS.SendMessage" => send_message::send_message(&request, &self.store)
+                    .await
+                    .map_err(Into::into),
                 _ => {
                     return Err(ApiError::NotFound(format!(
                         "Unknown SQS action: {}",
@@ -86,6 +91,7 @@ mod tests {
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
+        StoreError,
         principal::Principal,
         sqs::{SqsQueue, SqsStore},
     };
@@ -117,7 +123,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl SqsStore for TestSqsStore {
-        async fn create_queue(&self, queue: SqsQueue) -> Result<(), hiraeth_store::StoreError> {
+        async fn create_queue(&self, queue: SqsQueue) -> Result<(), StoreError> {
             self.queues
                 .lock()
                 .expect("queues mutex")
@@ -133,13 +139,21 @@ mod tests {
             &self,
             queue_name: &str,
             region: &str,
-        ) -> Result<Option<SqsQueue>, hiraeth_store::StoreError> {
+            _account_id: &str,
+        ) -> Result<Option<SqsQueue>, StoreError> {
             Ok(self
                 .queues
                 .lock()
                 .expect("queues mutex")
                 .get(&(queue_name.to_string(), region.to_string()))
                 .cloned())
+        }
+
+        async fn send_message(
+            &self,
+            _message: &hiraeth_store::sqs::SqsMessage,
+        ) -> Result<(), StoreError> {
+            unimplemented!()
         }
     }
 
@@ -151,6 +165,7 @@ mod tests {
 
         ResolvedRequest {
             request: IncomingRequest {
+                host: "sqs.us-east-1.amazonaws.com".to_string(),
                 method: "POST".to_string(),
                 path: "/".to_string(),
                 query: None,
@@ -195,7 +210,7 @@ mod tests {
         assert_eq!(response.status_code, 200);
         assert_eq!(
             parse_json_body(&response)["QueueUrl"],
-            "http://localhost:8080/123456789012/test-queue"
+            "http://sqs.us-east-1.amazonaws.com/123456789012/test-queue"
         );
 
         let created = store.created_queues();
@@ -248,12 +263,13 @@ mod tests {
 
         let result = queue::get_queue_url(&request, &store).await;
 
-        assert!(matches!(result, Err(SqsError::QueueNotFound)));
+        assert!(matches!(result, Err(SqsError::QueueNotFound(_, _, _))));
     }
 
     #[tokio::test]
     async fn get_queue_url_returns_queue_url_when_queue_exists() {
         let store = TestSqsStore::with_queue(SqsQueue {
+            id: 1,
             name: "existing-queue".to_string(),
             region: "us-east-1".to_string(),
             account_id: "123456789012".to_string(),
@@ -275,7 +291,7 @@ mod tests {
         assert_eq!(response.status_code, 200);
         assert_eq!(
             parse_json_body(&response)["QueueUrl"],
-            "http://localhost:8080/123456789012/existing-queue"
+            "http://sqs.us-east-1.amazonaws.com/123456789012/existing-queue"
         );
     }
 

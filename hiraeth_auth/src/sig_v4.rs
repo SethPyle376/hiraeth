@@ -344,6 +344,7 @@ mod tests {
         );
 
         IncomingRequest {
+            host: "sqs.us-east-1.amazonaws.com".to_string(),
             method: "POST".to_string(),
             path: "/hello".to_string(),
             query: Some("b=two&a=one".to_string()),
@@ -361,6 +362,7 @@ mod tests {
         );
 
         let request = IncomingRequest {
+            host: "sqs.us-east-1.amazonaws.com".to_string(),
             method: "POST".to_string(),
             path: "/".to_string(),
             query: None,
@@ -425,6 +427,7 @@ mod tests {
         headers.insert("x-amz-date".to_string(), "20260330T120000Z".to_string());
 
         let request = IncomingRequest {
+            host: "sqs.us-east-1.amazonaws.com".to_string(),
             method: "GET".to_string(),
             path: "/".to_string(),
             query: Some("aZ=2&a{=1".to_string()),
@@ -452,6 +455,7 @@ mod tests {
         headers.insert("x-amz-meta-test".to_string(), "a   b\tc".to_string());
 
         let request = IncomingRequest {
+            host: "sqs.us-east-1.amazonaws.com".to_string(),
             method: "GET".to_string(),
             path: "/".to_string(),
             query: None,

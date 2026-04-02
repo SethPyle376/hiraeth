@@ -5,12 +5,16 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22"
+chrono = "0.4"
 hiraeth_auth = { path = "../hiraeth_auth" }
 hiraeth_core = { path = "../hiraeth_core" }
 hiraeth_router = { path = "../hiraeth_router" }
 hiraeth_store = { path = "../hiraeth_store" }
+md5 = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+url = "2.5"
 uuid = {  version="1.18.1", features = ["v4"] }
 
 [dev-dependencies]

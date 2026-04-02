@@ -33,6 +33,7 @@ pub(crate) async fn create_queue<S: SqsStore>(
     .map_err(|e| SqsError::BadRequest(e.to_string()))?;
 
     let queue = SqsQueue {
+        id: 0,
         name: request_body.queue_name.clone(),
         region: request.region.clone(),
         account_id: request.auth_context.principal.account_id.clone(),
@@ -65,7 +66,8 @@ pub(crate) async fn create_queue<S: SqsStore>(
         .map(|_| {
             let response = CreateQueueResponse {
                 queue_url: format!(
-                    "http://localhost:8080/{}/{}",
+                    "http://{}/{}/{}",
+                    request.request.host,
                     request.auth_context.principal.account_id.clone(),
                     request_body.queue_name
                 ),
@@ -103,8 +105,12 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
     )
     .map_err(|e| SqsError::BadRequest(e.to_string()))?;
 
+    let account_id = request_body
+        .queue_owner_aws_account_id
+        .unwrap_or_else(|| request.auth_context.principal.account_id.clone());
+
     let queue = store
-        .get_queue(&request_body.queue_name, &request.region)
+        .get_queue(&request_body.queue_name, &request.region, &account_id)
         .await
         .map_err(|e| SqsError::StoreError(e))?;
 
@@ -112,7 +118,8 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
         Some(queue) => {
             let response = GetQueueUrlResponse {
                 queue_url: format!(
-                    "http://localhost:8080/{}/{}",
+                    "http://{}/{}/{}",
+                    request.request.host,
                     request.auth_context.principal.account_id.clone(),
                     request_body.queue_name
                 ),
@@ -123,6 +130,10 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
                 body: serde_json::to_vec(&response).unwrap_or_default(),
             })
         }
-        None => Err(SqsError::QueueNotFound),
+        None => Err(SqsError::QueueNotFound(
+            request_body.queue_name,
+            request.region.clone(),
+            account_id,
+        )),
     }
 }

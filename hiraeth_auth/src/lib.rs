@@ -154,6 +154,7 @@ mod tests {
         );
 
         let request = IncomingRequest {
+            host: "sqs.us-east-1.amazonaws.com".to_string(),
             method: "POST".to_string(),
             path: "/hello".to_string(),
             query: Some("b=two&a=one".to_string()),

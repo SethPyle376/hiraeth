@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use hiraeth_store::StoreError;
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 
 #[derive(Clone)]
 pub struct SqliteSqsStore {
@@ -40,17 +40,42 @@ impl SqsStore for SqliteSqsStore {
         &self,
         queue_name: &str,
         region: &str,
+        account_id: &str,
     ) -> Result<Option<SqsQueue>, StoreError> {
         let queue = sqlx::query_as!(
             SqsQueue,
-            "SELECT name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds FROM sqs_queues WHERE name = ? AND region = ?",
+            "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds FROM sqs_queues WHERE name = ? AND region = ? AND account_id = ?",
             queue_name,
-            region
+            region,
+            account_id
         )
         .fetch_optional(&self.pool)
         .await
         .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
         Ok(queue)
+    }
+
+    async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError> {
+        sqlx::query!(
+            "INSERT INTO sqs_messages (message_id, queue_id, body, message_attributes, sent_at, visible_at, expires_at, receive_count, receipt_handle, first_received_at, message_group_id, message_deduplication_id)
+            VALUES (?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            message.message_id,
+            message.queue_id,
+            message.body,
+            message.message_attributes,
+            message.sent_at,
+            message.visible_at,
+            message.expires_at,
+            message.receive_count,
+            message.receipt_handle,
+            message.first_received_at,
+            message.message_group_id,
+            message.message_deduplication_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(())
     }
 }
 
@@ -80,6 +105,7 @@ mod tests {
 
     fn queue(name: &str, region: &str) -> SqsQueue {
         SqsQueue {
+            id: 0,
             name: name.to_string(),
             region: region.to_string(),
             account_id: "123456789012".to_string(),
@@ -116,12 +142,29 @@ mod tests {
             .expect("queue insert should succeed");
 
         let queue = store
-            .get_queue("orders", "us-east-1")
+            .get_queue("orders", "us-east-1", "123456789012")
             .await
             .expect("queue lookup should succeed")
             .expect("queue should exist");
 
-        assert_eq!(queue, expected_queue);
+        assert!(queue.id > 0);
+        assert_eq!(queue.name, expected_queue.name);
+        assert_eq!(queue.region, expected_queue.region);
+        assert_eq!(queue.account_id, expected_queue.account_id);
+        assert_eq!(queue.queue_type, expected_queue.queue_type);
+        assert_eq!(
+            queue.visibility_timeout_seconds,
+            expected_queue.visibility_timeout_seconds
+        );
+        assert_eq!(queue.delay_seconds, expected_queue.delay_seconds);
+        assert_eq!(
+            queue.message_retention_period_seconds,
+            expected_queue.message_retention_period_seconds
+        );
+        assert_eq!(
+            queue.receive_message_wait_time_seconds,
+            expected_queue.receive_message_wait_time_seconds
+        );
     }
 
     #[tokio::test]
@@ -134,7 +177,7 @@ mod tests {
             .expect("queue insert should succeed");
 
         let queue = store
-            .get_queue("orders", "us-west-2")
+            .get_queue("orders", "us-west-2", "123456789012")
             .await
             .expect("queue lookup should succeed");
 
@@ -146,7 +189,7 @@ mod tests {
         let (_temp_dir, store) = test_store().await;
 
         let queue = store
-            .get_queue("missing", "us-east-1")
+            .get_queue("missing", "us-east-1", "123456789012")
             .await
             .expect("queue lookup should succeed");
 

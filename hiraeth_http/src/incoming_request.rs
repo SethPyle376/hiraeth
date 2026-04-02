@@ -5,6 +5,7 @@ use hyper::body::Incoming;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncomingRequest {
+    pub host: String,
     pub method: String,
     pub path: String,
     pub query: Option<String>,
@@ -15,6 +16,12 @@ pub struct IncomingRequest {
 impl IncomingRequest {
     fn from_parts(parts: http::request::Parts, body: Vec<u8>) -> Self {
         IncomingRequest {
+            host: parts
+                .headers
+                .get("host")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string(),
             method: parts.method.to_string(),
             path: parts.uri.path().to_string(),
             query: parts.uri.query().map(|q| q.to_string()),
