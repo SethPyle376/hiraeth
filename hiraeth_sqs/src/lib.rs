@@ -66,6 +66,11 @@ where
                 "AmazonSQS.SendMessage" => send_message::send_message(&request, &self.store)
                     .await
                     .map_err(Into::into),
+                "AmazonSQS.SendMessageBatch" => {
+                    send_message::send_message_batch(&request, &self.store)
+                        .await
+                        .map_err(Into::into)
+                }
                 _ => {
                     return Err(ApiError::NotFound(format!(
                         "Unknown SQS action: {}",

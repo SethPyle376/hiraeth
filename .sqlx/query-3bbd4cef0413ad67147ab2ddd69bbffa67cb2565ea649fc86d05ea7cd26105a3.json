@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds FROM sqs_queues WHERE name = ? AND region = ? AND account_id = ?",
+  "query": "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds\n            FROM sqs_queues \n            WHERE name = ? AND region = ? AND account_id = ?",
   "describe": {
     "columns": [
       {
@@ -64,5 +64,5 @@
       false
     ]
   },
-  "hash": "3610c29eea2c95d8016aecaa2b76d3330bda697dbea8fc80b73f73bd4f02db13"
+  "hash": "3bbd4cef0413ad67147ab2ddd69bbffa67cb2565ea649fc86d05ea7cd26105a3"
 }

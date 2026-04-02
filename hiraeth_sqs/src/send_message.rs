@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use futures::StreamExt;
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::{SqsMessage, SqsStore};
@@ -110,6 +111,171 @@ pub(crate) async fn send_message<S: SqsStore>(
     })
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct SendMessageBatchEntry {
+    id: String,
+    delay_seconds: Option<i64>,
+    #[serde(default)]
+    message_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
+    message_body: String,
+    message_deduplication_id: Option<String>,
+    message_group_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct SendMessageBatchRequest {
+    entries: Vec<SendMessageBatchEntry>,
+    queue_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct SendMessageBatchResultEntry {
+    id: String,
+    #[serde(rename = "MD5OfMessageAttributes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    md5_of_message_attributes: Option<String>,
+    #[serde(rename = "MD5OfMessageBody")]
+    md5_of_message_body: String,
+    message_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sequence_number: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct BatchResultErrorEntry {
+    id: String,
+    code: String,
+    message: String,
+    sender_fault: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct SendMessageBatchResponse {
+    successful: Vec<SendMessageBatchResultEntry>,
+    failed: Vec<BatchResultErrorEntry>,
+}
+
+pub(crate) async fn send_message_batch<S: SqsStore>(
+    request: &ResolvedRequest,
+    store: &S,
+) -> Result<ServiceResponse, SqsError> {
+    let request_body = serde_json::from_str::<SendMessageBatchRequest>(
+        String::from_utf8(request.request.body.clone())
+            .map_err(|e| SqsError::BadRequest(e.to_string()))?
+            .as_str(),
+    )
+    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
+
+    let queue_id = util::parse_queue_url(&request_body.queue_url, &request.region)
+        .ok_or_else(|| SqsError::BadRequest("Invalid queue URL".to_string()))?;
+
+    let queue = store
+        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
+        .await
+        .map_err(|e| SqsError::StoreError(e))?
+        .ok_or_else(|| {
+            SqsError::QueueNotFound(
+                queue_id.name.clone(),
+                queue_id.region.clone(),
+                queue_id.account_id.clone(),
+            )
+        })?;
+
+    let expires_at = request.date.naive_utc()
+        + chrono::Duration::seconds(queue.message_retention_period_seconds);
+
+    let messages = futures::stream::iter(request_body.entries)
+        .map(|entry| async move {
+            let visible_at = request.date.naive_utc()
+                + chrono::Duration::seconds(entry.delay_seconds.unwrap_or(queue.delay_seconds));
+
+            let message_attributes = entry
+                .message_attributes
+                .as_ref()
+                .map(|attrs| {
+                    serde_json::to_string(attrs).map_err(|e| SqsError::BadRequest(e.to_string()))
+                })
+                .transpose()
+                .map_err(|e| BatchResultErrorEntry {
+                    id: entry.id.clone(),
+                    code: "InvalidParameterValue".to_string(),
+                    message: format!("{:?}", e),
+                    sender_fault: true,
+                })?;
+
+            let md5_of_message_attributes = entry
+                .message_attributes
+                .as_ref()
+                .filter(|attrs| !attrs.is_empty())
+                .map(util::calculate_message_attributes_md5)
+                .transpose()
+                .map_err(|e| BatchResultErrorEntry {
+                    id: entry.id.clone(),
+                    code: "InvalidParameterValue".to_string(),
+                    message: format!("{:?}", e),
+                    sender_fault: true,
+                })?;
+
+            let message = SqsMessage {
+                message_id: uuid::Uuid::new_v4().to_string(),
+                queue_id: queue.id,
+                body: entry.message_body.clone(),
+                message_attributes,
+                sent_at: request.date.naive_utc(),
+                visible_at,
+                expires_at,
+                receive_count: 0,
+                receipt_handle: Option::None,
+                first_received_at: Option::None,
+                message_group_id: entry.message_group_id.clone(),
+                message_deduplication_id: entry.message_deduplication_id.clone(),
+            };
+
+            store
+                .send_message(&message)
+                .await
+                .map_err(|e| BatchResultErrorEntry {
+                    id: entry.id.clone(),
+                    code: "InternalError".to_string(),
+                    message: format!("{:?}", e),
+                    sender_fault: false,
+                })?;
+
+            Ok(SendMessageBatchResultEntry {
+                id: entry.id.clone(),
+                md5_of_message_attributes,
+                md5_of_message_body: format!("{:x}", md5::compute(entry.message_body.as_bytes())),
+                message_id: message.message_id.clone(),
+                sequence_number: None,
+            })
+        })
+        .buffer_unordered(1)
+        .collect::<Vec<Result<SendMessageBatchResultEntry, BatchResultErrorEntry>>>()
+        .await;
+
+    let successful = messages
+        .iter()
+        .filter_map(|result| result.as_ref().ok().cloned())
+        .collect();
+
+    let failed = messages
+        .iter()
+        .filter_map(|result| result.as_ref().err().cloned())
+        .collect();
+
+    return Ok(ServiceResponse {
+        status_code: 200,
+        headers: vec![],
+        body: serde_json::to_vec(&SendMessageBatchResponse { successful, failed })
+            .unwrap_or_default(),
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, sync::Mutex};
@@ -125,7 +291,7 @@ mod tests {
     };
     use serde_json::Value;
 
-    use super::send_message;
+    use super::{send_message, send_message_batch};
     use crate::{SqsError, util::MessageAttributeValue};
 
     #[derive(Default)]
@@ -210,6 +376,15 @@ mod tests {
             },
             date: Utc.with_ymd_and_hms(2026, 4, 2, 12, 0, 0).unwrap(),
         }
+    }
+
+    fn batch_resolved_request(body: &str) -> ResolvedRequest {
+        let mut request = resolved_request(body);
+        request.request.headers.insert(
+            "x-amz-target".to_string(),
+            "AmazonSQS.SendMessageBatch".to_string(),
+        );
+        request
     }
 
     fn queue() -> SqsQueue {
@@ -337,5 +512,64 @@ mod tests {
         assert_eq!(value.data_type, "String");
         assert_eq!(value.string_value.as_deref(), Some("abc123"));
         assert_eq!(value.binary_value, None);
+    }
+
+    #[tokio::test]
+    async fn send_message_batch_returns_sdk_compatible_response_shape() {
+        let store = TestSqsStore::with_queue(queue());
+        let request = batch_resolved_request(
+            r#"{
+                "QueueUrl":"http://localhost:4566/123456789012/orders",
+                "Entries":[
+                    {
+                        "Id":"first",
+                        "MessageBody":"hello world"
+                    },
+                    {
+                        "Id":"second",
+                        "MessageBody":"goodbye world",
+                        "MessageAttributes":{
+                            "trace_id":{
+                                "DataType":"String",
+                                "StringValue":"abc123"
+                            }
+                        }
+                    }
+                ]
+            }"#,
+        );
+
+        let response = send_message_batch(&request, &store)
+            .await
+            .expect("send message batch should succeed");
+
+        assert_eq!(response.status_code, 200);
+
+        let response_body = parse_json_body(&response);
+        let successful = response_body["Successful"]
+            .as_array()
+            .expect("Successful should be an array");
+        let failed = response_body["Failed"]
+            .as_array()
+            .expect("Failed should be an array");
+
+        assert_eq!(successful.len(), 2);
+        assert!(failed.is_empty());
+
+        assert_eq!(successful[0]["Id"], "first");
+        assert_eq!(
+            successful[0]["MD5OfMessageBody"],
+            "5eb63bbbe01eeed093cb22bb8f5acdc3"
+        );
+        assert!(successful[0]["MessageId"].as_str().is_some());
+        assert!(successful[0].get("Success").is_none());
+        assert!(successful[0].get("SequenceNumber").is_none());
+
+        assert_eq!(successful[1]["Id"], "second");
+        assert_eq!(
+            successful[1]["MD5OfMessageAttributes"],
+            "853c383c82274bde6eac88d91ee96efe"
+        );
+        assert!(successful[1].get("Success").is_none());
     }
 }

@@ -44,7 +44,9 @@ impl SqsStore for SqliteSqsStore {
     ) -> Result<Option<SqsQueue>, StoreError> {
         let queue = sqlx::query_as!(
             SqsQueue,
-            "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds FROM sqs_queues WHERE name = ? AND region = ? AND account_id = ?",
+            "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds
+            FROM sqs_queues 
+            WHERE name = ? AND region = ? AND account_id = ?",
             queue_name,
             region,
             account_id
