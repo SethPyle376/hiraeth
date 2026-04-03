@@ -653,6 +653,7 @@ name = "hiraeth_store_sqlx"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "hiraeth_store",
  "sqlx",
  "tempfile",

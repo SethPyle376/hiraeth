@@ -5,6 +5,7 @@ use hiraeth_router::{Service, ServiceResponse};
 use hiraeth_store::{StoreError, sqs::SqsStore};
 
 mod queue;
+mod receive_message;
 mod send_message;
 mod util;
 
@@ -68,6 +69,11 @@ where
                     .map_err(Into::into),
                 "AmazonSQS.SendMessageBatch" => {
                     send_message::send_message_batch(&request, &self.store)
+                        .await
+                        .map_err(Into::into)
+                }
+                "AmazonSQS.ReceiveMessage" => {
+                    receive_message::receive_message(&request, &self.store)
                         .await
                         .map_err(Into::into)
                 }
@@ -158,6 +164,15 @@ mod tests {
             &self,
             _message: &hiraeth_store::sqs::SqsMessage,
         ) -> Result<(), StoreError> {
+            unimplemented!()
+        }
+
+        async fn receive_messages(
+            &self,
+            _queue_id: i64,
+            _max_number_of_messages: i64,
+            _visibility_timeout_seconds: u32,
+        ) -> Result<Vec<hiraeth_store::sqs::SqsMessage>, StoreError> {
             unimplemented!()
         }
     }

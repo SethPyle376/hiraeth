@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "WITH selected AS (\n                SELECT id FROM sqs_messages\n                WHERE queue_id = ? AND visible_at <= ? AND expires_at > ?\n                ORDER BY sent_at, id\n                LIMIT ?\n            )\n            UPDATE sqs_messages\n            SET visible_at = ?, receipt_handle = lower(hex(randomblob(16))), receive_count = receive_count + 1, first_received_at = COALESCE(first_received_at, ?)\n            WHERE id IN (SELECT id FROM selected)\n            RETURNING\n                message_id,\n                queue_id,\n                body,\n                message_attributes,\n                aws_trace_header,\n                sent_at,\n                visible_at,\n                expires_at,\n                receive_count,\n                receipt_handle,\n                first_received_at,\n                message_group_id,\n                message_deduplication_id\n             ",
+  "describe": {
+    "columns": [
+      {
+        "name": "message_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "queue_id",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "body",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "message_attributes",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "aws_trace_header",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "sent_at",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "visible_at",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "expires_at",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "receive_count",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "receipt_handle",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "first_received_at",
+        "ordinal": 10,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "message_group_id",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "message_deduplication_id",
+        "ordinal": 12,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "612b0757c0a2de4f2e8085b9c657b3f2872d26c63582ed25b5a9c7e2fb0b61c3"
+}

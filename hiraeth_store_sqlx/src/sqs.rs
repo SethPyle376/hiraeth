@@ -1,6 +1,8 @@
+use ::chrono::Duration;
 use async_trait::async_trait;
 use hiraeth_store::StoreError;
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
+use sqlx::types::chrono;
 
 #[derive(Clone)]
 pub struct SqliteSqsStore {
@@ -59,12 +61,13 @@ impl SqsStore for SqliteSqsStore {
 
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError> {
         sqlx::query!(
-            "INSERT INTO sqs_messages (message_id, queue_id, body, message_attributes, sent_at, visible_at, expires_at, receive_count, receipt_handle, first_received_at, message_group_id, message_deduplication_id)
-            VALUES (?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sqs_messages (message_id, queue_id, body, message_attributes, aws_trace_header, sent_at, visible_at, expires_at, receive_count, receipt_handle, first_received_at, message_group_id, message_deduplication_id)
+            VALUES (?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             message.message_id,
             message.queue_id,
             message.body,
             message.message_attributes,
+            message.aws_trace_header,
             message.sent_at,
             message.visible_at,
             message.expires_at,
@@ -79,15 +82,89 @@ impl SqsStore for SqliteSqsStore {
         .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
         Ok(())
     }
+
+    async fn receive_messages(
+        &self,
+        queue_id: i64,
+        max_number_of_messages: i64,
+        visibility_timeout_seconds: u32,
+    ) -> Result<Vec<SqsMessage>, StoreError> {
+        let mut conn = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+
+        let now = chrono::Utc::now().naive_utc();
+
+        let leased_until = chrono::Utc::now()
+            .naive_utc()
+            .checked_add_signed(Duration::seconds(visibility_timeout_seconds as i64))
+            .ok_or_else(|| {
+                StoreError::StorageFailure("failed to calculate leased_until".to_string())
+            })?;
+
+        sqlx::query!("BEGIN IMMEDIATE")
+            .execute(&mut *conn)
+            .await
+            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+
+        let messages = sqlx::query_as!(
+            SqsMessage,
+            "WITH selected AS (
+                SELECT id FROM sqs_messages
+                WHERE queue_id = ? AND visible_at <= ? AND expires_at > ?
+                ORDER BY sent_at, id
+                LIMIT ?
+            )
+            UPDATE sqs_messages
+            SET visible_at = ?, receipt_handle = lower(hex(randomblob(16))), receive_count = receive_count + 1, first_received_at = COALESCE(first_received_at, ?)
+            WHERE id IN (SELECT id FROM selected)
+            RETURNING
+                message_id,
+                queue_id,
+                body,
+                message_attributes,
+                aws_trace_header,
+                sent_at,
+                visible_at,
+                expires_at,
+                receive_count,
+                receipt_handle,
+                first_received_at,
+                message_group_id,
+                message_deduplication_id
+             ",
+             queue_id,
+                now,
+                now,
+                max_number_of_messages,
+                leased_until,
+                 now
+        )
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+
+        sqlx::query!("COMMIT")
+            .execute(&mut *conn)
+            .await
+            .map_err(|err| {
+                StoreError::StorageFailure(format!("failed to commit transaction: {}", err))
+            })?;
+
+        Ok(messages)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use chrono::{Duration, Utc};
     use tempfile::TempDir;
 
     use super::SqliteSqsStore;
     use crate::{get_store_pool, run_migrations};
-    use hiraeth_store::sqs::{SqsQueue, SqsStore};
+    use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 
     async fn test_store() -> (TempDir, SqliteSqsStore) {
         let temp_dir = TempDir::new().expect("temp dir should be created");
@@ -116,6 +193,33 @@ mod tests {
             delay_seconds: 0,
             message_retention_period_seconds: 345600,
             receive_message_wait_time_seconds: 0,
+        }
+    }
+
+    fn message(
+        queue_id: i64,
+        message_id: &str,
+        sent_at: chrono::NaiveDateTime,
+        visible_at: chrono::NaiveDateTime,
+        expires_at: chrono::NaiveDateTime,
+    ) -> SqsMessage {
+        SqsMessage {
+            message_id: message_id.to_string(),
+            queue_id,
+            body: format!("body-{message_id}"),
+            message_attributes: Some(
+                r#"{"trace_id":{"DataType":"String","StringValue":"abc123","BinaryValue":null}}"#
+                    .to_string(),
+            ),
+            aws_trace_header: None,
+            sent_at,
+            visible_at,
+            expires_at,
+            receive_count: 0,
+            receipt_handle: None,
+            first_received_at: None,
+            message_group_id: None,
+            message_deduplication_id: None,
         }
     }
 
@@ -196,5 +300,144 @@ mod tests {
             .expect("queue lookup should succeed");
 
         assert!(queue.is_none());
+    }
+
+    #[tokio::test]
+    async fn receive_messages_claims_visible_messages_and_skips_hidden_or_expired_messages() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let now = Utc::now().naive_utc();
+
+        store
+            .send_message(&message(
+                queue.id,
+                "msg-1",
+                now - Duration::seconds(20),
+                now - Duration::seconds(10),
+                now + Duration::hours(1),
+            ))
+            .await
+            .expect("first visible message should insert");
+
+        store
+            .send_message(&message(
+                queue.id,
+                "msg-2",
+                now - Duration::seconds(15),
+                now - Duration::seconds(5),
+                now + Duration::hours(1),
+            ))
+            .await
+            .expect("second visible message should insert");
+
+        store
+            .send_message(&message(
+                queue.id,
+                "msg-hidden",
+                now - Duration::seconds(5),
+                now + Duration::minutes(5),
+                now + Duration::hours(1),
+            ))
+            .await
+            .expect("hidden message should insert");
+
+        store
+            .send_message(&message(
+                queue.id,
+                "msg-expired",
+                now - Duration::seconds(30),
+                now - Duration::seconds(25),
+                now - Duration::seconds(1),
+            ))
+            .await
+            .expect("expired message should insert");
+
+        let received = store
+            .receive_messages(queue.id, 10, 45)
+            .await
+            .expect("receive messages should succeed");
+
+        assert_eq!(received.len(), 2);
+        assert_eq!(received[0].message_id, "msg-1");
+        assert_eq!(received[1].message_id, "msg-2");
+
+        for message in &received {
+            assert_eq!(message.receive_count, 1);
+            assert!(message.receipt_handle.is_some());
+            assert!(message.first_received_at.is_some());
+            assert!(message.visible_at > now + Duration::seconds(40));
+        }
+
+        let received_again = store
+            .receive_messages(queue.id, 10, 45)
+            .await
+            .expect("second receive should succeed");
+
+        assert!(received_again.is_empty());
+    }
+
+    #[tokio::test]
+    async fn receive_messages_preserves_first_received_at_and_increments_receive_count() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let now = Utc::now().naive_utc();
+        let original_first_received_at = now - Duration::minutes(2);
+
+        store
+            .send_message(&SqsMessage {
+                receive_count: 3,
+                receipt_handle: Some("old-receipt".to_string()),
+                first_received_at: Some(original_first_received_at),
+                aws_trace_header: Some("Root=1-abcdef12-0123456789abcdef01234567".to_string()),
+                ..message(
+                    queue.id,
+                    "msg-received-before",
+                    now - Duration::minutes(5),
+                    now - Duration::seconds(5),
+                    now + Duration::hours(1),
+                )
+            })
+            .await
+            .expect("message should insert");
+
+        let received = store
+            .receive_messages(queue.id, 1, 30)
+            .await
+            .expect("receive messages should succeed");
+
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].message_id, "msg-received-before");
+        assert_eq!(received[0].receive_count, 4);
+        assert_eq!(
+            received[0].first_received_at,
+            Some(original_first_received_at)
+        );
+        assert_ne!(received[0].receipt_handle.as_deref(), Some("old-receipt"));
+        assert_eq!(
+            received[0].aws_trace_header.as_deref(),
+            Some("Root=1-abcdef12-0123456789abcdef01234567")
+        );
     }
 }

@@ -120,7 +120,7 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
                 queue_url: format!(
                     "http://{}/{}/{}",
                     request.request.host,
-                    request.auth_context.principal.account_id.clone(),
+                    account_id.clone(),
                     request_body.queue_name
                 ),
             };

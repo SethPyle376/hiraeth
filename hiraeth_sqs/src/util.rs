@@ -80,6 +80,28 @@ pub(crate) fn calculate_message_attributes_md5(
     Ok(format!("{:x}", md5::compute(buffer)))
 }
 
+pub(crate) fn extract_aws_trace_header(
+    message_system_attributes: Option<&BTreeMap<String, MessageAttributeValue>>,
+) -> Result<Option<String>, SqsError> {
+    let Some(message_system_attributes) = message_system_attributes else {
+        return Ok(None);
+    };
+
+    let Some(trace_header) = message_system_attributes.get("AWSTraceHeader") else {
+        return Ok(None);
+    };
+
+    if trace_header.data_type != "String" {
+        return Err(SqsError::BadRequest(
+            "AWSTraceHeader must use DataType=String".to_string(),
+        ));
+    }
+
+    trace_header.string_value.clone().ok_or_else(|| {
+        SqsError::BadRequest("AWSTraceHeader is missing StringValue".to_string())
+    }).map(Some)
+}
+
 fn append_length_prefixed_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) {
     buffer.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
     buffer.extend_from_slice(bytes);

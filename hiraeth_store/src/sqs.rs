@@ -21,6 +21,7 @@ pub struct SqsMessage {
     pub queue_id: i64,
     pub body: String,
     pub message_attributes: Option<String>,
+    pub aws_trace_header: Option<String>,
     pub sent_at: chrono::NaiveDateTime,
     pub visible_at: chrono::NaiveDateTime,
     pub expires_at: chrono::NaiveDateTime,
@@ -44,4 +45,10 @@ pub trait SqsStore {
 
     // message ops
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError>;
+    async fn receive_messages(
+        &self,
+        queue_id: i64,
+        max_number_of_messages: i64,
+        visibility_timeout_seconds: u32,
+    ) -> Result<Vec<SqsMessage>, StoreError>;
 }

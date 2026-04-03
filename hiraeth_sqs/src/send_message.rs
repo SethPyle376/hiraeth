@@ -14,6 +14,8 @@ struct SendMessageRequest {
     delay_seconds: Option<i64>,
     #[serde(default)]
     message_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
+    #[serde(default)]
+    message_system_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
     message_body: String,
     message_deduplication_id: Option<String>,
     message_group_id: Option<String>,
@@ -28,6 +30,9 @@ struct SendMessageResponse {
     md5_of_message_attributes: Option<String>,
     #[serde(rename = "MD5OfMessageBody")]
     md5_of_message_body: String,
+    #[serde(rename = "MD5OfMessageSystemAttributes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    md5_of_message_system_attributes: Option<String>,
     message_id: String,
     sequence_number: Option<String>,
 }
@@ -77,11 +82,22 @@ pub(crate) async fn send_message<S: SqsStore>(
         .map(util::calculate_message_attributes_md5)
         .transpose()?;
 
+    let aws_trace_header =
+        util::extract_aws_trace_header(request_body.message_system_attributes.as_ref())?;
+
+    let md5_of_message_system_attributes = request_body
+        .message_system_attributes
+        .as_ref()
+        .filter(|attrs| !attrs.is_empty())
+        .map(util::calculate_message_attributes_md5)
+        .transpose()?;
+
     let message = SqsMessage {
         message_id: uuid::Uuid::new_v4().to_string(),
         queue_id: queue.id,
         body: request_body.message_body.clone(),
         message_attributes,
+        aws_trace_header,
         sent_at: request.date.naive_utc(),
         visible_at,
         expires_at,
@@ -100,6 +116,7 @@ pub(crate) async fn send_message<S: SqsStore>(
     let response = SendMessageResponse {
         md5_of_message_attributes,
         md5_of_message_body: format!("{:x}", md5::compute(request_body.message_body.as_bytes())),
+        md5_of_message_system_attributes,
         message_id: message.message_id.clone(),
         sequence_number: None,
     };
@@ -118,6 +135,8 @@ struct SendMessageBatchEntry {
     delay_seconds: Option<i64>,
     #[serde(default)]
     message_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
+    #[serde(default)]
+    message_system_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
     message_body: String,
     message_deduplication_id: Option<String>,
     message_group_id: Option<String>,
@@ -139,6 +158,9 @@ struct SendMessageBatchResultEntry {
     md5_of_message_attributes: Option<String>,
     #[serde(rename = "MD5OfMessageBody")]
     md5_of_message_body: String,
+    #[serde(rename = "MD5OfMessageSystemAttributes")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    md5_of_message_system_attributes: Option<String>,
     message_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     sequence_number: Option<String>,
@@ -221,11 +243,35 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
                     sender_fault: true,
                 })?;
 
-            let message = SqsMessage {
-                message_id: uuid::Uuid::new_v4().to_string(),
-                queue_id: queue.id,
-                body: entry.message_body.clone(),
-                message_attributes,
+            let aws_trace_header = util::extract_aws_trace_header(
+                entry.message_system_attributes.as_ref(),
+            )
+            .map_err(|e| BatchResultErrorEntry {
+                id: entry.id.clone(),
+                code: "InvalidParameterValue".to_string(),
+                message: format!("{:?}", e),
+                sender_fault: true,
+            })?;
+
+            let md5_of_message_system_attributes = entry
+                .message_system_attributes
+                .as_ref()
+                .filter(|attrs| !attrs.is_empty())
+                .map(util::calculate_message_attributes_md5)
+                .transpose()
+                .map_err(|e| BatchResultErrorEntry {
+                    id: entry.id.clone(),
+                    code: "InvalidParameterValue".to_string(),
+                    message: format!("{:?}", e),
+                    sender_fault: true,
+                })?;
+
+        let message = SqsMessage {
+            message_id: uuid::Uuid::new_v4().to_string(),
+            queue_id: queue.id,
+            body: entry.message_body.clone(),
+            message_attributes,
+            aws_trace_header,
                 sent_at: request.date.naive_utc(),
                 visible_at,
                 expires_at,
@@ -250,6 +296,7 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
                 id: entry.id.clone(),
                 md5_of_message_attributes,
                 md5_of_message_body: format!("{:x}", md5::compute(entry.message_body.as_bytes())),
+                md5_of_message_system_attributes,
                 message_id: message.message_id.clone(),
                 sequence_number: None,
             })
@@ -278,7 +325,7 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Mutex};
+    use std::{collections::{BTreeMap, HashMap}, sync::Mutex};
 
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
@@ -292,7 +339,7 @@ mod tests {
     use serde_json::Value;
 
     use super::{send_message, send_message_batch};
-    use crate::{SqsError, util::MessageAttributeValue};
+    use crate::{SqsError, util::{self, MessageAttributeValue}};
 
     #[derive(Default)]
     struct TestSqsStore {
@@ -340,6 +387,15 @@ mod tests {
                 .expect("sent messages mutex")
                 .push(message.clone());
             Ok(())
+        }
+
+        async fn receive_messages(
+            &self,
+            _queue_id: i64,
+            _max_number_of_messages: i64,
+            _visibility_timeout_seconds: u32,
+        ) -> Result<Vec<SqsMessage>, StoreError> {
+            unimplemented!()
         }
     }
 
@@ -437,6 +493,7 @@ mod tests {
             "853c383c82274bde6eac88d91ee96efe"
         );
         assert!(response_body["MessageId"].as_str().is_some());
+        assert!(response_body["MD5OfMessageSystemAttributes"].is_null());
 
         let sent_messages = store.sent_messages.lock().expect("sent messages mutex");
         assert_eq!(sent_messages.len(), 1);
@@ -446,6 +503,7 @@ mod tests {
             sent_messages[0].message_attributes.as_deref(),
             Some(r#"{"trace_id":{"DataType":"String","StringValue":"abc123","BinaryValue":null}}"#)
         );
+        assert_eq!(sent_messages[0].aws_trace_header, None);
         assert_eq!(
             sent_messages[0].visible_at,
             Utc.with_ymd_and_hms(2026, 4, 2, 12, 0, 5)
@@ -481,6 +539,48 @@ mod tests {
                 .naive_utc()
         );
         assert_eq!(sent_messages[0].message_attributes, None);
+    }
+
+    #[tokio::test]
+    async fn send_message_persists_aws_trace_header_and_returns_system_md5() {
+        let store = TestSqsStore::with_queue(queue());
+        let request = resolved_request(
+            r#"{
+                "QueueUrl":"http://localhost:4566/123456789012/orders",
+                "MessageBody":"hello world",
+                "MessageSystemAttributes":{
+                    "AWSTraceHeader":{
+                        "DataType":"String",
+                        "StringValue":"Root=1-abcdef12-0123456789abcdef01234567"
+                    }
+                }
+            }"#,
+        );
+
+        let response = send_message(&request, &store)
+            .await
+            .expect("send message should succeed");
+
+        let response_body = parse_json_body(&response);
+        let expected_md5 = util::calculate_message_attributes_md5(&BTreeMap::from([(
+            "AWSTraceHeader".to_string(),
+            MessageAttributeValue {
+                data_type: "String".to_string(),
+                string_value: Some("Root=1-abcdef12-0123456789abcdef01234567".to_string()),
+                binary_value: None,
+            },
+        )]))
+        .expect("system attributes should hash");
+        assert_eq!(
+            response_body["MD5OfMessageSystemAttributes"],
+            expected_md5
+        );
+
+        let sent_messages = store.sent_messages.lock().expect("sent messages mutex");
+        assert_eq!(
+            sent_messages[0].aws_trace_header.as_deref(),
+            Some("Root=1-abcdef12-0123456789abcdef01234567")
+        );
     }
 
     #[tokio::test]

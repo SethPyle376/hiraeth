@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "BEGIN IMMEDIATE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "930a7770399087898ae6ac96ce5375048117486e06b21da4523d2c3c75113c32"
+}
