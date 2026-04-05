@@ -38,6 +38,14 @@ impl SqsStore for SqliteSqsStore {
         Ok(())
     }
 
+    async fn delete_queue(&self, queue_id: i64) -> Result<(), StoreError> {
+        sqlx::query!("DELETE FROM sqs_queues WHERE id = ?", queue_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(())
+    }
+
     async fn get_queue(
         &self,
         queue_name: &str,
@@ -46,7 +54,7 @@ impl SqsStore for SqliteSqsStore {
     ) -> Result<Option<SqsQueue>, StoreError> {
         let queue = sqlx::query_as!(
             SqsQueue,
-            "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds
+            "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds, created_at
             FROM sqs_queues 
             WHERE name = ? AND region = ? AND account_id = ?",
             queue_name,
@@ -155,6 +163,47 @@ impl SqsStore for SqliteSqsStore {
 
         Ok(messages)
     }
+
+    async fn get_message_count(&self, queue_id: i64) -> Result<i64, StoreError> {
+        let now = chrono::Utc::now().naive_utc();
+        let count = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ? AND expires_at > ?",
+            queue_id,
+            now
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(count)
+    }
+
+    async fn get_visible_message_count(&self, queue_id: i64) -> Result<i64, StoreError> {
+        let now = chrono::Utc::now().naive_utc();
+        let count = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ? AND visible_at <= ? AND expires_at > ?",
+            queue_id,
+            now,
+            now
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(count)
+    }
+
+    async fn get_messages_delayed_count(&self, queue_id: i64) -> Result<i64, StoreError> {
+        let now = chrono::Utc::now().naive_utc();
+        let count = sqlx::query_scalar!(
+            "SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ? AND visible_at > ? AND expires_at > ? AND receipt_handle IS NULL",
+            queue_id,
+            now,
+            now
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(count)
+    }
 }
 
 #[cfg(test)]
@@ -193,6 +242,7 @@ mod tests {
             delay_seconds: 0,
             message_retention_period_seconds: 345600,
             receive_message_wait_time_seconds: 0,
+            created_at: Utc::now().naive_utc(),
         }
     }
 
@@ -300,6 +350,121 @@ mod tests {
             .expect("queue lookup should succeed");
 
         assert!(queue.is_none());
+    }
+
+    #[tokio::test]
+    async fn delete_queue_removes_queue() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        store
+            .delete_queue(queue.id)
+            .await
+            .expect("queue delete should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed");
+
+        assert!(queue.is_none());
+    }
+
+    #[tokio::test]
+    async fn queue_message_statistics_return_expected_counts() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let now = Utc::now().naive_utc();
+
+        store
+            .send_message(&message(
+                queue.id,
+                "msg-visible",
+                now - Duration::seconds(20),
+                now - Duration::seconds(10),
+                now + Duration::hours(1),
+            ))
+            .await
+            .expect("visible message should insert");
+
+        store
+            .send_message(&message(
+                queue.id,
+                "msg-delayed",
+                now - Duration::seconds(10),
+                now + Duration::minutes(5),
+                now + Duration::hours(1),
+            ))
+            .await
+            .expect("delayed message should insert");
+
+        store
+            .send_message(&SqsMessage {
+                receipt_handle: Some("claimed".to_string()),
+                ..message(
+                    queue.id,
+                    "msg-in-flight",
+                    now - Duration::seconds(15),
+                    now + Duration::minutes(2),
+                    now + Duration::hours(1),
+                )
+            })
+            .await
+            .expect("in flight message should insert");
+
+        store
+            .send_message(&message(
+                queue.id,
+                "msg-expired",
+                now - Duration::minutes(5),
+                now - Duration::minutes(4),
+                now - Duration::seconds(1),
+            ))
+            .await
+            .expect("expired message should insert");
+
+        assert_eq!(
+            store
+                .get_message_count(queue.id)
+                .await
+                .expect("message count should succeed"),
+            3
+        );
+        assert_eq!(
+            store
+                .get_visible_message_count(queue.id)
+                .await
+                .expect("visible message count should succeed"),
+            1
+        );
+        assert_eq!(
+            store
+                .get_messages_delayed_count(queue.id)
+                .await
+                .expect("delayed message count should succeed"),
+            1
+        );
     }
 
     #[tokio::test]

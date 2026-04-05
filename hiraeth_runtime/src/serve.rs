@@ -97,7 +97,10 @@ async fn handle_request(
                 trace.route_ms.unwrap_or(0),
                 total_elapsed.as_millis(),
             );
-            let builder = hyper::Response::builder().status(response.status_code);
+            let mut builder = hyper::Response::builder().status(response.status_code);
+            for (name, value) in response.headers {
+                builder = builder.header(name, value);
+            }
             Ok(builder.body(Full::from(response.body)).unwrap())
         }
         AppRequestOutcome {

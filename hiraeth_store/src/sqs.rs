@@ -13,6 +13,7 @@ pub struct SqsQueue {
     pub delay_seconds: i64,
     pub message_retention_period_seconds: i64,
     pub receive_message_wait_time_seconds: i64,
+    pub created_at: chrono::NaiveDateTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,12 +37,16 @@ pub struct SqsMessage {
 pub trait SqsStore {
     // queue ops
     async fn create_queue(&self, queue: SqsQueue) -> Result<(), StoreError>;
+    async fn delete_queue(&self, queue_id: i64) -> Result<(), StoreError>;
     async fn get_queue(
         &self,
         queue_name: &str,
         region: &str,
         account_id: &str,
     ) -> Result<Option<SqsQueue>, StoreError>;
+    async fn get_message_count(&self, queue_id: i64) -> Result<i64, StoreError>;
+    async fn get_visible_message_count(&self, queue_id: i64) -> Result<i64, StoreError>;
+    async fn get_messages_delayed_count(&self, queue_id: i64) -> Result<i64, StoreError>;
 
     // message ops
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError>;

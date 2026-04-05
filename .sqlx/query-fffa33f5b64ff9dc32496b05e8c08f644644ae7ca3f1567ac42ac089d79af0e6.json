@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM sqs_queues WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "fffa33f5b64ff9dc32496b05e8c08f644644ae7ca3f1567ac42ac089d79af0e6"
+}

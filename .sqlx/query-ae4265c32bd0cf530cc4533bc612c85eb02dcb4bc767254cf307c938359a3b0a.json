@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ? AND visible_at > ? AND expires_at > ? AND receipt_handle IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "name": "COUNT(*)",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ae4265c32bd0cf530cc4533bc612c85eb02dcb4bc767254cf307c938359a3b0a"
+}

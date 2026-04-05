@@ -362,6 +362,10 @@ mod tests {
             unimplemented!()
         }
 
+        async fn delete_queue(&self, _queue_id: i64) -> Result<(), StoreError> {
+            unimplemented!()
+        }
+
         async fn get_queue(
             &self,
             queue_name: &str,
@@ -379,6 +383,18 @@ mod tests {
                         && queue.account_id == account_id
                 })
                 .cloned())
+        }
+
+        async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_visible_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
+            unimplemented!()
+        }
+
+        async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
+            unimplemented!()
         }
 
         async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError> {
@@ -454,6 +470,10 @@ mod tests {
             delay_seconds: 5,
             message_retention_period_seconds: 345600,
             receive_message_wait_time_seconds: 0,
+            created_at: Utc
+                .with_ymd_and_hms(2026, 4, 2, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
         }
     }
 

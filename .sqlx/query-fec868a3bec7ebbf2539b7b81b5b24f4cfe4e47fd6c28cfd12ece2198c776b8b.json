@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds\n            FROM sqs_queues \n            WHERE name = ? AND region = ? AND account_id = ?",
+  "query": "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds, created_at\n            FROM sqs_queues \n            WHERE name = ? AND region = ? AND account_id = ?",
   "describe": {
     "columns": [
       {
@@ -47,6 +47,11 @@
         "name": "receive_message_wait_time_seconds",
         "ordinal": 8,
         "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 9,
+        "type_info": "Datetime"
       }
     ],
     "parameters": {
@@ -61,8 +66,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "3bbd4cef0413ad67147ab2ddd69bbffa67cb2565ea649fc86d05ea7cd26105a3"
+  "hash": "fec868a3bec7ebbf2539b7b81b5b24f4cfe4e47fd6c28cfd12ece2198c776b8b"
 }

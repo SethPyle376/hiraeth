@@ -52,11 +52,3 @@ impl ServiceRouter {
         self.services.push(service);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {}
-}
