@@ -5,6 +5,8 @@ use hiraeth_router::{Service, ServiceResponse};
 use hiraeth_store::{StoreError, sqs::SqsStore};
 use serde::Serialize;
 
+mod change_message_visibility;
+mod delete_message;
 mod queue;
 mod queue_attributes;
 mod receive_message;
@@ -146,6 +148,19 @@ where
                         .await
                         .or_else(|error| Ok(error.into_response()))
                 }
+                "AmazonSQS.DeleteMessage" => delete_message::delete_message(&request, &self.store)
+                    .await
+                    .or_else(|error| Ok(error.into_response())),
+                "AmazonSQS.DeleteMessageBatch" => {
+                    delete_message::delete_message_batch(&request, &self.store)
+                        .await
+                        .or_else(|error| Ok(error.into_response()))
+                }
+                "AmazonSQS.ChangeMessageVisibility" => {
+                    change_message_visibility::change_message_visibility(&request, &self.store)
+                        .await
+                        .or_else(|error| Ok(error.into_response()))
+                }
                 _ => {
                     return Err(ApiError::NotFound(format!(
                         "Unknown SQS action: {}",
@@ -258,6 +273,23 @@ mod tests {
             _max_number_of_messages: i64,
             _visibility_timeout_seconds: u32,
         ) -> Result<Vec<hiraeth_store::sqs::SqsMessage>, StoreError> {
+            unimplemented!()
+        }
+
+        async fn delete_message(
+            &self,
+            _queue_id: i64,
+            _receipt_handle: &str,
+        ) -> Result<(), StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_message_visible_at(
+            &self,
+            _queue_id: i64,
+            _receipt_handle: &str,
+            _visible_at: chrono::NaiveDateTime,
+        ) -> Result<(), StoreError> {
             unimplemented!()
         }
     }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM sqs_messages WHERE queue_id = ? AND receipt_handle = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "6d1000400c7249f94487c1c9a4151f9f41f5cb217d512061a36033df2e6a7603"
+}

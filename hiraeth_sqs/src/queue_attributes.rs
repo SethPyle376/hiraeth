@@ -254,6 +254,23 @@ mod tests {
         ) -> Result<Vec<SqsMessage>, StoreError> {
             unimplemented!()
         }
+
+        async fn delete_message(
+            &self,
+            _queue_id: i64,
+            _receipt_handle: &str,
+        ) -> Result<(), StoreError> {
+            unimplemented!()
+        }
+
+        async fn set_message_visible_at(
+            &self,
+            _queue_id: i64,
+            _receipt_handle: &str,
+            _visible_at: chrono::NaiveDateTime,
+        ) -> Result<(), StoreError> {
+            unimplemented!()
+        }
     }
 
     fn resolved_request(body: &str) -> ResolvedRequest {

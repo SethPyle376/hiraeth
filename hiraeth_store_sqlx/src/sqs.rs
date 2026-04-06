@@ -204,6 +204,36 @@ impl SqsStore for SqliteSqsStore {
         .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
         Ok(count)
     }
+
+    async fn delete_message(&self, queue_id: i64, receipt_handle: &str) -> Result<(), StoreError> {
+        sqlx::query!(
+            "DELETE FROM sqs_messages WHERE queue_id = ? AND receipt_handle = ?",
+            queue_id,
+            receipt_handle
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn set_message_visible_at(
+        &self,
+        queue_id: i64,
+        receipt_handle: &str,
+        visible_at: chrono::NaiveDateTime,
+    ) -> Result<(), StoreError> {
+        sqlx::query!(
+            "UPDATE sqs_messages SET visible_at = ? WHERE queue_id = ? AND receipt_handle = ?",
+            visible_at,
+            queue_id,
+            receipt_handle
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -604,5 +634,125 @@ mod tests {
             received[0].aws_trace_header.as_deref(),
             Some("Root=1-abcdef12-0123456789abcdef01234567")
         );
+    }
+
+    #[tokio::test]
+    async fn delete_message_removes_only_matching_receipt_handle() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let now = Utc::now().naive_utc();
+
+        store
+            .send_message(&SqsMessage {
+                receipt_handle: Some("receipt-1".to_string()),
+                ..message(
+                    queue.id,
+                    "msg-1",
+                    now - Duration::seconds(10),
+                    now - Duration::seconds(10),
+                    now + Duration::hours(1),
+                )
+            })
+            .await
+            .expect("first message should insert");
+
+        store
+            .send_message(&SqsMessage {
+                receipt_handle: Some("receipt-2".to_string()),
+                ..message(
+                    queue.id,
+                    "msg-2",
+                    now - Duration::seconds(10),
+                    now - Duration::seconds(10),
+                    now + Duration::hours(1),
+                )
+            })
+            .await
+            .expect("second message should insert");
+
+        store
+            .delete_message(queue.id, "receipt-1")
+            .await
+            .expect("delete message should succeed");
+
+        let remaining = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ?",
+        )
+        .bind(queue.id)
+        .fetch_one(&store.pool)
+        .await
+        .expect("message count query should succeed");
+
+        let remaining_message_id = sqlx::query_scalar::<_, String>(
+            "SELECT message_id FROM sqs_messages WHERE queue_id = ?",
+        )
+        .bind(queue.id)
+        .fetch_one(&store.pool)
+        .await
+        .expect("remaining message query should succeed");
+
+        assert_eq!(remaining, 1);
+        assert_eq!(remaining_message_id, "msg-2");
+    }
+
+    #[tokio::test]
+    async fn set_message_visible_at_updates_visibility_for_matching_receipt_handle() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let now = Utc::now().naive_utc();
+        let initial_visible_at = now - Duration::seconds(10);
+        let updated_visible_at = now + Duration::minutes(3);
+
+        store
+            .send_message(&SqsMessage {
+                receipt_handle: Some("receipt-1".to_string()),
+                ..message(
+                    queue.id,
+                    "msg-1",
+                    now - Duration::seconds(20),
+                    initial_visible_at,
+                    now + Duration::hours(1),
+                )
+            })
+            .await
+            .expect("message should insert");
+
+        store
+            .set_message_visible_at(queue.id, "receipt-1", updated_visible_at)
+            .await
+            .expect("set message visible at should succeed");
+
+        let visible_at = sqlx::query_scalar::<_, chrono::NaiveDateTime>(
+            "SELECT visible_at FROM sqs_messages WHERE queue_id = ? AND receipt_handle = ?",
+        )
+        .bind(queue.id)
+        .bind("receipt-1")
+        .fetch_one(&store.pool)
+        .await
+        .expect("visible_at query should succeed");
+
+        assert_eq!(visible_at, updated_visible_at);
     }
 }

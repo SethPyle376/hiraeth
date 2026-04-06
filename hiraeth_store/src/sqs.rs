@@ -56,4 +56,11 @@ pub trait SqsStore {
         max_number_of_messages: i64,
         visibility_timeout_seconds: u32,
     ) -> Result<Vec<SqsMessage>, StoreError>;
+    async fn delete_message(&self, queue_id: i64, receipt_handle: &str) -> Result<(), StoreError>;
+    async fn set_message_visible_at(
+        &self,
+        queue_id: i64,
+        receipt_handle: &str,
+        visible_at: chrono::NaiveDateTime,
+    ) -> Result<(), StoreError>;
 }

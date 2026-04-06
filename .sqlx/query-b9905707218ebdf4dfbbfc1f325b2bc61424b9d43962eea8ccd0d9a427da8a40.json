@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sqs_messages SET visible_at = ? WHERE queue_id = ? AND receipt_handle = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "b9905707218ebdf4dfbbfc1f325b2bc61424b9d43962eea8ccd0d9a427da8a40"
+}
