@@ -1,3 +1,7 @@
+mod config;
+
+pub use config::Config;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {
     NotFound(String),

@@ -16,7 +16,7 @@ CREATE TABLE access_keys (
 
 INSERT INTO principals (account_id, kind, name)
   VALUES (
-    'test',
+    '000000000000',
     'user',
     'test'
   );
@@ -25,5 +25,5 @@ INSERT INTO access_keys (key_id, secret_key, principal_id)
   VALUES (
     'test',
     'test',
-    (SELECT id FROM principals WHERE account_id = 'test' AND kind = 'user' AND name = 'test')
+    (SELECT id FROM principals WHERE account_id = '000000000000' AND kind = 'user' AND name = 'test')
   );

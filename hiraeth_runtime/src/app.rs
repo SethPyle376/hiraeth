@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use hiraeth_core::ApiError;
+use hiraeth_core::{ApiError, Config};
 use hiraeth_http::IncomingRequest;
 use hiraeth_router::{ServiceResponse, ServiceRouter};
 use hiraeth_sqs::SqsService;
@@ -24,11 +24,12 @@ pub(crate) struct AppRequestOutcome {
 pub(crate) struct App {
     store: SqlxStore,
     router: ServiceRouter,
+    config: Config,
 }
 
 impl App {
-    pub async fn new(db_url: &str) -> Self {
-        let store = SqlxStore::new(db_url)
+    pub async fn new(config: &Config) -> Self {
+        let store = SqlxStore::new(&config.database_url)
             .await
             .inspect_err(|e| eprintln!("Failed to initialize store: {:?}", e))
             .expect("Store should be initialized");
@@ -36,13 +37,14 @@ impl App {
         let mut router = ServiceRouter::default();
         router.register_service(Box::new(SqsService::new(store.sqs_store.clone())));
 
-        Self { store, router }
+        Self {
+            store,
+            router,
+            config: config.clone(),
+        }
     }
 
-    pub async fn handle_request(
-        &self,
-        incoming_request: IncomingRequest,
-    ) -> AppRequestOutcome {
+    pub async fn handle_request(&self, incoming_request: IncomingRequest) -> AppRequestOutcome {
         let auth_started_at = Instant::now();
         let resolved_request = hiraeth_auth::resolve_request(
             incoming_request,

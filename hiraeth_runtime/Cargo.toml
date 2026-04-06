@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
+config = { version = "0.15", features = ["json"] }
 hiraeth_auth = { path = "../hiraeth_auth" }
 hiraeth_core = { path = "../hiraeth_core" }
 hiraeth_http = { path = "../hiraeth_http" }

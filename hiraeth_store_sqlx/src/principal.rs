@@ -71,7 +71,7 @@ mod tests {
         let principal_id = sqlx::query_scalar::<_, i64>(
             "SELECT id FROM principals WHERE account_id = ? AND kind = ? AND name = ?",
         )
-        .bind("test")
+        .bind("000000000000")
         .bind("user")
         .bind("test")
         .fetch_one(&store.pool)
@@ -85,7 +85,7 @@ mod tests {
             .expect("principal should exist");
 
         assert_eq!(principal.id, principal_id);
-        assert_eq!(principal.account_id, "test");
+        assert_eq!(principal.account_id, "000000000000");
         assert_eq!(principal.kind, "user");
         assert_eq!(principal.name, "test");
     }
