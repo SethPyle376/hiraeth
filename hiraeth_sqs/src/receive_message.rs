@@ -1,5 +1,6 @@
-use std::collections::BTreeMap;
+use std::{cmp::min, collections::BTreeMap};
 
+use chrono::Utc;
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_router::ServiceResponse;
 use hiraeth_store::{StoreError, sqs::SqsStore};
@@ -81,40 +82,65 @@ pub(crate) async fn receive_message<S: SqsStore>(
         .visibility_timeout
         .unwrap_or_else(|| queue.visibility_timeout_seconds as u32);
 
-    let messages = store
-        .receive_messages(
-            queue.id,
-            receive_request.max_number_of_messages,
-            visibility_timeout_seconds,
-        )
-        .await
-        .map_err(|e| SqsError::StoreError(e))?;
+    let wait_time_seconds = receive_request
+        .wait_time_seconds
+        .unwrap_or_else(|| queue.receive_message_wait_time_seconds as u32);
 
-    let received_messages = messages
-        .into_iter()
-        .map(|msg| {
-            let attributes = select_system_attributes(&receive_request, &msg);
-            let message_attributes = filter_message_attributes(
-                parse_message_attributes(&msg)?,
-                &receive_request.message_attribute_names,
-            );
-            let md5_of_message_attributes = if message_attributes.is_empty() {
-                None
-            } else {
-                Some(util::calculate_message_attributes_md5(&message_attributes)?)
-            };
+    let deadline = Utc::now() + chrono::Duration::seconds(wait_time_seconds as i64);
 
-            Ok(ReceivedMessage {
-                attributes,
-                message_attributes,
-                message_id: msg.message_id,
-                receipt_handle: msg.receipt_handle.unwrap_or_default(),
-                body: msg.body.clone(),
-                md5_of_body: Some(format!("{:x}", md5::compute(msg.body.as_bytes()))),
-                md5_of_message_attributes,
+    let received_messages = loop {
+        let messages = store
+            .receive_messages(
+                queue.id,
+                receive_request.max_number_of_messages,
+                visibility_timeout_seconds,
+            )
+            .await
+            .map_err(|e| SqsError::StoreError(e))?;
+
+        let received_messages = messages
+            .into_iter()
+            .map(|msg| {
+                let attributes = select_system_attributes(&receive_request, &msg);
+                let message_attributes = filter_message_attributes(
+                    parse_message_attributes(&msg)?,
+                    &receive_request.message_attribute_names,
+                );
+                let md5_of_message_attributes = if message_attributes.is_empty() {
+                    None
+                } else {
+                    Some(util::calculate_message_attributes_md5(&message_attributes)?)
+                };
+
+                Ok(ReceivedMessage {
+                    attributes,
+                    message_attributes,
+                    message_id: msg.message_id,
+                    receipt_handle: msg.receipt_handle.unwrap_or_default(),
+                    body: msg.body.clone(),
+                    md5_of_body: Some(format!("{:x}", md5::compute(msg.body.as_bytes()))),
+                    md5_of_message_attributes,
+                })
             })
-        })
-        .collect::<Result<Vec<_>, SqsError>>()?;
+            .collect::<Result<Vec<_>, SqsError>>()?;
+
+        if !received_messages.is_empty() {
+            break received_messages;
+        }
+
+        if Utc::now() >= deadline {
+            break Vec::new();
+        }
+
+        let sleep_until = min(deadline, Utc::now() + chrono::Duration::milliseconds(100));
+        tokio::time::sleep(
+            sleep_until
+                .signed_duration_since(Utc::now())
+                .to_std()
+                .unwrap_or_default(),
+        )
+        .await;
+    };
 
     let response = ReceiveMessageResponse {
         messages: received_messages,
@@ -232,7 +258,13 @@ fn filter_message_attributes(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Mutex};
+    use std::{
+        collections::{HashMap, VecDeque},
+        sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
@@ -251,15 +283,21 @@ mod tests {
 
     struct TestSqsStore {
         queue: SqsQueue,
-        messages: Mutex<Vec<SqsMessage>>,
+        receive_responses: Mutex<VecDeque<Vec<SqsMessage>>>,
+        receive_calls: AtomicUsize,
     }
 
     impl TestSqsStore {
-        fn new(queue: SqsQueue, messages: Vec<SqsMessage>) -> Self {
+        fn new(queue: SqsQueue, receive_responses: Vec<Vec<SqsMessage>>) -> Self {
             Self {
                 queue,
-                messages: Mutex::new(messages),
+                receive_responses: Mutex::new(receive_responses.into()),
+                receive_calls: AtomicUsize::new(0),
             }
+        }
+
+        fn receive_calls(&self) -> usize {
+            self.receive_calls.load(Ordering::SeqCst)
         }
     }
 
@@ -307,12 +345,19 @@ mod tests {
             max_number_of_messages: i64,
             _visibility_timeout_seconds: u32,
         ) -> Result<Vec<SqsMessage>, StoreError> {
-            let messages = self.messages.lock().expect("messages mutex");
-            Ok(messages
-                .iter()
+            self.receive_calls.fetch_add(1, Ordering::SeqCst);
+
+            let mut receive_responses = self
+                .receive_responses
+                .lock()
+                .expect("receive responses mutex");
+
+            Ok(receive_responses
+                .pop_front()
+                .unwrap_or_default()
+                .into_iter()
                 .filter(|message| message.queue_id == queue_id)
                 .take(max_number_of_messages as usize)
-                .cloned()
                 .collect())
         }
 
@@ -427,7 +472,7 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_returns_requested_message_and_system_attributes() {
-        let store = TestSqsStore::new(queue(), vec![message(42)]);
+        let store = TestSqsStore::new(queue(), vec![vec![message(42)]]);
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -483,7 +528,7 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_filters_requested_message_attributes() {
-        let store = TestSqsStore::new(queue(), vec![message(42)]);
+        let store = TestSqsStore::new(queue(), vec![vec![message(42)]]);
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -520,7 +565,7 @@ mod tests {
     async fn receive_message_returns_queue_not_found_for_missing_queue() {
         let mut missing_queue = queue();
         missing_queue.name = "other".to_string();
-        let store = TestSqsStore::new(missing_queue, vec![message(42)]);
+        let store = TestSqsStore::new(missing_queue, vec![vec![message(42)]]);
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
@@ -531,5 +576,51 @@ mod tests {
             Err(SqsError::QueueNotFound(name, region, account))
                 if name == "orders" && region == "us-east-1" && account == "123456789012"
         ));
+    }
+
+    #[tokio::test]
+    async fn receive_message_retries_when_wait_time_seconds_is_set() {
+        let store = TestSqsStore::new(queue(), vec![Vec::new(), vec![message(42)]]);
+        let request = resolved_request(
+            r#"{
+                "QueueUrl":"http://localhost:4566/123456789012/orders",
+                "WaitTimeSeconds":1
+            }"#,
+        );
+
+        let response = receive_message(&request, &store)
+            .await
+            .expect("receive message should succeed");
+
+        let body = parse_json_body(&response);
+        let messages = body["Messages"]
+            .as_array()
+            .expect("Messages should be an array");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["MessageId"], "msg-123");
+        assert!(store.receive_calls() >= 2);
+    }
+
+    #[tokio::test]
+    async fn receive_message_uses_queue_default_wait_time_when_request_omits_wait_time_seconds() {
+        let mut queue = queue();
+        queue.receive_message_wait_time_seconds = 1;
+        let store = TestSqsStore::new(queue, vec![Vec::new(), vec![message(42)]]);
+        let request =
+            resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
+
+        let response = receive_message(&request, &store)
+            .await
+            .expect("receive message should succeed");
+
+        let body = parse_json_body(&response);
+        let messages = body["Messages"]
+            .as_array()
+            .expect("Messages should be an array");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["MessageId"], "msg-123");
+        assert!(store.receive_calls() >= 2);
     }
 }

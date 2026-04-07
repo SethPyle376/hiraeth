@@ -17,6 +17,7 @@ async fn main() {
         .try_deserialize::<hiraeth_core::Config>()
         .expect("Failed to load configuration");
     println!("Starting Hiraeth with config: {:?}", config);
+
     let app = App::new(&config).await;
     serve::serve(
         (
