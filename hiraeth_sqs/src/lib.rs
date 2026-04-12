@@ -1,100 +1,18 @@
+use crate::error::render_result;
 use async_trait::async_trait;
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_core::ApiError;
 use hiraeth_router::{Service, ServiceResponse};
-use hiraeth_store::{StoreError, sqs::SqsStore};
-use serde::Serialize;
+use hiraeth_store::sqs::SqsStore;
 
 mod change_message_visibility;
 mod delete_message;
+mod error;
 mod queue;
 mod queue_attributes;
 mod receive_message;
 mod send_message;
 mod util;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SqsError {
-    QueueNotFound(String, String, String),
-    StoreError(StoreError),
-    BadRequest(String),
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct SqsErrorBody {
-    #[serde(rename = "__type")]
-    error_type: String,
-    message: String,
-}
-
-impl SqsError {
-    fn into_response(self) -> ServiceResponse {
-        match self {
-            SqsError::QueueNotFound(_, _, _) => sqs_error_response(
-                400,
-                "AWS.SimpleQueueService.NonExistentQueue;Sender",
-                "com.amazonaws.sqs#QueueDoesNotExist",
-                "The specified queue does not exist.",
-            ),
-            SqsError::BadRequest(message) => sqs_error_response(
-                400,
-                "AWS.SimpleQueueService.InvalidParameterValue;Sender",
-                "com.amazonaws.sqs#InvalidParameterValue",
-                &message,
-            ),
-            SqsError::StoreError(error) => sqs_error_response(
-                500,
-                "AWS.SimpleQueueService.InternalError;Receiver",
-                "com.amazonaws.sqs#InternalError",
-                &format!("Internal SQS store error: {:?}", error),
-            ),
-        }
-    }
-}
-
-fn sqs_error_response(
-    status_code: u16,
-    query_error: &str,
-    error_type: &str,
-    message: &str,
-) -> ServiceResponse {
-    let request_id = uuid::Uuid::new_v4().to_string();
-    let body = serde_json::to_vec(&SqsErrorBody {
-        error_type: error_type.to_string(),
-        message: message.to_string(),
-    })
-    .unwrap_or_default();
-
-    ServiceResponse {
-        status_code,
-        headers: vec![
-            (
-                "content-type".to_string(),
-                "application/x-amz-json-1.0".to_string(),
-            ),
-            ("x-amzn-requestid".to_string(), request_id),
-            ("x-amzn-query-error".to_string(), query_error.to_string()),
-        ],
-        body,
-    }
-}
-
-impl From<SqsError> for ApiError {
-    fn from(value: SqsError) -> ApiError {
-        match value {
-            SqsError::QueueNotFound(name, region, account) => ApiError::BadRequest(format!(
-                "Queue not found: Name: {}, Region: {}, Account: {}",
-                name, region, account
-            )),
-            SqsError::StoreError(sqs_store_error) => {
-                ApiError::InternalServerError(format!("SQS store error: {:?}", sqs_store_error))
-            }
-            SqsError::BadRequest(error) => {
-                ApiError::BadRequest(format!("SQS Bad Request: {:?}", error))
-            }
-        }
-    }
-}
 
 pub struct SqsService<S: SqsStore> {
     store: S,
@@ -119,59 +37,49 @@ where
         &self,
         request: ResolvedRequest,
     ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
-        match request.request.headers.get("x-amz-target") {
-            Some(target) => match target.as_str() {
-                "AmazonSQS.CreateQueue" => queue::create_queue(&request, &self.store)
-                    .await
-                    .or_else(|error| Ok(error.into_response())),
-                "AmazonSQS.DeleteQueue" => queue::delete_queue(&request, &self.store)
-                    .await
-                    .or_else(|error| Ok(error.into_response())),
-                "AmazonSQS.GetQueueUrl" => queue::get_queue_url(&request, &self.store)
-                    .await
-                    .or_else(|error| Ok(error.into_response())),
-                "AmazonSQS.SendMessage" => send_message::send_message(&request, &self.store)
-                    .await
-                    .or_else(|error| Ok(error.into_response())),
+        let result = match request.request.headers.get("x-amz-target") {
+            Some(target) => Ok(match target.as_str() {
+                "AmazonSQS.CreateQueue" => {
+                    render_result(queue::create_queue(&request, &self.store).await)
+                }
+                "AmazonSQS.DeleteQueue" => {
+                    render_result(queue::delete_queue(&request, &self.store).await)
+                }
+                "AmazonSQS.GetQueueUrl" => {
+                    render_result(queue::get_queue_url(&request, &self.store).await)
+                }
+                "AmazonSQS.SendMessage" => {
+                    render_result(send_message::send_message(&request, &self.store).await)
+                }
                 "AmazonSQS.SendMessageBatch" => {
-                    send_message::send_message_batch(&request, &self.store)
-                        .await
-                        .or_else(|error| Ok(error.into_response()))
+                    render_result(send_message::send_message_batch(&request, &self.store).await)
                 }
                 "AmazonSQS.ReceiveMessage" => {
-                    receive_message::receive_message(&request, &self.store)
-                        .await
-                        .or_else(|error| Ok(error.into_response()))
+                    render_result(receive_message::receive_message(&request, &self.store).await)
                 }
-                "AmazonSQS.GetQueueAttributes" => {
-                    queue_attributes::get_queue_attributes(&request, &self.store)
-                        .await
-                        .or_else(|error| Ok(error.into_response()))
+                "AmazonSQS.GetQueueAttributes" => render_result(
+                    queue_attributes::get_queue_attributes(&request, &self.store).await,
+                ),
+                "AmazonSQS.DeleteMessage" => {
+                    render_result(delete_message::delete_message(&request, &self.store).await)
                 }
-                "AmazonSQS.DeleteMessage" => delete_message::delete_message(&request, &self.store)
-                    .await
-                    .or_else(|error| Ok(error.into_response())),
                 "AmazonSQS.DeleteMessageBatch" => {
-                    delete_message::delete_message_batch(&request, &self.store)
-                        .await
-                        .or_else(|error| Ok(error.into_response()))
+                    render_result(delete_message::delete_message_batch(&request, &self.store).await)
                 }
-                "AmazonSQS.ChangeMessageVisibility" => {
+                "AmazonSQS.ChangeMessageVisibility" => render_result(
                     change_message_visibility::change_message_visibility(&request, &self.store)
-                        .await
-                        .or_else(|error| Ok(error.into_response()))
-                }
-                _ => {
-                    return Err(ApiError::NotFound(format!(
-                        "Unknown SQS action: {}",
-                        target
-                    )));
-                }
-            },
+                        .await,
+                ),
+                op => render_result::<ServiceResponse>(Err(error::SqsError::UnsupportedOperation(
+                    op.to_string(),
+                ))),
+            }),
             _ => Err(ApiError::NotFound(
                 "Missing x-amz-target header".to_string(),
             )),
-        }
+        };
+
+        result
     }
 }
 
@@ -192,7 +100,8 @@ mod tests {
     };
     use serde_json::Value;
 
-    use super::{Service, ServiceResponse, SqsError, SqsService, queue};
+    use super::{Service, ServiceResponse, SqsService, queue};
+    use crate::error::SqsError;
 
     #[derive(Default)]
     struct TestSqsStore {
@@ -400,7 +309,7 @@ mod tests {
 
         let result = queue::get_queue_url(&request, &store).await;
 
-        assert!(matches!(result, Err(SqsError::QueueNotFound(_, _, _))));
+        assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
 
     #[tokio::test]
@@ -455,13 +364,24 @@ mod tests {
         let service = SqsService::new(TestSqsStore::default());
         let request = resolved_request(Some("AmazonSQS.DoesNotExist"), "{}");
 
-        let result = service.handle_request(request).await;
+        let response = service
+            .handle_request(request)
+            .await
+            .expect("unknown SQS action should render an SQS error response");
 
-        assert!(matches!(
-            result,
-            Err(hiraeth_core::ApiError::NotFound(message))
-                if message == "Unknown SQS action: AmazonSQS.DoesNotExist"
-        ));
+        assert_eq!(response.status_code, 400);
+        assert_eq!(
+            response
+                .headers
+                .iter()
+                .find(|(name, _)| name == "x-amzn-query-error")
+                .map(|(_, value)| value.as_str()),
+            Some("AWS.SimpleQueueService.UnsupportedOperation;Sender")
+        );
+
+        let body = parse_json_body(&response);
+        assert_eq!(body["__type"], "com.amazonaws.sqs#UnsupportedOperation");
+        assert_eq!(body["message"], "AmazonSQS.DoesNotExist");
     }
 
     #[tokio::test]

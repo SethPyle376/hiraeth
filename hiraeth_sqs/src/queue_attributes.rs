@@ -5,7 +5,7 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use crate::{SqsError, util};
+use crate::{error::SqsError, util};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -38,14 +38,8 @@ pub(crate) async fn get_queue_attributes<S: SqsStore>(
     let queue = store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?
-        .ok_or_else(|| {
-            SqsError::QueueNotFound(
-                queue_id.name.clone(),
-                queue_id.region.clone(),
-                queue_id.account_id.clone(),
-            )
-        })?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
 
     if is_requested_attribute("Policy", &attributes_request.attribute_names) {
         attributes.insert("Policy".to_string(), "{}".to_string());
@@ -79,7 +73,7 @@ pub(crate) async fn get_queue_attributes<S: SqsStore>(
         let message_count = store
             .get_message_count(queue.id)
             .await
-            .map_err(|e| SqsError::StoreError(e))?;
+            .map_err(|e| SqsError::InternalError(e.to_string()))?;
         attributes.insert(
             "ApproximateNumberOfMessages".to_string(),
             message_count.to_string(),
@@ -93,11 +87,11 @@ pub(crate) async fn get_queue_attributes<S: SqsStore>(
         let visible_message_count = store
             .get_visible_message_count(queue.id)
             .await
-            .map_err(|e| SqsError::StoreError(e))?;
+            .map_err(|e| SqsError::InternalError(e.to_string()))?;
         let message_count = store
             .get_message_count(queue.id)
             .await
-            .map_err(|e| SqsError::StoreError(e))?;
+            .map_err(|e| SqsError::InternalError(e.to_string()))?;
         attributes.insert(
             "ApproximateNumberOfMessagesNotVisible".to_string(),
             (message_count - visible_message_count).to_string(),
@@ -135,7 +129,7 @@ pub(crate) async fn get_queue_attributes<S: SqsStore>(
         let delayed_message_count = store
             .get_messages_delayed_count(queue.id)
             .await
-            .map_err(|e| SqsError::StoreError(e))?;
+            .map_err(|e| SqsError::InternalError(e.to_string()))?;
         attributes.insert(
             "ApproximateNumberOfMessagesDelayed".to_string(),
             delayed_message_count.to_string(),
@@ -198,7 +192,7 @@ mod tests {
     use serde_json::Value;
 
     use super::get_queue_attributes;
-    use crate::SqsError;
+    use crate::error::SqsError;
 
     struct TestSqsStore {
         queue: Option<SqsQueue>,
@@ -223,11 +217,15 @@ mod tests {
             region: &str,
             account_id: &str,
         ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok(self.queue.as_ref().filter(|queue| {
-                queue.name == queue_name
-                    && queue.region == region
-                    && queue.account_id == account_id
-            }).cloned())
+            Ok(self
+                .queue
+                .as_ref()
+                .filter(|queue| {
+                    queue.name == queue_name
+                        && queue.region == region
+                        && queue.account_id == account_id
+                })
+                .cloned())
         }
 
         async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
@@ -396,10 +394,6 @@ mod tests {
 
         let result = get_queue_attributes(&request, &store).await;
 
-        assert!(matches!(
-            result,
-            Err(SqsError::QueueNotFound(name, region, account))
-                if name == "orders" && region == "us-east-1" && account == "123456789012"
-        ));
+        assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
 }

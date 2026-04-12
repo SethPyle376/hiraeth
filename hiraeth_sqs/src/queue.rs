@@ -5,7 +5,7 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use crate::{SqsError, util};
+use crate::{error::SqsError, util};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -79,7 +79,7 @@ pub(crate) async fn create_queue<S: SqsStore>(
                 body: serde_json::to_vec(&response).unwrap_or_default(),
             }
         })
-        .map_err(|e| SqsError::StoreError(e))
+        .map_err(|e| SqsError::InternalError(e.to_string()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -105,14 +105,8 @@ pub(crate) async fn delete_queue<S: SqsStore>(
     let queue = store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?
-        .ok_or_else(|| {
-            SqsError::QueueNotFound(
-                queue_id.name.clone(),
-                queue_id.region.clone(),
-                queue_id.account_id.clone(),
-            )
-        })?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
 
     store
         .delete_queue(queue.id)
@@ -122,7 +116,7 @@ pub(crate) async fn delete_queue<S: SqsStore>(
             headers: vec![],
             body: vec![],
         })
-        .map_err(|e| SqsError::StoreError(e))
+        .map_err(|e| SqsError::InternalError(e.to_string()))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,7 +150,7 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
     let queue = store
         .get_queue(&request_body.queue_name, &request.region, &account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?;
 
     match queue {
         Some(queue) => {
@@ -174,11 +168,7 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
                 body: serde_json::to_vec(&response).unwrap_or_default(),
             })
         }
-        None => Err(SqsError::QueueNotFound(
-            request_body.queue_name,
-            request.region.clone(),
-            account_id,
-        )),
+        None => Err(SqsError::QueueNotFound),
     }
 }
 
@@ -200,7 +190,7 @@ mod tests {
     };
 
     use super::delete_queue;
-    use crate::SqsError;
+    use crate::error::SqsError;
 
     #[derive(Default)]
     struct TestSqsStore {
@@ -220,7 +210,9 @@ mod tests {
         }
 
         fn deleted_queue_ids(&self) -> MutexGuard<'_, Vec<i64>> {
-            self.deleted_queue_ids.lock().expect("deleted queue ids mutex")
+            self.deleted_queue_ids
+                .lock()
+                .expect("deleted queue ids mutex")
         }
     }
 
@@ -378,10 +370,6 @@ mod tests {
 
         let result = delete_queue(&request, &store).await;
 
-        assert!(matches!(
-            result,
-            Err(SqsError::QueueNotFound(name, region, account))
-                if name == "orders" && region == "us-east-1" && account == "123456789012"
-        ));
+        assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
 }

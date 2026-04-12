@@ -4,7 +4,8 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use crate::{SqsError, util};
+use crate::error::SqsError;
+use crate::util;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -31,14 +32,8 @@ pub(crate) async fn change_message_visibility<S: SqsStore>(
     let queue = store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?
-        .ok_or_else(|| {
-            SqsError::QueueNotFound(
-                queue_id.name.clone(),
-                queue_id.region.clone(),
-                queue_id.account_id.clone(),
-            )
-        })?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
 
     store
         .set_message_visible_at(
@@ -47,7 +42,7 @@ pub(crate) async fn change_message_visibility<S: SqsStore>(
             (Utc::now() + Duration::seconds(change_request.visibility_timeout as i64)).naive_utc(),
         )
         .await
-        .map_err(|e| SqsError::StoreError(e))?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?;
 
     Ok(ServiceResponse {
         status_code: 200,
@@ -74,7 +69,7 @@ mod tests {
     };
 
     use super::change_message_visibility;
-    use crate::SqsError;
+    use crate::error::SqsError;
 
     struct TestSqsStore {
         queue: Option<SqsQueue>,
@@ -112,11 +107,15 @@ mod tests {
             region: &str,
             account_id: &str,
         ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok(self.queue.as_ref().filter(|queue| {
-                queue.name == queue_name
-                    && queue.region == region
-                    && queue.account_id == account_id
-            }).cloned())
+            Ok(self
+                .queue
+                .as_ref()
+                .filter(|queue| {
+                    queue.name == queue_name
+                        && queue.region == region
+                        && queue.account_id == account_id
+                })
+                .cloned())
         }
 
         async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
@@ -266,13 +265,6 @@ mod tests {
             .err()
             .expect("missing queue should error");
 
-        assert_eq!(
-            error,
-            SqsError::QueueNotFound(
-                "orders".to_string(),
-                "us-east-1".to_string(),
-                "123456789012".to_string()
-            )
-        );
+        assert_eq!(error, SqsError::QueueNotFound);
     }
 }

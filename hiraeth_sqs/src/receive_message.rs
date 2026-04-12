@@ -6,7 +6,7 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::{StoreError, sqs::SqsStore};
 use serde::{Deserialize, Serialize};
 
-use crate::{SqsError, util};
+use crate::{error::SqsError, util};
 
 fn default_max_number_of_messages() -> i64 {
     1
@@ -69,14 +69,8 @@ pub(crate) async fn receive_message<S: SqsStore>(
     let queue = store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?
-        .ok_or_else(|| {
-            SqsError::QueueNotFound(
-                queue_id.name.clone(),
-                queue_id.region.clone(),
-                queue_id.account_id.clone(),
-            )
-        })?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
 
     let visibility_timeout_seconds = receive_request
         .visibility_timeout
@@ -96,7 +90,7 @@ pub(crate) async fn receive_message<S: SqsStore>(
                 visibility_timeout_seconds,
             )
             .await
-            .map_err(|e| SqsError::StoreError(e))?;
+            .map_err(|e| SqsError::InternalError(e.to_string()))?;
 
         let received_messages = messages
             .into_iter()
@@ -222,10 +216,10 @@ fn parse_message_attributes(
 ) -> Result<BTreeMap<String, util::MessageAttributeValue>, SqsError> {
     match message.message_attributes.as_deref() {
         Some(raw) if !raw.is_empty() => serde_json::from_str(raw).map_err(|e| {
-            SqsError::StoreError(StoreError::StorageFailure(format!(
+            SqsError::InternalError(format!(
                 "failed to parse stored message attributes for message {}: {}",
                 message.message_id, e
-            )))
+            ))
         }),
         _ => Ok(BTreeMap::new()),
     }
@@ -279,7 +273,7 @@ mod tests {
     use serde_json::Value;
 
     use super::receive_message;
-    use crate::SqsError;
+    use crate::error::SqsError;
 
     struct TestSqsStore {
         queue: SqsQueue,
@@ -571,11 +565,7 @@ mod tests {
 
         let result = receive_message(&request, &store).await;
 
-        assert!(matches!(
-            result,
-            Err(SqsError::QueueNotFound(name, region, account))
-                if name == "orders" && region == "us-east-1" && account == "123456789012"
-        ));
+        assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
 
     #[tokio::test]

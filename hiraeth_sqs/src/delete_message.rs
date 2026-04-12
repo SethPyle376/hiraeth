@@ -3,7 +3,7 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use crate::{SqsError, util};
+use crate::{error::SqsError, util};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -29,19 +29,13 @@ pub(crate) async fn delete_message<S: SqsStore>(
     let queue = store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?
-        .ok_or_else(|| {
-            SqsError::QueueNotFound(
-                queue_id.name.clone(),
-                queue_id.region.clone(),
-                queue_id.account_id.clone(),
-            )
-        })?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
 
     store
         .delete_message(queue.id, &delete_request.receipt_handle)
         .await
-        .map_err(|e| SqsError::StoreError(e))?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?;
 
     Ok(ServiceResponse {
         status_code: 200,
@@ -103,14 +97,8 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
     let queue = store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?
-        .ok_or_else(|| {
-            SqsError::QueueNotFound(
-                queue_id.name.clone(),
-                queue_id.region.clone(),
-                queue_id.account_id.clone(),
-            )
-        })?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
 
     let mut successful = Vec::new();
     let mut failed = Vec::new();
@@ -163,7 +151,7 @@ mod tests {
     use serde_json::Value;
 
     use super::{delete_message, delete_message_batch};
-    use crate::SqsError;
+    use crate::error::SqsError;
 
     struct TestSqsStore {
         queue: Option<SqsQueue>,
@@ -214,11 +202,15 @@ mod tests {
             region: &str,
             account_id: &str,
         ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok(self.queue.as_ref().filter(|queue| {
-                queue.name == queue_name
-                    && queue.region == region
-                    && queue.account_id == account_id
-            }).cloned())
+            Ok(self
+                .queue
+                .as_ref()
+                .filter(|queue| {
+                    queue.name == queue_name
+                        && queue.region == region
+                        && queue.account_id == account_id
+                })
+                .cloned())
         }
 
         async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
@@ -367,16 +359,12 @@ mod tests {
             }"#,
         );
 
-        let error = delete_message(&request, &store).await.err().expect("missing queue should error");
+        let error = delete_message(&request, &store)
+            .await
+            .err()
+            .expect("missing queue should error");
 
-        assert_eq!(
-            error,
-            SqsError::QueueNotFound(
-                "orders".to_string(),
-                "us-east-1".to_string(),
-                "123456789012".to_string()
-            )
-        );
+        assert_eq!(error, SqsError::QueueNotFound);
     }
 
     #[tokio::test]
@@ -412,10 +400,7 @@ mod tests {
         let deleted = store.deleted_messages();
         assert_eq!(
             &*deleted,
-            &[
-                (42, "receipt-1".to_string()),
-                (42, "receipt-3".to_string())
-            ]
+            &[(42, "receipt-1".to_string()), (42, "receipt-3".to_string())]
         );
     }
 }

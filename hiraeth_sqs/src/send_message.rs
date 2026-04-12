@@ -6,7 +6,7 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::{SqsMessage, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use crate::{SqsError, util};
+use crate::{error::SqsError, util};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -54,14 +54,8 @@ pub(crate) async fn send_message<S: SqsStore>(
     let queue = store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?
-        .ok_or_else(|| {
-            SqsError::QueueNotFound(
-                queue_id.name.clone(),
-                queue_id.region.clone(),
-                queue_id.account_id.clone(),
-            )
-        })?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
 
     let visible_at = request.date.naive_utc()
         + chrono::Duration::seconds(request_body.delay_seconds.unwrap_or(queue.delay_seconds));
@@ -111,7 +105,7 @@ pub(crate) async fn send_message<S: SqsStore>(
     store
         .send_message(&message)
         .await
-        .map_err(|e| SqsError::StoreError(e))?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?;
 
     let response = SendMessageResponse {
         md5_of_message_attributes,
@@ -199,14 +193,8 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
     let queue = store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
-        .map_err(|e| SqsError::StoreError(e))?
-        .ok_or_else(|| {
-            SqsError::QueueNotFound(
-                queue_id.name.clone(),
-                queue_id.region.clone(),
-                queue_id.account_id.clone(),
-            )
-        })?;
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
 
     let expires_at = request.date.naive_utc()
         + chrono::Duration::seconds(queue.message_retention_period_seconds);
@@ -266,12 +254,12 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
                     sender_fault: true,
                 })?;
 
-        let message = SqsMessage {
-            message_id: uuid::Uuid::new_v4().to_string(),
-            queue_id: queue.id,
-            body: entry.message_body.clone(),
-            message_attributes,
-            aws_trace_header,
+            let message = SqsMessage {
+                message_id: uuid::Uuid::new_v4().to_string(),
+                queue_id: queue.id,
+                body: entry.message_body.clone(),
+                message_attributes,
+                aws_trace_header,
                 sent_at: request.date.naive_utc(),
                 visible_at,
                 expires_at,
@@ -325,7 +313,10 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::{BTreeMap, HashMap}, sync::Mutex};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        sync::Mutex,
+    };
 
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
@@ -339,7 +330,10 @@ mod tests {
     use serde_json::Value;
 
     use super::{send_message, send_message_batch};
-    use crate::{SqsError, util::{self, MessageAttributeValue}};
+    use crate::{
+        error::SqsError,
+        util::{self, MessageAttributeValue},
+    };
 
     #[derive(Default)]
     struct TestSqsStore {
@@ -608,10 +602,7 @@ mod tests {
             },
         )]))
         .expect("system attributes should hash");
-        assert_eq!(
-            response_body["MD5OfMessageSystemAttributes"],
-            expected_md5
-        );
+        assert_eq!(response_body["MD5OfMessageSystemAttributes"], expected_md5);
 
         let sent_messages = store.sent_messages.lock().expect("sent messages mutex");
         assert_eq!(
@@ -632,11 +623,7 @@ mod tests {
 
         let result = send_message(&request, &store).await;
 
-        assert!(matches!(
-            result,
-            Err(SqsError::QueueNotFound(name, region, account))
-                if name == "orders" && region == "us-east-1" && account == "123456789012"
-        ));
+        assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
 
     #[test]

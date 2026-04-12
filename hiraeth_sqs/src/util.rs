@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-use crate::SqsError;
+use crate::error::SqsError;
 
 pub(crate) struct QueueId {
     pub name: String,
@@ -97,9 +97,11 @@ pub(crate) fn extract_aws_trace_header(
         ));
     }
 
-    trace_header.string_value.clone().ok_or_else(|| {
-        SqsError::BadRequest("AWSTraceHeader is missing StringValue".to_string())
-    }).map(Some)
+    trace_header
+        .string_value
+        .clone()
+        .ok_or_else(|| SqsError::BadRequest("AWSTraceHeader is missing StringValue".to_string()))
+        .map(Some)
 }
 
 fn append_length_prefixed_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) {
