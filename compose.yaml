@@ -1,0 +1,17 @@
+services:
+  hiraeth:
+    build:
+      context: .
+    image: hiraeth:static
+    stop_grace_period: 2s
+    environment:
+      HIRAETH_HOST: 0.0.0.0
+      HIRAETH_PORT: 4566
+      HIRAETH_DATABASE_URL: sqlite:///data/db.sqlite
+    ports:
+      - "4566:4566"
+    volumes:
+      - hiraeth-data:/data
+
+volumes:
+  hiraeth-data:

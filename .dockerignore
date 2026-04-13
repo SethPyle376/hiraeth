@@ -1,0 +1,17 @@
+.git/
+.idea/
+.vscode/
+
+target/
+**/target/
+
+.DS_Store
+.env
+.env.*
+
+data/
+db.sqlite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.local/
