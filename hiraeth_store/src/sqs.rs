@@ -47,6 +47,14 @@ pub trait SqsStore {
     async fn get_message_count(&self, queue_id: i64) -> Result<i64, StoreError>;
     async fn get_visible_message_count(&self, queue_id: i64) -> Result<i64, StoreError>;
     async fn get_messages_delayed_count(&self, queue_id: i64) -> Result<i64, StoreError>;
+    async fn list_queues(
+        &self,
+        region: &str,
+        account_id: &str,
+        queue_name_prefix: Option<&str>,
+        max_results: Option<i64>,
+        next_token: Option<&str>,
+    ) -> Result<Vec<SqsQueue>, StoreError>;
 
     // message ops
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError>;

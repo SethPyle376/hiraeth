@@ -234,6 +234,41 @@ impl SqsStore for SqliteSqsStore {
         .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
         Ok(())
     }
+
+    async fn list_queues(
+        &self,
+        region: &str,
+        account_id: &str,
+        queue_name_prefix: Option<&str>,
+        max_results: Option<i64>,
+        next_token: Option<&str>,
+    ) -> Result<Vec<SqsQueue>, StoreError> {
+        let limit = max_results.unwrap_or(1000);
+        let result = sqlx::query_as!(
+            SqsQueue,
+            "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds, created_at
+            FROM sqs_queues
+            WHERE region = ?
+            AND account_id = ?
+            AND (? IS NULL OR substr(name, 1, length(?)) = ?)
+            AND (? IS NULL OR name > ?)
+            ORDER BY name
+            LIMIT ?",
+            region,
+            account_id,
+            queue_name_prefix,
+            queue_name_prefix,
+            queue_name_prefix,
+            next_token,
+            next_token,
+            limit
+        )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -262,11 +297,15 @@ mod tests {
     }
 
     fn queue(name: &str, region: &str) -> SqsQueue {
+        queue_for_account(name, region, "123456789012")
+    }
+
+    fn queue_for_account(name: &str, region: &str, account_id: &str) -> SqsQueue {
         SqsQueue {
             id: 0,
             name: name.to_string(),
             region: region.to_string(),
-            account_id: "123456789012".to_string(),
+            account_id: account_id.to_string(),
             queue_type: "standard".to_string(),
             visibility_timeout_seconds: 30,
             delay_seconds: 0,
@@ -274,6 +313,10 @@ mod tests {
             receive_message_wait_time_seconds: 0,
             created_at: Utc::now().naive_utc(),
         }
+    }
+
+    fn queue_names(queues: Vec<SqsQueue>) -> Vec<String> {
+        queues.into_iter().map(|queue| queue.name).collect()
     }
 
     fn message(
@@ -408,6 +451,106 @@ mod tests {
             .expect("queue lookup should succeed");
 
         assert!(queue.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_queues_filters_by_region_account_and_prefix() {
+        let (_temp_dir, store) = test_store().await;
+
+        for queue in [
+            queue("orders-dev", "us-east-1"),
+            queue("orders-prod", "us-east-1"),
+            queue("billing-prod", "us-east-1"),
+            queue("orders-west", "us-west-2"),
+            queue_for_account("orders-other-account", "us-east-1", "999999999999"),
+        ] {
+            store
+                .create_queue(queue)
+                .await
+                .expect("queue insert should succeed");
+        }
+
+        let queues = store
+            .list_queues("us-east-1", "123456789012", Some("orders-"), None, None)
+            .await
+            .expect("list queues should succeed");
+
+        assert_eq!(queue_names(queues), vec!["orders-dev", "orders-prod"]);
+    }
+
+    #[tokio::test]
+    async fn list_queues_limits_results_in_name_order() {
+        let (_temp_dir, store) = test_store().await;
+
+        for queue in [
+            queue("zebra", "us-east-1"),
+            queue("alpha", "us-east-1"),
+            queue("middle", "us-east-1"),
+        ] {
+            store
+                .create_queue(queue)
+                .await
+                .expect("queue insert should succeed");
+        }
+
+        let queues = store
+            .list_queues("us-east-1", "123456789012", None, Some(2), None)
+            .await
+            .expect("list queues should succeed");
+
+        assert_eq!(queue_names(queues), vec!["alpha", "middle"]);
+    }
+
+    #[tokio::test]
+    async fn list_queues_uses_next_token_as_name_cursor() {
+        let (_temp_dir, store) = test_store().await;
+
+        for queue in [
+            queue("orders-001", "us-east-1"),
+            queue("orders-002", "us-east-1"),
+            queue("orders-003", "us-east-1"),
+            queue("payments-001", "us-east-1"),
+        ] {
+            store
+                .create_queue(queue)
+                .await
+                .expect("queue insert should succeed");
+        }
+
+        let queues = store
+            .list_queues(
+                "us-east-1",
+                "123456789012",
+                Some("orders-"),
+                Some(10),
+                Some("orders-001"),
+            )
+            .await
+            .expect("list queues should succeed");
+
+        assert_eq!(queue_names(queues), vec!["orders-002", "orders-003"]);
+    }
+
+    #[tokio::test]
+    async fn list_queues_treats_underscore_prefix_literally() {
+        let (_temp_dir, store) = test_store().await;
+
+        for queue in [
+            queue("orders_dev", "us-east-1"),
+            queue("orders-prod", "us-east-1"),
+        ] {
+            store
+                .create_queue(queue)
+                .await
+                .expect("queue insert should succeed");
+        }
+
+        let queues = store
+            .list_queues("us-east-1", "123456789012", Some("orders_"), None, None)
+            .await
+            .expect("list queues should succeed");
+
+        assert_eq!(queue_names(queues), vec!["orders_dev"]);
     }
 
     #[tokio::test]
@@ -686,13 +829,12 @@ mod tests {
             .await
             .expect("delete message should succeed");
 
-        let remaining = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ?",
-        )
-        .bind(queue.id)
-        .fetch_one(&store.pool)
-        .await
-        .expect("message count query should succeed");
+        let remaining =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ?")
+                .bind(queue.id)
+                .fetch_one(&store.pool)
+                .await
+                .expect("message count query should succeed");
 
         let remaining_message_id = sqlx::query_scalar::<_, String>(
             "SELECT message_id FROM sqs_messages WHERE queue_id = ?",

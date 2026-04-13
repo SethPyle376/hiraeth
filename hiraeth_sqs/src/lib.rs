@@ -1,4 +1,8 @@
-use crate::error::render_result;
+use crate::{
+    change_message_visibility::*, delete_message::*, error::render_result,
+    list_queues::list_queues, queue::*, queue_attributes::get_queue_attributes, receive_message::*,
+    send_message::*,
+};
 use async_trait::async_trait;
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_core::ApiError;
@@ -8,6 +12,7 @@ use hiraeth_store::sqs::SqsStore;
 mod change_message_visibility;
 mod delete_message;
 mod error;
+mod list_queues;
 mod queue;
 mod queue_attributes;
 mod receive_message;
@@ -39,47 +44,27 @@ where
     ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
         let result = match request.request.headers.get("x-amz-target") {
             Some(target) => Ok(match target.as_str() {
-                "AmazonSQS.CreateQueue" => {
-                    render_result(queue::create_queue(&request, &self.store).await)
+                "AmazonSQS.CreateQueue" => create_queue(&request, &self.store).await,
+                "AmazonSQS.DeleteQueue" => delete_queue(&request, &self.store).await,
+                "AmazonSQS.ListQueues" => list_queues(&request, &self.store).await,
+                "AmazonSQS.GetQueueUrl" => get_queue_url(&request, &self.store).await,
+                "AmazonSQS.SendMessage" => send_message(&request, &self.store).await,
+                "AmazonSQS.SendMessageBatch" => send_message_batch(&request, &self.store).await,
+                "AmazonSQS.ReceiveMessage" => receive_message(&request, &self.store).await,
+                "AmazonSQS.GetQueueAttributes" => get_queue_attributes(&request, &self.store).await,
+                "AmazonSQS.DeleteMessage" => delete_message(&request, &self.store).await,
+                "AmazonSQS.DeleteMessageBatch" => delete_message_batch(&request, &self.store).await,
+                "AmazonSQS.ChangeMessageVisibility" => {
+                    change_message_visibility(&request, &self.store).await
                 }
-                "AmazonSQS.DeleteQueue" => {
-                    render_result(queue::delete_queue(&request, &self.store).await)
-                }
-                "AmazonSQS.GetQueueUrl" => {
-                    render_result(queue::get_queue_url(&request, &self.store).await)
-                }
-                "AmazonSQS.SendMessage" => {
-                    render_result(send_message::send_message(&request, &self.store).await)
-                }
-                "AmazonSQS.SendMessageBatch" => {
-                    render_result(send_message::send_message_batch(&request, &self.store).await)
-                }
-                "AmazonSQS.ReceiveMessage" => {
-                    render_result(receive_message::receive_message(&request, &self.store).await)
-                }
-                "AmazonSQS.GetQueueAttributes" => render_result(
-                    queue_attributes::get_queue_attributes(&request, &self.store).await,
-                ),
-                "AmazonSQS.DeleteMessage" => {
-                    render_result(delete_message::delete_message(&request, &self.store).await)
-                }
-                "AmazonSQS.DeleteMessageBatch" => {
-                    render_result(delete_message::delete_message_batch(&request, &self.store).await)
-                }
-                "AmazonSQS.ChangeMessageVisibility" => render_result(
-                    change_message_visibility::change_message_visibility(&request, &self.store)
-                        .await,
-                ),
-                op => render_result::<ServiceResponse>(Err(error::SqsError::UnsupportedOperation(
-                    op.to_string(),
-                ))),
+                op => Err(error::SqsError::UnsupportedOperation(op.to_string())),
             }),
             _ => Err(ApiError::NotFound(
                 "Missing x-amz-target header".to_string(),
             )),
         };
 
-        result
+        result.map(|op_result| render_result(op_result))
     }
 }
 
@@ -166,6 +151,17 @@ mod tests {
         }
 
         async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
+            unimplemented!()
+        }
+
+        async fn list_queues(
+            &self,
+            _region: &str,
+            _account_id: &str,
+            _queue_name_prefix: Option<&str>,
+            _max_results: Option<i64>,
+            _next_token: Option<&str>,
+        ) -> Result<Vec<SqsQueue>, StoreError> {
             unimplemented!()
         }
 

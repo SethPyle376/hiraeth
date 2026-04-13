@@ -261,6 +261,17 @@ mod tests {
             unimplemented!()
         }
 
+        async fn list_queues(
+            &self,
+            _region: &str,
+            _account_id: &str,
+            _queue_name_prefix: Option<&str>,
+            _max_results: Option<i64>,
+            _next_token: Option<&str>,
+        ) -> Result<Vec<SqsQueue>, StoreError> {
+            unimplemented!()
+        }
+
         async fn send_message(&self, _message: &SqsMessage) -> Result<(), StoreError> {
             unimplemented!()
         }
