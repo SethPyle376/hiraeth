@@ -174,134 +174,15 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        sync::{Mutex, MutexGuard},
-    };
+    use std::collections::HashMap;
 
-    use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
-    use hiraeth_store::{
-        StoreError,
-        principal::Principal,
-        sqs::{SqsMessage, SqsQueue, SqsStore},
-    };
+    use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
 
     use super::delete_queue;
     use crate::error::SqsError;
-
-    #[derive(Default)]
-    struct TestSqsStore {
-        queues: Mutex<HashMap<(String, String), SqsQueue>>,
-        deleted_queue_ids: Mutex<Vec<i64>>,
-    }
-
-    impl TestSqsStore {
-        fn with_queue(queue: SqsQueue) -> Self {
-            let mut queues = HashMap::new();
-            queues.insert((queue.name.clone(), queue.region.clone()), queue);
-
-            Self {
-                queues: Mutex::new(queues),
-                deleted_queue_ids: Mutex::new(Vec::new()),
-            }
-        }
-
-        fn deleted_queue_ids(&self) -> MutexGuard<'_, Vec<i64>> {
-            self.deleted_queue_ids
-                .lock()
-                .expect("deleted queue ids mutex")
-        }
-    }
-
-    #[async_trait]
-    impl SqsStore for TestSqsStore {
-        async fn create_queue(&self, _queue: SqsQueue) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_queue(&self, queue_id: i64) -> Result<(), StoreError> {
-            self.deleted_queue_ids
-                .lock()
-                .expect("deleted queue ids mutex")
-                .push(queue_id);
-            Ok(())
-        }
-
-        async fn get_queue(
-            &self,
-            queue_name: &str,
-            region: &str,
-            account_id: &str,
-        ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok(self
-                .queues
-                .lock()
-                .expect("queues mutex")
-                .values()
-                .find(|queue| {
-                    queue.name == queue_name
-                        && queue.region == region
-                        && queue.account_id == account_id
-                })
-                .cloned())
-        }
-
-        async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_visible_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn list_queues(
-            &self,
-            _region: &str,
-            _account_id: &str,
-            _queue_name_prefix: Option<&str>,
-            _max_results: Option<i64>,
-            _next_token: Option<&str>,
-        ) -> Result<Vec<SqsQueue>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn send_message(&self, _message: &SqsMessage) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn receive_messages(
-            &self,
-            _queue_id: i64,
-            _max_number_of_messages: i64,
-            _visibility_timeout_seconds: u32,
-        ) -> Result<Vec<SqsMessage>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_message(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn set_message_visible_at(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-            _visible_at: chrono::NaiveDateTime,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-    }
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -358,7 +239,7 @@ mod tests {
 
     #[tokio::test]
     async fn delete_queue_deletes_existing_queue() {
-        let store = TestSqsStore::with_queue(queue());
+        let store = SqsTestStore::with_queue(queue());
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
@@ -370,12 +251,12 @@ mod tests {
         assert!(response.body.is_empty());
 
         let deleted = store.deleted_queue_ids();
-        assert_eq!(&*deleted, &[42]);
+        assert_eq!(deleted, vec![42]);
     }
 
     #[tokio::test]
     async fn delete_queue_returns_not_found_for_missing_queue() {
-        let store = TestSqsStore::default();
+        let store = SqsTestStore::default();
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 

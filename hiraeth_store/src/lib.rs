@@ -3,6 +3,8 @@ use std::fmt::Display;
 pub mod access_key_store;
 pub mod principal;
 pub mod sqs;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {

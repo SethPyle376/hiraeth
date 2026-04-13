@@ -313,20 +313,12 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{BTreeMap, HashMap},
-        sync::Mutex,
-    };
+    use std::collections::{BTreeMap, HashMap};
 
-    use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_router::ServiceResponse;
-    use hiraeth_store::{
-        StoreError,
-        principal::Principal,
-        sqs::{SqsMessage, SqsQueue, SqsStore},
-    };
+    use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
     use super::{send_message, send_message_batch};
@@ -334,108 +326,6 @@ mod tests {
         error::SqsError,
         util::{self, MessageAttributeValue},
     };
-
-    #[derive(Default)]
-    struct TestSqsStore {
-        queue: Mutex<Option<SqsQueue>>,
-        sent_messages: Mutex<Vec<SqsMessage>>,
-    }
-
-    impl TestSqsStore {
-        fn with_queue(queue: SqsQueue) -> Self {
-            Self {
-                queue: Mutex::new(Some(queue)),
-                sent_messages: Mutex::new(Vec::new()),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl SqsStore for TestSqsStore {
-        async fn create_queue(&self, _queue: SqsQueue) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_queue(&self, _queue_id: i64) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_queue(
-            &self,
-            queue_name: &str,
-            region: &str,
-            account_id: &str,
-        ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok(self
-                .queue
-                .lock()
-                .expect("queue mutex")
-                .as_ref()
-                .filter(|queue| {
-                    queue.name == queue_name
-                        && queue.region == region
-                        && queue.account_id == account_id
-                })
-                .cloned())
-        }
-
-        async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_visible_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn list_queues(
-            &self,
-            _region: &str,
-            _account_id: &str,
-            _queue_name_prefix: Option<&str>,
-            _max_results: Option<i64>,
-            _next_token: Option<&str>,
-        ) -> Result<Vec<SqsQueue>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError> {
-            self.sent_messages
-                .lock()
-                .expect("sent messages mutex")
-                .push(message.clone());
-            Ok(())
-        }
-
-        async fn receive_messages(
-            &self,
-            _queue_id: i64,
-            _max_number_of_messages: i64,
-            _visibility_timeout_seconds: u32,
-        ) -> Result<Vec<SqsMessage>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_message(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn set_message_visible_at(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-            _visible_at: chrono::NaiveDateTime,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-    }
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -505,7 +395,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_persists_message_and_returns_md5_values() {
-        let store = TestSqsStore::with_queue(queue());
+        let store = SqsTestStore::with_queue(queue());
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -537,7 +427,7 @@ mod tests {
         assert!(response_body["MessageId"].as_str().is_some());
         assert!(response_body["MD5OfMessageSystemAttributes"].is_null());
 
-        let sent_messages = store.sent_messages.lock().expect("sent messages mutex");
+        let sent_messages = store.sent_messages();
         assert_eq!(sent_messages.len(), 1);
         assert_eq!(sent_messages[0].queue_id, 42);
         assert_eq!(sent_messages[0].body, "hello world");
@@ -556,7 +446,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_uses_request_delay_over_queue_delay() {
-        let store = TestSqsStore::with_queue(queue());
+        let store = SqsTestStore::with_queue(queue());
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -572,7 +462,7 @@ mod tests {
         assert_eq!(response.status_code, 200);
         assert!(parse_json_body(&response)["MD5OfMessageAttributes"].is_null());
 
-        let sent_messages = store.sent_messages.lock().expect("sent messages mutex");
+        let sent_messages = store.sent_messages();
         assert_eq!(sent_messages.len(), 1);
         assert_eq!(
             sent_messages[0].visible_at,
@@ -585,7 +475,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_persists_aws_trace_header_and_returns_system_md5() {
-        let store = TestSqsStore::with_queue(queue());
+        let store = SqsTestStore::with_queue(queue());
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -615,7 +505,7 @@ mod tests {
         .expect("system attributes should hash");
         assert_eq!(response_body["MD5OfMessageSystemAttributes"], expected_md5);
 
-        let sent_messages = store.sent_messages.lock().expect("sent messages mutex");
+        let sent_messages = store.sent_messages();
         assert_eq!(
             sent_messages[0].aws_trace_header.as_deref(),
             Some("Root=1-abcdef12-0123456789abcdef01234567")
@@ -624,7 +514,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_returns_queue_not_found_for_unknown_queue() {
-        let store = TestSqsStore::default();
+        let store = SqsTestStore::default();
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -651,7 +541,7 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_batch_returns_sdk_compatible_response_shape() {
-        let store = TestSqsStore::with_queue(queue());
+        let store = SqsTestStore::with_queue(queue());
         let request = batch_resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",

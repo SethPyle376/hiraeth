@@ -252,137 +252,21 @@ fn filter_message_attributes(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{HashMap, VecDeque},
-        sync::{
-            Mutex,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
+    use std::collections::HashMap;
 
-    use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{
-        StoreError,
         principal::Principal,
-        sqs::{SqsMessage, SqsQueue, SqsStore},
+        sqs::{SqsMessage, SqsQueue},
+        test_support::SqsTestStore,
     };
     use serde_json::Value;
 
     use super::receive_message;
     use crate::error::SqsError;
-
-    struct TestSqsStore {
-        queue: SqsQueue,
-        receive_responses: Mutex<VecDeque<Vec<SqsMessage>>>,
-        receive_calls: AtomicUsize,
-    }
-
-    impl TestSqsStore {
-        fn new(queue: SqsQueue, receive_responses: Vec<Vec<SqsMessage>>) -> Self {
-            Self {
-                queue,
-                receive_responses: Mutex::new(receive_responses.into()),
-                receive_calls: AtomicUsize::new(0),
-            }
-        }
-
-        fn receive_calls(&self) -> usize {
-            self.receive_calls.load(Ordering::SeqCst)
-        }
-    }
-
-    #[async_trait]
-    impl SqsStore for TestSqsStore {
-        async fn create_queue(&self, _queue: SqsQueue) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_queue(&self, _queue_id: i64) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_queue(
-            &self,
-            queue_name: &str,
-            region: &str,
-            account_id: &str,
-        ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok((self.queue.name == queue_name
-                && self.queue.region == region
-                && self.queue.account_id == account_id)
-                .then(|| self.queue.clone()))
-        }
-
-        async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_visible_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn list_queues(
-            &self,
-            _region: &str,
-            _account_id: &str,
-            _queue_name_prefix: Option<&str>,
-            _max_results: Option<i64>,
-            _next_token: Option<&str>,
-        ) -> Result<Vec<SqsQueue>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn send_message(&self, _message: &SqsMessage) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn receive_messages(
-            &self,
-            queue_id: i64,
-            max_number_of_messages: i64,
-            _visibility_timeout_seconds: u32,
-        ) -> Result<Vec<SqsMessage>, StoreError> {
-            self.receive_calls.fetch_add(1, Ordering::SeqCst);
-
-            let mut receive_responses = self
-                .receive_responses
-                .lock()
-                .expect("receive responses mutex");
-
-            Ok(receive_responses
-                .pop_front()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|message| message.queue_id == queue_id)
-                .take(max_number_of_messages as usize)
-                .collect())
-        }
-
-        async fn delete_message(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn set_message_visible_at(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-            _visible_at: chrono::NaiveDateTime,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-    }
 
     fn queue() -> SqsQueue {
         SqsQueue {
@@ -477,7 +361,7 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_returns_requested_message_and_system_attributes() {
-        let store = TestSqsStore::new(queue(), vec![vec![message(42)]]);
+        let store = SqsTestStore::with_queue(queue()).with_receive_responses([vec![message(42)]]);
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -533,7 +417,7 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_filters_requested_message_attributes() {
-        let store = TestSqsStore::new(queue(), vec![vec![message(42)]]);
+        let store = SqsTestStore::with_queue(queue()).with_receive_responses([vec![message(42)]]);
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -570,7 +454,8 @@ mod tests {
     async fn receive_message_returns_queue_not_found_for_missing_queue() {
         let mut missing_queue = queue();
         missing_queue.name = "other".to_string();
-        let store = TestSqsStore::new(missing_queue, vec![vec![message(42)]]);
+        let store =
+            SqsTestStore::with_queue(missing_queue).with_receive_responses([vec![message(42)]]);
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
@@ -581,7 +466,8 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_retries_when_wait_time_seconds_is_set() {
-        let store = TestSqsStore::new(queue(), vec![Vec::new(), vec![message(42)]]);
+        let store = SqsTestStore::with_queue(queue())
+            .with_receive_responses([Vec::new(), vec![message(42)]]);
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -607,7 +493,8 @@ mod tests {
     async fn receive_message_uses_queue_default_wait_time_when_request_omits_wait_time_seconds() {
         let mut queue = queue();
         queue.receive_message_wait_time_seconds = 1;
-        let store = TestSqsStore::new(queue, vec![Vec::new(), vec![message(42)]]);
+        let store =
+            SqsTestStore::with_queue(queue).with_receive_responses([Vec::new(), vec![message(42)]]);
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 

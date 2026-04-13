@@ -53,128 +53,15 @@ pub(crate) async fn change_message_visibility<S: SqsStore>(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        sync::{Mutex, MutexGuard},
-    };
+    use std::collections::HashMap;
 
-    use async_trait::async_trait;
     use chrono::{Duration, TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
-    use hiraeth_store::{
-        StoreError,
-        principal::Principal,
-        sqs::{SqsMessage, SqsQueue, SqsStore},
-    };
+    use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
 
     use super::change_message_visibility;
     use crate::error::SqsError;
-
-    struct TestSqsStore {
-        queue: Option<SqsQueue>,
-        visibility_updates: Mutex<Vec<(i64, String, chrono::NaiveDateTime)>>,
-    }
-
-    impl TestSqsStore {
-        fn with_queue(queue: SqsQueue) -> Self {
-            Self {
-                queue: Some(queue),
-                visibility_updates: Mutex::new(Vec::new()),
-            }
-        }
-
-        fn visibility_updates(&self) -> MutexGuard<'_, Vec<(i64, String, chrono::NaiveDateTime)>> {
-            self.visibility_updates
-                .lock()
-                .expect("visibility updates mutex")
-        }
-    }
-
-    #[async_trait]
-    impl SqsStore for TestSqsStore {
-        async fn create_queue(&self, _queue: SqsQueue) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_queue(&self, _queue_id: i64) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_queue(
-            &self,
-            queue_name: &str,
-            region: &str,
-            account_id: &str,
-        ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok(self
-                .queue
-                .as_ref()
-                .filter(|queue| {
-                    queue.name == queue_name
-                        && queue.region == region
-                        && queue.account_id == account_id
-                })
-                .cloned())
-        }
-
-        async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_visible_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn list_queues(
-            &self,
-            _region: &str,
-            _account_id: &str,
-            _queue_name_prefix: Option<&str>,
-            _max_results: Option<i64>,
-            _next_token: Option<&str>,
-        ) -> Result<Vec<SqsQueue>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn send_message(&self, _message: &SqsMessage) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn receive_messages(
-            &self,
-            _queue_id: i64,
-            _max_number_of_messages: i64,
-            _visibility_timeout_seconds: u32,
-        ) -> Result<Vec<SqsMessage>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_message(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn set_message_visible_at(
-            &self,
-            queue_id: i64,
-            receipt_handle: &str,
-            visible_at: chrono::NaiveDateTime,
-        ) -> Result<(), StoreError> {
-            self.visibility_updates
-                .lock()
-                .expect("visibility updates mutex")
-                .push((queue_id, receipt_handle.to_string(), visible_at));
-            Ok(())
-        }
-    }
 
     fn queue() -> SqsQueue {
         SqsQueue {
@@ -231,7 +118,7 @@ mod tests {
 
     #[tokio::test]
     async fn change_message_visibility_updates_visible_at_for_receipt_handle() {
-        let store = TestSqsStore::with_queue(queue());
+        let store = SqsTestStore::with_queue(queue());
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -259,10 +146,7 @@ mod tests {
 
     #[tokio::test]
     async fn change_message_visibility_returns_not_found_for_missing_queue() {
-        let store = TestSqsStore {
-            queue: None,
-            visibility_updates: Mutex::new(Vec::new()),
-        };
+        let store = SqsTestStore::default();
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",

@@ -70,134 +70,16 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        sync::{Mutex, MutexGuard},
-    };
+    use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
-    use hiraeth_store::{
-        StoreError,
-        principal::Principal,
-        sqs::{SqsQueue, SqsStore},
-    };
+    use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
     use super::{Service, ServiceResponse, SqsService, queue};
     use crate::error::SqsError;
-
-    #[derive(Default)]
-    struct TestSqsStore {
-        queues: Mutex<HashMap<(String, String), SqsQueue>>,
-        created_queues: Mutex<Vec<SqsQueue>>,
-    }
-
-    impl TestSqsStore {
-        fn with_queue(queue: SqsQueue) -> Self {
-            let mut queues = HashMap::new();
-            queues.insert((queue.name.clone(), queue.region.clone()), queue);
-
-            Self {
-                queues: Mutex::new(queues),
-                created_queues: Mutex::new(Vec::new()),
-            }
-        }
-
-        fn created_queues(&self) -> MutexGuard<'_, Vec<SqsQueue>> {
-            self.created_queues.lock().expect("created queues mutex")
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl SqsStore for TestSqsStore {
-        async fn create_queue(&self, queue: SqsQueue) -> Result<(), StoreError> {
-            self.queues
-                .lock()
-                .expect("queues mutex")
-                .insert((queue.name.clone(), queue.region.clone()), queue.clone());
-            self.created_queues
-                .lock()
-                .expect("created queues mutex")
-                .push(queue);
-            Ok(())
-        }
-
-        async fn delete_queue(&self, _queue_id: i64) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_queue(
-            &self,
-            queue_name: &str,
-            region: &str,
-            _account_id: &str,
-        ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok(self
-                .queues
-                .lock()
-                .expect("queues mutex")
-                .get(&(queue_name.to_string(), region.to_string()))
-                .cloned())
-        }
-
-        async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_visible_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn list_queues(
-            &self,
-            _region: &str,
-            _account_id: &str,
-            _queue_name_prefix: Option<&str>,
-            _max_results: Option<i64>,
-            _next_token: Option<&str>,
-        ) -> Result<Vec<SqsQueue>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn send_message(
-            &self,
-            _message: &hiraeth_store::sqs::SqsMessage,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn receive_messages(
-            &self,
-            _queue_id: i64,
-            _max_number_of_messages: i64,
-            _visibility_timeout_seconds: u32,
-        ) -> Result<Vec<hiraeth_store::sqs::SqsMessage>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_message(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn set_message_visible_at(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-            _visible_at: chrono::NaiveDateTime,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-    }
 
     fn resolved_request(target: Option<&str>, body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -239,7 +121,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_queue_persists_defaults_and_returns_queue_url() {
-        let store = TestSqsStore::default();
+        let store = SqsTestStore::default();
         let request = resolved_request(
             Some("AmazonSQS.CreateQueue"),
             r#"{"QueueName":"test-queue"}"#,
@@ -269,7 +151,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_queue_uses_supplied_attribute_values() {
-        let store = TestSqsStore::default();
+        let store = SqsTestStore::default();
         let request = resolved_request(
             Some("AmazonSQS.CreateQueue"),
             r#"{
@@ -297,7 +179,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_queue_url_returns_not_found_when_queue_does_not_exist() {
-        let store = TestSqsStore::default();
+        let store = SqsTestStore::default();
         let request = resolved_request(
             Some("AmazonSQS.GetQueueUrl"),
             r#"{"QueueName":"missing-queue"}"#,
@@ -310,7 +192,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_queue_url_returns_queue_url_when_queue_exists() {
-        let store = TestSqsStore::with_queue(SqsQueue {
+        let store = SqsTestStore::with_queue(SqsQueue {
             id: 1,
             name: "existing-queue".to_string(),
             region: "us-east-1".to_string(),
@@ -343,7 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn service_returns_not_found_for_missing_target_header() {
-        let service = SqsService::new(TestSqsStore::default());
+        let service = SqsService::new(SqsTestStore::default());
         let request = resolved_request(None, r#"{"QueueName":"test-queue"}"#);
 
         let result = service.handle_request(request).await;
@@ -357,7 +239,7 @@ mod tests {
 
     #[tokio::test]
     async fn service_returns_not_found_for_unknown_action() {
-        let service = SqsService::new(TestSqsStore::default());
+        let service = SqsService::new(SqsTestStore::default());
         let request = resolved_request(Some("AmazonSQS.DoesNotExist"), "{}");
 
         let response = service
@@ -382,7 +264,7 @@ mod tests {
 
     #[tokio::test]
     async fn service_renders_queue_not_found_as_sqs_error_response() {
-        let service = SqsService::new(TestSqsStore::default());
+        let service = SqsService::new(SqsTestStore::default());
         let request = resolved_request(
             Some("AmazonSQS.GetQueueUrl"),
             r#"{"QueueName":"missing-queue"}"#,

@@ -179,108 +179,15 @@ fn is_requested_attribute(attribute_name: &str, requested_attributes: &Vec<Strin
 mod tests {
     use std::collections::HashMap;
 
-    use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
-    use hiraeth_store::{
-        StoreError,
-        principal::Principal,
-        sqs::{SqsMessage, SqsQueue, SqsStore},
-    };
+    use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
     use super::get_queue_attributes;
     use crate::error::SqsError;
-
-    struct TestSqsStore {
-        queue: Option<SqsQueue>,
-        message_count: i64,
-        visible_message_count: i64,
-        delayed_message_count: i64,
-    }
-
-    #[async_trait]
-    impl SqsStore for TestSqsStore {
-        async fn create_queue(&self, _queue: SqsQueue) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_queue(&self, _queue_id: i64) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_queue(
-            &self,
-            queue_name: &str,
-            region: &str,
-            account_id: &str,
-        ) -> Result<Option<SqsQueue>, StoreError> {
-            Ok(self
-                .queue
-                .as_ref()
-                .filter(|queue| {
-                    queue.name == queue_name
-                        && queue.region == region
-                        && queue.account_id == account_id
-                })
-                .cloned())
-        }
-
-        async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            Ok(self.message_count)
-        }
-
-        async fn get_visible_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            Ok(self.visible_message_count)
-        }
-
-        async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            Ok(self.delayed_message_count)
-        }
-
-        async fn list_queues(
-            &self,
-            _region: &str,
-            _account_id: &str,
-            _queue_name_prefix: Option<&str>,
-            _max_results: Option<i64>,
-            _next_token: Option<&str>,
-        ) -> Result<Vec<SqsQueue>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn send_message(&self, _message: &SqsMessage) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn receive_messages(
-            &self,
-            _queue_id: i64,
-            _max_number_of_messages: i64,
-            _visibility_timeout_seconds: u32,
-        ) -> Result<Vec<SqsMessage>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_message(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn set_message_visible_at(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-            _visible_at: chrono::NaiveDateTime,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-    }
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -341,12 +248,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_queue_attributes_returns_requested_attributes() {
-        let store = TestSqsStore {
-            queue: Some(queue()),
-            message_count: 7,
-            visible_message_count: 3,
-            delayed_message_count: 2,
-        };
+        let store = SqsTestStore::with_queue(queue()).with_message_counts(7, 3, 2);
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
@@ -390,12 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_queue_attributes_returns_not_found_for_missing_queue() {
-        let store = TestSqsStore {
-            queue: None,
-            message_count: 0,
-            visible_message_count: 0,
-            delayed_message_count: 0,
-        };
+        let store = SqsTestStore::default();
         let request = resolved_request(
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",

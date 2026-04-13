@@ -91,154 +91,17 @@ pub(crate) async fn list_queues<S: SqsStore>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, MutexGuard};
-
-    use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
-        StoreError,
         principal::Principal,
-        sqs::{SqsMessage, SqsQueue, SqsStore},
+        sqs::SqsQueue,
+        test_support::{ListQueuesCall, SqsTestStore},
     };
     use serde_json::Value;
 
     use super::{SqsError, list_queues};
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    struct ListQueuesCall {
-        region: String,
-        account_id: String,
-        queue_name_prefix: Option<String>,
-        max_results: Option<i64>,
-        next_token: Option<String>,
-    }
-
-    struct TestSqsStore {
-        queues: Vec<SqsQueue>,
-        calls: Mutex<Vec<ListQueuesCall>>,
-    }
-
-    impl TestSqsStore {
-        fn new(queues: Vec<SqsQueue>) -> Self {
-            Self {
-                queues,
-                calls: Mutex::new(Vec::new()),
-            }
-        }
-
-        fn calls(&self) -> MutexGuard<'_, Vec<ListQueuesCall>> {
-            self.calls.lock().expect("list queues calls mutex")
-        }
-    }
-
-    #[async_trait]
-    impl SqsStore for TestSqsStore {
-        async fn create_queue(&self, _queue: SqsQueue) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_queue(&self, _queue_id: i64) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_queue(
-            &self,
-            _queue_name: &str,
-            _region: &str,
-            _account_id: &str,
-        ) -> Result<Option<SqsQueue>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_visible_message_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn get_messages_delayed_count(&self, _queue_id: i64) -> Result<i64, StoreError> {
-            unimplemented!()
-        }
-
-        async fn list_queues(
-            &self,
-            region: &str,
-            account_id: &str,
-            queue_name_prefix: Option<&str>,
-            max_results: Option<i64>,
-            next_token: Option<&str>,
-        ) -> Result<Vec<SqsQueue>, StoreError> {
-            self.calls
-                .lock()
-                .expect("list queues calls mutex")
-                .push(ListQueuesCall {
-                    region: region.to_string(),
-                    account_id: account_id.to_string(),
-                    queue_name_prefix: queue_name_prefix.map(str::to_string),
-                    max_results,
-                    next_token: next_token.map(str::to_string),
-                });
-
-            let mut queues = self
-                .queues
-                .iter()
-                .filter(|queue| queue.region == region && queue.account_id == account_id)
-                .filter(|queue| {
-                    queue_name_prefix
-                        .map(|prefix| queue.name.starts_with(prefix))
-                        .unwrap_or(true)
-                })
-                .filter(|queue| {
-                    next_token
-                        .map(|token| queue.name.as_str() > token)
-                        .unwrap_or(true)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-
-            queues.sort_by(|left, right| left.name.cmp(&right.name));
-
-            if let Some(max_results) = max_results {
-                queues.truncate(max_results as usize);
-            }
-
-            Ok(queues)
-        }
-
-        async fn send_message(&self, _message: &SqsMessage) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn receive_messages(
-            &self,
-            _queue_id: i64,
-            _max_number_of_messages: i64,
-            _visibility_timeout_seconds: u32,
-        ) -> Result<Vec<SqsMessage>, StoreError> {
-            unimplemented!()
-        }
-
-        async fn delete_message(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-
-        async fn set_message_visible_at(
-            &self,
-            _queue_id: i64,
-            _receipt_handle: &str,
-            _visible_at: chrono::NaiveDateTime,
-        ) -> Result<(), StoreError> {
-            unimplemented!()
-        }
-    }
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         ResolvedRequest {
@@ -298,7 +161,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_queues_returns_matching_queue_urls_and_forwards_filters() {
-        let store = TestSqsStore::new(vec![
+        let store = SqsTestStore::with_queues(vec![
             queue("orders-001", "us-east-1", "123456789012"),
             queue("orders-002", "us-east-1", "123456789012"),
             queue("orders-003", "us-east-1", "123456789012"),
@@ -329,7 +192,7 @@ mod tests {
         );
         assert!(body.get("NextToken").is_none());
 
-        let calls = store.calls();
+        let calls = store.list_queues_calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(
             calls[0],
@@ -345,7 +208,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_queues_returns_next_token_when_another_page_exists() {
-        let store = TestSqsStore::new(vec![
+        let store = SqsTestStore::with_queues(vec![
             queue("orders-001", "us-east-1", "123456789012"),
             queue("orders-002", "us-east-1", "123456789012"),
             queue("orders-003", "us-east-1", "123456789012"),
@@ -369,7 +232,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_queues_omits_next_token_when_page_is_exactly_full() {
-        let store = TestSqsStore::new(vec![
+        let store = SqsTestStore::with_queues(vec![
             queue("orders-001", "us-east-1", "123456789012"),
             queue("orders-002", "us-east-1", "123456789012"),
         ]);
@@ -392,7 +255,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_queues_rejects_invalid_max_results() {
-        let store = TestSqsStore::new(Vec::new());
+        let store = SqsTestStore::with_queues(Vec::new());
         let request = resolved_request(r#"{"MaxResults":0}"#);
 
         let result = list_queues(&request, &store).await;
@@ -402,6 +265,6 @@ mod tests {
             Err(SqsError::BadRequest(message))
                 if message == "MaxResults must be between 1 and 1000"
         ));
-        assert!(store.calls().is_empty());
+        assert!(store.list_queues_calls().is_empty());
     }
 }
