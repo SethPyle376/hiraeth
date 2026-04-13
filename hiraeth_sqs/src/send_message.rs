@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use futures::StreamExt;
 use hiraeth_auth::ResolvedRequest;
@@ -13,9 +13,9 @@ use crate::{error::SqsError, util};
 struct SendMessageRequest {
     delay_seconds: Option<i64>,
     #[serde(default)]
-    message_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
+    message_attributes: Option<HashMap<String, util::MessageAttributeValue>>,
     #[serde(default)]
-    message_system_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
+    message_system_attributes: Option<HashMap<String, util::MessageAttributeValue>>,
     message_body: String,
     message_deduplication_id: Option<String>,
     message_group_id: Option<String>,
@@ -66,7 +66,7 @@ pub(crate) async fn send_message<S: SqsStore>(
     let message_attributes = request_body
         .message_attributes
         .as_ref()
-        .map(|attrs| serde_json::to_string(attrs).map_err(|e| SqsError::BadRequest(e.to_string())))
+        .map(util::serialize_message_attributes)
         .transpose()?;
 
     let md5_of_message_attributes = request_body
@@ -128,9 +128,9 @@ struct SendMessageBatchEntry {
     id: String,
     delay_seconds: Option<i64>,
     #[serde(default)]
-    message_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
+    message_attributes: Option<HashMap<String, util::MessageAttributeValue>>,
     #[serde(default)]
-    message_system_attributes: Option<BTreeMap<String, util::MessageAttributeValue>>,
+    message_system_attributes: Option<HashMap<String, util::MessageAttributeValue>>,
     message_body: String,
     message_deduplication_id: Option<String>,
     message_group_id: Option<String>,
@@ -207,9 +207,7 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
             let message_attributes = entry
                 .message_attributes
                 .as_ref()
-                .map(|attrs| {
-                    serde_json::to_string(attrs).map_err(|e| SqsError::BadRequest(e.to_string()))
-                })
+                .map(util::serialize_message_attributes)
                 .transpose()
                 .map_err(|e| BatchResultErrorEntry {
                     id: entry.id.clone(),
@@ -313,7 +311,7 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashMap};
+    use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
@@ -494,7 +492,7 @@ mod tests {
             .expect("send message should succeed");
 
         let response_body = parse_json_body(&response);
-        let expected_md5 = util::calculate_message_attributes_md5(&BTreeMap::from([(
+        let expected_md5 = util::calculate_message_attributes_md5(&HashMap::from([(
             "AWSTraceHeader".to_string(),
             MessageAttributeValue {
                 data_type: "String".to_string(),

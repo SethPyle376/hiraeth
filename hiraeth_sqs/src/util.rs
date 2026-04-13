@@ -39,10 +39,12 @@ pub(crate) fn parse_queue_url(queue_url: &str, default_region: &str) -> Option<Q
     })
 }
 
-pub(crate) fn calculate_message_attributes_md5(
-    message_attributes: &BTreeMap<String, MessageAttributeValue>,
+pub(crate) fn calculate_message_attributes_md5<'a>(
+    message_attributes: impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
 ) -> Result<String, SqsError> {
     let mut buffer = Vec::new();
+    let mut message_attributes = message_attributes.into_iter().collect::<Vec<_>>();
+    message_attributes.sort_by(|(left_name, _), (right_name, _)| left_name.cmp(right_name));
 
     for (name, value) in message_attributes {
         append_length_prefixed_bytes(&mut buffer, name.as_bytes());
@@ -80,14 +82,30 @@ pub(crate) fn calculate_message_attributes_md5(
     Ok(format!("{:x}", md5::compute(buffer)))
 }
 
-pub(crate) fn extract_aws_trace_header(
-    message_system_attributes: Option<&BTreeMap<String, MessageAttributeValue>>,
+pub(crate) fn serialize_message_attributes<'a>(
+    message_attributes: impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
+) -> Result<String, SqsError> {
+    let ordered_attributes = message_attributes
+        .into_iter()
+        .map(|(name, value)| (name.as_str(), value))
+        .collect::<BTreeMap<_, _>>();
+
+    serde_json::to_string(&ordered_attributes).map_err(|e| SqsError::BadRequest(e.to_string()))
+}
+
+pub(crate) fn extract_aws_trace_header<'a>(
+    message_system_attributes: Option<
+        impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
+    >,
 ) -> Result<Option<String>, SqsError> {
     let Some(message_system_attributes) = message_system_attributes else {
         return Ok(None);
     };
 
-    let Some(trace_header) = message_system_attributes.get("AWSTraceHeader") else {
+    let Some((_, trace_header)) = message_system_attributes
+        .into_iter()
+        .find(|(name, _)| name.as_str() == "AWSTraceHeader")
+    else {
         return Ok(None);
     };
 
@@ -111,7 +129,7 @@ fn append_length_prefixed_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use super::{MessageAttributeValue, calculate_message_attributes_md5, parse_queue_url};
 
@@ -172,5 +190,32 @@ mod tests {
             calculate_message_attributes_md5(&attributes).expect("message attributes should hash");
 
         assert_eq!(digest, "a7c5b51b9587ba6b55ff17e3b9408909");
+    }
+
+    #[test]
+    fn calculates_md5_for_hash_map_message_attributes_in_name_order() {
+        let attributes = HashMap::from([
+            (
+                "trace_id".to_string(),
+                MessageAttributeValue {
+                    data_type: "String".to_string(),
+                    string_value: Some("abc123".to_string()),
+                    binary_value: None,
+                },
+            ),
+            (
+                "tenant".to_string(),
+                MessageAttributeValue {
+                    data_type: "String".to_string(),
+                    string_value: Some("acme".to_string()),
+                    binary_value: None,
+                },
+            ),
+        ]);
+
+        let digest =
+            calculate_message_attributes_md5(&attributes).expect("message attributes should hash");
+
+        assert_eq!(digest, "dbf9f8110dff50952a8b7b0d4fc539f2");
     }
 }
