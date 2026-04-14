@@ -25,12 +25,7 @@ pub(crate) async fn create_queue<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = serde_json::from_str::<CreateQueueRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
+    let request_body = util::parse_request_body::<CreateQueueRequest>(request)?;
 
     let queue = SqsQueue {
         id: 0,
@@ -66,11 +61,10 @@ pub(crate) async fn create_queue<S: SqsStore>(
         .await
         .map(|_| {
             let response = CreateQueueResponse {
-                queue_url: format!(
-                    "http://{}/{}/{}",
-                    request.request.host,
-                    request.auth_context.principal.account_id.clone(),
-                    request_body.queue_name
+                queue_url: util::queue_url(
+                    &request.request.host,
+                    &request.auth_context.principal.account_id,
+                    &request_body.queue_name,
                 ),
             };
             ServiceResponse {
@@ -92,21 +86,8 @@ pub(crate) async fn delete_queue<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = serde_json::from_str::<DeleteQueueRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
-
-    let queue_id = util::parse_queue_url(&request_body.queue_url, &request.region)
-        .ok_or_else(|| SqsError::BadRequest("Invalid queue url".to_string()))?;
-
-    let queue = store
-        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
-        .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?
-        .ok_or_else(|| SqsError::QueueNotFound)?;
+    let request_body = util::parse_request_body::<DeleteQueueRequest>(request)?;
+    let queue = util::load_queue_from_url(request, store, &request_body.queue_url).await?;
 
     store
         .delete_queue(queue.id)
@@ -136,12 +117,7 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = serde_json::from_str::<GetQueueUrlRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
+    let request_body = util::parse_request_body::<GetQueueUrlRequest>(request)?;
 
     let account_id = request_body
         .queue_owner_aws_account_id
@@ -153,13 +129,12 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
         .map_err(|e| SqsError::InternalError(e.to_string()))?;
 
     match queue {
-        Some(queue) => {
+        Some(_) => {
             let response = GetQueueUrlResponse {
-                queue_url: format!(
-                    "http://{}/{}/{}",
-                    request.request.host,
-                    account_id.clone(),
-                    request_body.queue_name
+                queue_url: util::queue_url(
+                    &request.request.host,
+                    &account_id,
+                    &request_body.queue_name,
                 ),
             };
             Ok(ServiceResponse {
@@ -182,21 +157,8 @@ pub(crate) async fn purge_queue<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = serde_json::from_str::<PurgeQueueRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
-
-    let queue_id = util::parse_queue_url(&request_body.queue_url, &request.region)
-        .ok_or_else(|| SqsError::BadRequest("Invalid queue url".to_string()))?;
-
-    let queue = store
-        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
-        .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?
-        .ok_or_else(|| SqsError::QueueNotFound)?;
+    let request_body = util::parse_request_body::<PurgeQueueRequest>(request)?;
+    let queue = util::load_queue_from_url(request, store, &request_body.queue_url).await?;
 
     store
         .purge_queue(queue.id)

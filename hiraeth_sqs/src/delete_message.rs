@@ -16,21 +16,8 @@ pub(crate) async fn delete_message<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let delete_request = serde_json::from_str::<DeleteMessageRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
-
-    let queue_id = util::parse_queue_url(&delete_request.queue_url, &request.region)
-        .ok_or_else(|| SqsError::BadRequest("Invalid queue url".to_string()))?;
-
-    let queue = store
-        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
-        .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?
-        .ok_or_else(|| SqsError::QueueNotFound)?;
+    let delete_request = util::parse_request_body::<DeleteMessageRequest>(request)?;
+    let queue = util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
 
     store
         .delete_message(queue.id, &delete_request.receipt_handle)
@@ -84,21 +71,8 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let delete_request = serde_json::from_str::<DeleteMessageBatchRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
-
-    let queue_id = util::parse_queue_url(&delete_request.queue_url, &request.region)
-        .ok_or_else(|| SqsError::BadRequest("Invalid queue url".to_string()))?;
-
-    let queue = store
-        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
-        .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?
-        .ok_or_else(|| SqsError::QueueNotFound)?;
+    let delete_request = util::parse_request_body::<DeleteMessageBatchRequest>(request)?;
+    let queue = util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
 
     let mut successful = Vec::new();
     let mut failed = Vec::new();

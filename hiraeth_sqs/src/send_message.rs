@@ -41,21 +41,8 @@ pub(crate) async fn send_message<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = serde_json::from_str::<SendMessageRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
-
-    let queue_id = util::parse_queue_url(&request_body.queue_url, &request.region)
-        .ok_or_else(|| SqsError::BadRequest("Invalid queue URL".to_string()))?;
-
-    let queue = store
-        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
-        .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?
-        .ok_or_else(|| SqsError::QueueNotFound)?;
+    let request_body = util::parse_request_body::<SendMessageRequest>(request)?;
+    let queue = util::load_queue_from_url(request, store, &request_body.queue_url).await?;
 
     let visible_at = request.date.naive_utc()
         + chrono::Duration::seconds(request_body.delay_seconds.unwrap_or(queue.delay_seconds));
@@ -180,21 +167,8 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = serde_json::from_str::<SendMessageBatchRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
-
-    let queue_id = util::parse_queue_url(&request_body.queue_url, &request.region)
-        .ok_or_else(|| SqsError::BadRequest("Invalid queue URL".to_string()))?;
-
-    let queue = store
-        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
-        .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?
-        .ok_or_else(|| SqsError::QueueNotFound)?;
+    let request_body = util::parse_request_body::<SendMessageBatchRequest>(request)?;
+    let queue = util::load_queue_from_url(request, store, &request_body.queue_url).await?;
 
     let expires_at = request.date.naive_utc()
         + chrono::Duration::seconds(queue.message_retention_period_seconds);

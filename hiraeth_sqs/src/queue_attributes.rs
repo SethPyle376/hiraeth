@@ -24,22 +24,10 @@ pub(crate) async fn get_queue_attributes<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let attributes_request = serde_json::from_str::<GetQueueAttributesRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
+    let attributes_request = util::parse_request_body::<GetQueueAttributesRequest>(request)?;
 
     let mut attributes = HashMap::<String, String>::new();
-    let queue_id = util::parse_queue_url(&attributes_request.queue_url, &request.region)
-        .ok_or_else(|| SqsError::BadRequest("Invalid queue url".to_string()))?;
-
-    let queue = store
-        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
-        .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?
-        .ok_or_else(|| SqsError::QueueNotFound)?;
+    let queue = util::load_queue_from_url(request, store, &attributes_request.queue_url).await?;
 
     if is_requested_attribute("Policy", &attributes_request.attribute_names) {
         attributes.insert("Policy".to_string(), "{}".to_string());

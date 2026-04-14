@@ -3,7 +3,7 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use crate::error::SqsError;
+use crate::{error::SqsError, util};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -25,12 +25,7 @@ pub(crate) async fn list_queues<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = serde_json::from_str::<ListQueuesRequest>(
-        String::from_utf8(request.request.body.clone())
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?
-            .as_str(),
-    )
-    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
+    let request_body = util::parse_request_body::<ListQueuesRequest>(request)?;
 
     if let Some(max_results) = request_body.max_results {
         if !(1..=1000).contains(&max_results) {
@@ -74,7 +69,7 @@ pub(crate) async fn list_queues<S: SqsStore>(
 
     let queue_urls = queues
         .into_iter()
-        .map(|q| format!("http://{}/{}/{}", request.request.host, account_id, q.name))
+        .map(|q| util::queue_url(&request.request.host, &account_id, &q.name))
         .collect();
 
     let list_response = ListQueuesResponse {

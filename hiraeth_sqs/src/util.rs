@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use base64::Engine;
-use serde::{Deserialize, Serialize};
+use hiraeth_auth::ResolvedRequest;
+use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::error::SqsError;
 
@@ -37,6 +39,31 @@ pub(crate) fn parse_queue_url(queue_url: &str, default_region: &str) -> Option<Q
         region: region.to_string(),
         account_id: path_segments[0].to_string(),
     })
+}
+
+pub(crate) fn parse_request_body<T: DeserializeOwned>(
+    request: &ResolvedRequest,
+) -> Result<T, SqsError> {
+    serde_json::from_slice(&request.request.body).map_err(|e| SqsError::BadRequest(e.to_string()))
+}
+
+pub(crate) async fn load_queue_from_url<S: SqsStore>(
+    request: &ResolvedRequest,
+    store: &S,
+    queue_url: &str,
+) -> Result<SqsQueue, SqsError> {
+    let queue_id = parse_queue_url(queue_url, &request.region)
+        .ok_or_else(|| SqsError::BadRequest("Invalid queue url".to_string()))?;
+
+    store
+        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
+        .await
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)
+}
+
+pub(crate) fn queue_url(host: &str, account_id: &str, queue_name: &str) -> String {
+    format!("http://{host}/{account_id}/{queue_name}")
 }
 
 pub(crate) fn calculate_message_attributes_md5<'a>(
@@ -131,7 +158,70 @@ fn append_length_prefixed_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) {
 mod tests {
     use std::collections::{BTreeMap, HashMap};
 
-    use super::{MessageAttributeValue, calculate_message_attributes_md5, parse_queue_url};
+    use chrono::{TimeZone, Utc};
+    use hiraeth_auth::{AuthContext, ResolvedRequest};
+    use hiraeth_http::IncomingRequest;
+    use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
+    use serde::Deserialize;
+
+    use super::{
+        MessageAttributeValue, calculate_message_attributes_md5, load_queue_from_url,
+        parse_queue_url, parse_request_body, queue_url,
+    };
+    use crate::error::SqsError;
+
+    fn resolved_request(body: &[u8]) -> ResolvedRequest {
+        ResolvedRequest {
+            request: IncomingRequest {
+                host: "localhost:4566".to_string(),
+                method: "POST".to_string(),
+                path: "/".to_string(),
+                query: None,
+                headers: HashMap::new(),
+                body: body.to_vec(),
+            },
+            service: "sqs".to_string(),
+            region: "us-east-1".to_string(),
+            auth_context: AuthContext {
+                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal: Principal {
+                    id: 1,
+                    account_id: "123456789012".to_string(),
+                    kind: "user".to_string(),
+                    name: "test-user".to_string(),
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 6, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
+                },
+            },
+            date: Utc.with_ymd_and_hms(2026, 4, 6, 12, 0, 0).unwrap(),
+        }
+    }
+
+    fn queue() -> SqsQueue {
+        SqsQueue {
+            id: 42,
+            name: "orders".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "123456789012".to_string(),
+            queue_type: "standard".to_string(),
+            visibility_timeout_seconds: 30,
+            delay_seconds: 0,
+            message_retention_period_seconds: 345600,
+            receive_message_wait_time_seconds: 0,
+            created_at: Utc
+                .with_ymd_and_hms(2026, 4, 6, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+        }
+    }
+
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "PascalCase")]
+    struct TestRequest {
+        queue_url: String,
+    }
 
     #[test]
     fn parse_queue_url_extracts_region_from_aws_style_host() {
@@ -154,6 +244,72 @@ mod tests {
         assert_eq!(queue_id.account_id, "123456789012");
         assert_eq!(queue_id.name, "orders");
         assert_eq!(queue_id.region, "us-east-1");
+    }
+
+    #[test]
+    fn parse_request_body_deserializes_json_body() {
+        let request =
+            resolved_request(br#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
+
+        let request_body =
+            parse_request_body::<TestRequest>(&request).expect("request body should parse");
+
+        assert_eq!(
+            request_body,
+            TestRequest {
+                queue_url: "http://localhost:4566/123456789012/orders".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn parse_request_body_rejects_invalid_json() {
+        let request =
+            resolved_request(br#"{"QueueUrl":"http://localhost:4566/123456789012/orders""#);
+
+        let result = parse_request_body::<TestRequest>(&request);
+
+        assert!(matches!(result, Err(SqsError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn load_queue_from_url_returns_matching_queue() {
+        let store = SqsTestStore::with_queue(queue());
+        let request = resolved_request(br#"{}"#);
+
+        let queue = load_queue_from_url(
+            &request,
+            &store,
+            "http://localhost:4566/123456789012/orders",
+        )
+        .await
+        .expect("queue should load");
+
+        assert_eq!(queue.id, 42);
+        assert_eq!(queue.name, "orders");
+    }
+
+    #[tokio::test]
+    async fn load_queue_from_url_returns_not_found_for_missing_queue() {
+        let store = SqsTestStore::default();
+        let request = resolved_request(br#"{}"#);
+
+        let result = load_queue_from_url(
+            &request,
+            &store,
+            "http://localhost:4566/123456789012/orders",
+        )
+        .await;
+
+        assert_eq!(result, Err(SqsError::QueueNotFound));
+    }
+
+    #[test]
+    fn queue_url_formats_emulator_queue_url() {
+        assert_eq!(
+            queue_url("localhost:4566", "123456789012", "orders"),
+            "http://localhost:4566/123456789012/orders"
+        );
     }
 
     #[test]
