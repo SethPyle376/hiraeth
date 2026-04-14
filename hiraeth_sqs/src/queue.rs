@@ -172,6 +172,43 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct PurgeQueueRequest {
+    queue_url: String,
+}
+
+pub(crate) async fn purge_queue<S: SqsStore>(
+    request: &ResolvedRequest,
+    store: &S,
+) -> Result<ServiceResponse, SqsError> {
+    let request_body = serde_json::from_str::<PurgeQueueRequest>(
+        String::from_utf8(request.request.body.clone())
+            .map_err(|e| SqsError::BadRequest(e.to_string()))?
+            .as_str(),
+    )
+    .map_err(|e| SqsError::BadRequest(e.to_string()))?;
+
+    let queue_id = util::parse_queue_url(&request_body.queue_url, &request.region)
+        .ok_or_else(|| SqsError::BadRequest("Invalid queue url".to_string()))?;
+
+    let queue = store
+        .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
+        .await
+        .map_err(|e| SqsError::InternalError(e.to_string()))?
+        .ok_or_else(|| SqsError::QueueNotFound)?;
+
+    store
+        .purge_queue(queue.id)
+        .await
+        .map(|_| ServiceResponse {
+            status_code: 200,
+            headers: vec![],
+            body: vec![],
+        })
+        .map_err(|e| SqsError::InternalError(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -181,15 +218,12 @@ mod tests {
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
 
-    use super::delete_queue;
+    use super::{delete_queue, purge_queue};
     use crate::error::SqsError;
 
-    fn resolved_request(body: &str) -> ResolvedRequest {
+    fn resolved_request(target: &str, body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
-        headers.insert(
-            "x-amz-target".to_string(),
-            "AmazonSQS.DeleteQueue".to_string(),
-        );
+        headers.insert("x-amz-target".to_string(), target.to_string());
 
         ResolvedRequest {
             request: IncomingRequest {
@@ -240,8 +274,10 @@ mod tests {
     #[tokio::test]
     async fn delete_queue_deletes_existing_queue() {
         let store = SqsTestStore::with_queue(queue());
-        let request =
-            resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
+        let request = resolved_request(
+            "AmazonSQS.DeleteQueue",
+            r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#,
+        );
 
         let response = delete_queue(&request, &store)
             .await
@@ -257,11 +293,44 @@ mod tests {
     #[tokio::test]
     async fn delete_queue_returns_not_found_for_missing_queue() {
         let store = SqsTestStore::default();
-        let request =
-            resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
+        let request = resolved_request(
+            "AmazonSQS.DeleteQueue",
+            r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#,
+        );
 
         let result = delete_queue(&request, &store).await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
+    }
+
+    #[tokio::test]
+    async fn purge_queue_purges_existing_queue() {
+        let store = SqsTestStore::with_queue(queue());
+        let request = resolved_request(
+            "AmazonSQS.PurgeQueue",
+            r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#,
+        );
+
+        let response = purge_queue(&request, &store)
+            .await
+            .expect("purge queue should succeed");
+
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.is_empty());
+        assert_eq!(store.purged_queue_ids(), vec![42]);
+    }
+
+    #[tokio::test]
+    async fn purge_queue_returns_not_found_for_missing_queue() {
+        let store = SqsTestStore::default();
+        let request = resolved_request(
+            "AmazonSQS.PurgeQueue",
+            r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#,
+        );
+
+        let result = purge_queue(&request, &store).await;
+
+        assert!(matches!(result, Err(SqsError::QueueNotFound)));
+        assert!(store.purged_queue_ids().is_empty());
     }
 }

@@ -27,6 +27,7 @@ pub struct SqsTestStore {
     queues: Mutex<Vec<SqsQueue>>,
     created_queues: Mutex<Vec<SqsQueue>>,
     deleted_queue_ids: Mutex<Vec<i64>>,
+    purged_queue_ids: Mutex<Vec<i64>>,
     sent_messages: Mutex<Vec<SqsMessage>>,
     receive_responses: Mutex<VecDeque<Vec<SqsMessage>>>,
     receive_calls: AtomicUsize,
@@ -45,6 +46,7 @@ impl Default for SqsTestStore {
             queues: Mutex::new(Vec::new()),
             created_queues: Mutex::new(Vec::new()),
             deleted_queue_ids: Mutex::new(Vec::new()),
+            purged_queue_ids: Mutex::new(Vec::new()),
             sent_messages: Mutex::new(Vec::new()),
             receive_responses: Mutex::new(VecDeque::new()),
             receive_calls: AtomicUsize::new(0),
@@ -110,6 +112,13 @@ impl SqsTestStore {
         self.deleted_queue_ids
             .lock()
             .expect("deleted queue ids mutex")
+            .clone()
+    }
+
+    pub fn purged_queue_ids(&self) -> Vec<i64> {
+        self.purged_queue_ids
+            .lock()
+            .expect("purged queue ids mutex")
             .clone()
     }
 
@@ -259,6 +268,18 @@ impl SqsStore for SqsTestStore {
         }
 
         Ok(queues)
+    }
+
+    async fn purge_queue(&self, queue_id: i64) -> Result<(), StoreError> {
+        self.purged_queue_ids
+            .lock()
+            .expect("purged queue ids mutex")
+            .push(queue_id);
+        self.sent_messages
+            .lock()
+            .expect("sent messages mutex")
+            .retain(|message| message.queue_id != queue_id);
+        Ok(())
     }
 
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError> {

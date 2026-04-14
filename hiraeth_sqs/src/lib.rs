@@ -46,6 +46,7 @@ where
             Some(target) => Ok(match target.as_str() {
                 "AmazonSQS.CreateQueue" => create_queue(&request, &self.store).await,
                 "AmazonSQS.DeleteQueue" => delete_queue(&request, &self.store).await,
+                "AmazonSQS.PurgeQueue" => purge_queue(&request, &self.store).await,
                 "AmazonSQS.ListQueues" => list_queues(&request, &self.store).await,
                 "AmazonSQS.GetQueueUrl" => get_queue_url(&request, &self.store).await,
                 "AmazonSQS.SendMessage" => send_message(&request, &self.store).await,

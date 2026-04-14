@@ -55,6 +55,7 @@ pub trait SqsStore {
         max_results: Option<i64>,
         next_token: Option<&str>,
     ) -> Result<Vec<SqsQueue>, StoreError>;
+    async fn purge_queue(&self, queue_id: i64) -> Result<(), StoreError>;
 
     // message ops
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError>;

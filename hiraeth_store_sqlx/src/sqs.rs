@@ -269,6 +269,14 @@ impl SqsStore for SqliteSqsStore {
 
         Ok(result)
     }
+
+    async fn purge_queue(&self, queue_id: i64) -> Result<(), StoreError> {
+        sqlx::query!("DELETE FROM sqs_messages WHERE queue_id = ?", queue_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -846,6 +854,87 @@ mod tests {
 
         assert_eq!(remaining, 1);
         assert_eq!(remaining_message_id, "msg-2");
+    }
+
+    #[tokio::test]
+    async fn purge_queue_removes_only_messages_for_matching_queue() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("orders queue insert should succeed");
+        store
+            .create_queue(queue("payments", "us-east-1"))
+            .await
+            .expect("payments queue insert should succeed");
+
+        let orders_queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("orders queue lookup should succeed")
+            .expect("orders queue should exist");
+        let payments_queue = store
+            .get_queue("payments", "us-east-1", "123456789012")
+            .await
+            .expect("payments queue lookup should succeed")
+            .expect("payments queue should exist");
+
+        let now = Utc::now().naive_utc();
+        for message in [
+            message(
+                orders_queue.id,
+                "orders-1",
+                now - Duration::seconds(20),
+                now - Duration::seconds(10),
+                now + Duration::hours(1),
+            ),
+            message(
+                orders_queue.id,
+                "orders-2",
+                now - Duration::seconds(15),
+                now + Duration::minutes(5),
+                now + Duration::hours(1),
+            ),
+            message(
+                payments_queue.id,
+                "payments-1",
+                now - Duration::seconds(10),
+                now - Duration::seconds(5),
+                now + Duration::hours(1),
+            ),
+        ] {
+            store
+                .send_message(&message)
+                .await
+                .expect("message insert should succeed");
+        }
+
+        store
+            .purge_queue(orders_queue.id)
+            .await
+            .expect("purge queue should succeed");
+
+        let orders_message_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ?")
+                .bind(orders_queue.id)
+                .fetch_one(&store.pool)
+                .await
+                .expect("orders message count query should succeed");
+        let payments_message_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sqs_messages WHERE queue_id = ?")
+                .bind(payments_queue.id)
+                .fetch_one(&store.pool)
+                .await
+                .expect("payments message count query should succeed");
+        let orders_queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("orders queue lookup should succeed");
+
+        assert_eq!(orders_message_count, 0);
+        assert_eq!(payments_message_count, 1);
+        assert!(orders_queue.is_some());
     }
 
     #[tokio::test]
