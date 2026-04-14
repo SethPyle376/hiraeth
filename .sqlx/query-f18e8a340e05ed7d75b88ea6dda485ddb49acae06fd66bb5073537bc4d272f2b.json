@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sqs_queues (\n                name,\n                region,\n                account_id,\n                queue_type,\n                visibility_timeout_seconds,\n                delay_seconds,\n                maximum_message_size,\n                message_retention_period_seconds,\n                receive_message_wait_time_seconds,\n                policy,\n                redrive_policy,\n                content_based_deduplication,\n                kms_master_key_id,\n                kms_data_key_reuse_period_seconds,\n                deduplication_scope,\n                fifo_throughput_limit,\n                redrive_allow_policy,\n                sqs_managed_sse_enabled,\n                updated_at\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 19
+    },
+    "nullable": []
+  },
+  "hash": "f18e8a340e05ed7d75b88ea6dda485ddb49acae06fd66bb5073537bc4d272f2b"
+}

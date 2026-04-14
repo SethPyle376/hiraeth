@@ -28,17 +28,33 @@ pub(crate) async fn create_queue<S: SqsStore>(
     let request_body = util::parse_request_body::<CreateQueueRequest>(request)?;
     let queue_attributes = QueueAttributeValues::from_attribute_map(&request_body.attributes);
 
+    let now = chrono::Utc::now().naive_utc();
     let queue = SqsQueue {
         id: 0,
         name: request_body.queue_name.clone(),
         region: request.region.clone(),
         account_id: request.auth_context.principal.account_id.clone(),
-        queue_type: "standard".to_string(),
+        queue_type: if queue_attributes.fifo_queue {
+            "fifo".to_string()
+        } else {
+            "standard".to_string()
+        },
         visibility_timeout_seconds: queue_attributes.visibility_timeout_seconds,
         delay_seconds: queue_attributes.delay_seconds,
+        maximum_message_size: queue_attributes.maximum_message_size,
         message_retention_period_seconds: queue_attributes.message_retention_period_seconds,
         receive_message_wait_time_seconds: queue_attributes.receive_message_wait_time_seconds,
-        created_at: chrono::Utc::now().naive_utc(),
+        policy: queue_attributes.policy,
+        redrive_policy: queue_attributes.redrive_policy,
+        content_based_deduplication: queue_attributes.content_based_deduplication,
+        kms_master_key_id: queue_attributes.kms_master_key_id,
+        kms_data_key_reuse_period_seconds: queue_attributes.kms_data_key_reuse_period_seconds,
+        deduplication_scope: queue_attributes.deduplication_scope,
+        fifo_throughput_limit: queue_attributes.fifo_throughput_limit,
+        redrive_allow_policy: queue_attributes.redrive_allow_policy,
+        sqs_managed_sse_enabled: queue_attributes.sqs_managed_sse_enabled,
+        created_at: now,
+        updated_at: now,
     };
 
     store
@@ -215,6 +231,11 @@ mod tests {
                 .with_ymd_and_hms(2026, 4, 4, 11, 0, 0)
                 .unwrap()
                 .naive_utc(),
+            updated_at: Utc
+                .with_ymd_and_hms(2026, 4, 4, 11, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            ..Default::default()
         }
     }
 

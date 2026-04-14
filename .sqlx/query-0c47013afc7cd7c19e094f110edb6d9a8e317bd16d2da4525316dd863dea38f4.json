@@ -1,0 +1,140 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n                id,\n                name,\n                region,\n                account_id,\n                queue_type,\n                visibility_timeout_seconds,\n                delay_seconds,\n                maximum_message_size,\n                message_retention_period_seconds,\n                receive_message_wait_time_seconds,\n                policy,\n                redrive_policy,\n                content_based_deduplication as \"content_based_deduplication: bool\",\n                kms_master_key_id,\n                kms_data_key_reuse_period_seconds,\n                deduplication_scope,\n                fifo_throughput_limit,\n                redrive_allow_policy,\n                sqs_managed_sse_enabled as \"sqs_managed_sse_enabled: bool\",\n                created_at,\n                updated_at\n            FROM sqs_queues\n            WHERE region = ?\n            AND account_id = ?\n            AND (? IS NULL OR substr(name, 1, length(?)) = ?)\n            AND (? IS NULL OR name > ?)\n            ORDER BY name\n            LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "region",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "queue_type",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "visibility_timeout_seconds",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "delay_seconds",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "maximum_message_size",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "message_retention_period_seconds",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "receive_message_wait_time_seconds",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "policy",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "redrive_policy",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "content_based_deduplication: bool",
+        "ordinal": 12,
+        "type_info": "Integer"
+      },
+      {
+        "name": "kms_master_key_id",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "kms_data_key_reuse_period_seconds",
+        "ordinal": 14,
+        "type_info": "Integer"
+      },
+      {
+        "name": "deduplication_scope",
+        "ordinal": 15,
+        "type_info": "Text"
+      },
+      {
+        "name": "fifo_throughput_limit",
+        "ordinal": 16,
+        "type_info": "Text"
+      },
+      {
+        "name": "redrive_allow_policy",
+        "ordinal": 17,
+        "type_info": "Text"
+      },
+      {
+        "name": "sqs_managed_sse_enabled: bool",
+        "ordinal": 18,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 19,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 20,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0c47013afc7cd7c19e094f110edb6d9a8e317bd16d2da4525316dd863dea38f4"
+}

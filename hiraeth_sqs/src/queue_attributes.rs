@@ -20,12 +20,23 @@ pub struct GetQueueAttributesResponse {
     pub attributes: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QueueAttributeValues {
     pub visibility_timeout_seconds: i64,
     pub delay_seconds: i64,
+    pub maximum_message_size: i64,
     pub message_retention_period_seconds: i64,
     pub receive_message_wait_time_seconds: i64,
+    pub policy: String,
+    pub redrive_policy: String,
+    pub fifo_queue: bool,
+    pub content_based_deduplication: bool,
+    pub kms_master_key_id: Option<String>,
+    pub kms_data_key_reuse_period_seconds: i64,
+    pub deduplication_scope: String,
+    pub fifo_throughput_limit: String,
+    pub redrive_allow_policy: String,
+    pub sqs_managed_sse_enabled: bool,
 }
 
 impl Default for QueueAttributeValues {
@@ -33,8 +44,19 @@ impl Default for QueueAttributeValues {
         Self {
             visibility_timeout_seconds: 30,
             delay_seconds: 0,
+            maximum_message_size: 1048576,
             message_retention_period_seconds: 345600,
             receive_message_wait_time_seconds: 0,
+            policy: "{}".to_string(),
+            redrive_policy: "{}".to_string(),
+            fifo_queue: false,
+            content_based_deduplication: false,
+            kms_master_key_id: None,
+            kms_data_key_reuse_period_seconds: 300,
+            deduplication_scope: "queue".to_string(),
+            fifo_throughput_limit: "perQueue".to_string(),
+            redrive_allow_policy: "{}".to_string(),
+            sqs_managed_sse_enabled: false,
         }
     }
 }
@@ -50,6 +72,11 @@ impl QueueAttributeValues {
                 defaults.visibility_timeout_seconds,
             ),
             delay_seconds: get_i64_attribute(attributes, "DelaySeconds", defaults.delay_seconds),
+            maximum_message_size: get_i64_attribute(
+                attributes,
+                "MaximumMessageSize",
+                defaults.maximum_message_size,
+            ),
             message_retention_period_seconds: get_i64_attribute(
                 attributes,
                 "MessageRetentionPeriod",
@@ -59,6 +86,44 @@ impl QueueAttributeValues {
                 attributes,
                 "ReceiveMessageWaitTimeSeconds",
                 defaults.receive_message_wait_time_seconds,
+            ),
+            policy: get_string_attribute(attributes, "Policy", &defaults.policy),
+            redrive_policy: get_string_attribute(
+                attributes,
+                "RedrivePolicy",
+                &defaults.redrive_policy,
+            ),
+            fifo_queue: get_bool_attribute(attributes, "FifoQueue", defaults.fifo_queue),
+            content_based_deduplication: get_bool_attribute(
+                attributes,
+                "ContentBasedDeduplication",
+                defaults.content_based_deduplication,
+            ),
+            kms_master_key_id: attributes.get("KmsMasterKeyId").cloned(),
+            kms_data_key_reuse_period_seconds: get_i64_attribute(
+                attributes,
+                "KmsDataKeyReusePeriodSeconds",
+                defaults.kms_data_key_reuse_period_seconds,
+            ),
+            deduplication_scope: get_string_attribute(
+                attributes,
+                "DeduplicationScope",
+                &defaults.deduplication_scope,
+            ),
+            fifo_throughput_limit: get_string_attribute(
+                attributes,
+                "FifoThroughputLimit",
+                &defaults.fifo_throughput_limit,
+            ),
+            redrive_allow_policy: get_string_attribute(
+                attributes,
+                "RedriveAllowPolicy",
+                &defaults.redrive_allow_policy,
+            ),
+            sqs_managed_sse_enabled: get_bool_attribute(
+                attributes,
+                "SqsManagedSseEnabled",
+                defaults.sqs_managed_sse_enabled,
             ),
         }
     }
@@ -89,18 +154,23 @@ pub(crate) async fn collect_queue_attributes<S: SqsStore>(
 ) -> Result<HashMap<String, String>, SqsError> {
     let mut attributes = HashMap::<String, String>::new();
 
-    insert_static_attribute(&mut attributes, requested_attributes, "Policy", "{}");
+    insert_string_attribute(
+        &mut attributes,
+        requested_attributes,
+        "Policy",
+        &queue.policy,
+    );
     insert_i64_attribute(
         &mut attributes,
         requested_attributes,
         "VisibilityTimeout",
         queue.visibility_timeout_seconds,
     );
-    insert_static_attribute(
+    insert_i64_attribute(
         &mut attributes,
         requested_attributes,
         "MaximumMessageSize",
-        "1048576",
+        queue.maximum_message_size,
     );
     insert_i64_attribute(
         &mut attributes,
@@ -148,7 +218,7 @@ pub(crate) async fn collect_queue_attributes<S: SqsStore>(
     if is_requested_attribute("LastModifiedTimestamp", requested_attributes) {
         attributes.insert(
             "LastModifiedTimestamp".to_string(),
-            queue.created_at.and_utc().timestamp_millis().to_string(),
+            queue.updated_at.and_utc().timestamp_millis().to_string(),
         );
     }
 
@@ -185,18 +255,61 @@ pub(crate) async fn collect_queue_attributes<S: SqsStore>(
         "ReceiveMessageWaitTimeSeconds",
         queue.receive_message_wait_time_seconds,
     );
-    insert_static_attribute(&mut attributes, requested_attributes, "RedrivePolicy", "{}");
-    insert_static_attribute(
+    insert_string_attribute(
+        &mut attributes,
+        requested_attributes,
+        "RedrivePolicy",
+        &queue.redrive_policy,
+    );
+    insert_bool_attribute(
+        &mut attributes,
+        requested_attributes,
+        "FifoQueue",
+        queue.queue_type == "fifo",
+    );
+    insert_bool_attribute(
+        &mut attributes,
+        requested_attributes,
+        "ContentBasedDeduplication",
+        queue.content_based_deduplication,
+    );
+    if let Some(kms_master_key_id) = &queue.kms_master_key_id {
+        insert_string_attribute(
+            &mut attributes,
+            requested_attributes,
+            "KmsMasterKeyId",
+            kms_master_key_id,
+        );
+    }
+    insert_i64_attribute(
+        &mut attributes,
+        requested_attributes,
+        "KmsDataKeyReusePeriodSeconds",
+        queue.kms_data_key_reuse_period_seconds,
+    );
+    insert_string_attribute(
+        &mut attributes,
+        requested_attributes,
+        "DeduplicationScope",
+        &queue.deduplication_scope,
+    );
+    insert_string_attribute(
+        &mut attributes,
+        requested_attributes,
+        "FifoThroughputLimit",
+        &queue.fifo_throughput_limit,
+    );
+    insert_string_attribute(
         &mut attributes,
         requested_attributes,
         "RedriveAllowPolicy",
-        "{}",
+        &queue.redrive_allow_policy,
     );
-    insert_static_attribute(
+    insert_bool_attribute(
         &mut attributes,
         requested_attributes,
         "SqsManagedSseEnabled",
-        "false",
+        queue.sqs_managed_sse_enabled,
     );
 
     Ok(attributes)
@@ -207,6 +320,24 @@ fn get_i64_attribute(attributes: &HashMap<String, String>, name: &str, default: 
         .get(name)
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(default)
+}
+
+fn get_bool_attribute(attributes: &HashMap<String, String>, name: &str, default: bool) -> bool {
+    attributes
+        .get(name)
+        .and_then(|value| match value.to_ascii_lowercase().as_str() {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        })
+        .unwrap_or(default)
+}
+
+fn get_string_attribute(attributes: &HashMap<String, String>, name: &str, default: &str) -> String {
+    attributes
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
 }
 
 fn insert_i64_attribute(
@@ -220,7 +351,18 @@ fn insert_i64_attribute(
     }
 }
 
-fn insert_static_attribute(
+fn insert_bool_attribute(
+    attributes: &mut HashMap<String, String>,
+    requested_attributes: &[String],
+    name: &str,
+    value: bool,
+) {
+    if is_requested_attribute(name, requested_attributes) {
+        attributes.insert(name.to_string(), value.to_string());
+    }
+}
+
+fn insert_string_attribute(
     attributes: &mut HashMap<String, String>,
     requested_attributes: &[String],
     name: &str,
@@ -295,10 +437,24 @@ mod tests {
             queue_type: "standard".to_string(),
             visibility_timeout_seconds: 30,
             delay_seconds: 5,
+            maximum_message_size: 2048,
             message_retention_period_seconds: 345600,
             receive_message_wait_time_seconds: 10,
+            policy: r#"{"Statement":[]}"#.to_string(),
+            redrive_policy: r#"{"maxReceiveCount":"5"}"#.to_string(),
+            content_based_deduplication: true,
+            kms_master_key_id: Some("alias/test".to_string()),
+            kms_data_key_reuse_period_seconds: 600,
+            deduplication_scope: "messageGroup".to_string(),
+            fifo_throughput_limit: "perMessageGroupId".to_string(),
+            redrive_allow_policy: r#"{"redrivePermission":"allowAll"}"#.to_string(),
+            sqs_managed_sse_enabled: true,
             created_at: Utc
                 .with_ymd_and_hms(2026, 4, 4, 11, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            updated_at: Utc
+                .with_ymd_and_hms(2026, 4, 4, 11, 30, 0)
                 .unwrap()
                 .naive_utc(),
         }
@@ -324,11 +480,37 @@ mod tests {
         let attributes = QueueAttributeValues::from_attribute_map(&HashMap::from([
             ("VisibilityTimeout".to_string(), "45".to_string()),
             ("DelaySeconds".to_string(), "5".to_string()),
+            ("MaximumMessageSize".to_string(), "2048".to_string()),
             ("MessageRetentionPeriod".to_string(), "86400".to_string()),
             (
                 "ReceiveMessageWaitTimeSeconds".to_string(),
                 "10".to_string(),
             ),
+            (
+                "Policy".to_string(),
+                r#"{"Version":"2012-10-17"}"#.to_string(),
+            ),
+            (
+                "RedrivePolicy".to_string(),
+                r#"{"maxReceiveCount":"5"}"#.to_string(),
+            ),
+            ("FifoQueue".to_string(), "true".to_string()),
+            ("ContentBasedDeduplication".to_string(), "true".to_string()),
+            ("KmsMasterKeyId".to_string(), "alias/test".to_string()),
+            (
+                "KmsDataKeyReusePeriodSeconds".to_string(),
+                "600".to_string(),
+            ),
+            ("DeduplicationScope".to_string(), "messageGroup".to_string()),
+            (
+                "FifoThroughputLimit".to_string(),
+                "perMessageGroupId".to_string(),
+            ),
+            (
+                "RedriveAllowPolicy".to_string(),
+                r#"{"redrivePermission":"allowAll"}"#.to_string(),
+            ),
+            ("SqsManagedSseEnabled".to_string(), "true".to_string()),
         ]));
 
         assert_eq!(
@@ -336,8 +518,19 @@ mod tests {
             QueueAttributeValues {
                 visibility_timeout_seconds: 45,
                 delay_seconds: 5,
+                maximum_message_size: 2048,
                 message_retention_period_seconds: 86400,
                 receive_message_wait_time_seconds: 10,
+                policy: r#"{"Version":"2012-10-17"}"#.to_string(),
+                redrive_policy: r#"{"maxReceiveCount":"5"}"#.to_string(),
+                fifo_queue: true,
+                content_based_deduplication: true,
+                kms_master_key_id: Some("alias/test".to_string()),
+                kms_data_key_reuse_period_seconds: 600,
+                deduplication_scope: "messageGroup".to_string(),
+                fifo_throughput_limit: "perMessageGroupId".to_string(),
+                redrive_allow_policy: r#"{"redrivePermission":"allowAll"}"#.to_string(),
+                sqs_managed_sse_enabled: true,
             }
         );
     }
@@ -366,9 +559,9 @@ mod tests {
             .await
             .expect("attributes should collect");
 
-        assert_eq!(attributes["Policy"], "{}");
+        assert_eq!(attributes["Policy"], r#"{"Statement":[]}"#);
         assert_eq!(attributes["VisibilityTimeout"], "30");
-        assert_eq!(attributes["MaximumMessageSize"], "1048576");
+        assert_eq!(attributes["MaximumMessageSize"], "2048");
         assert_eq!(attributes["MessageRetentionPeriod"], "345600");
         assert_eq!(attributes["ApproximateNumberOfMessages"], "7");
         assert_eq!(attributes["ApproximateNumberOfMessagesNotVisible"], "4");
@@ -382,7 +575,7 @@ mod tests {
         );
         assert_eq!(
             attributes["LastModifiedTimestamp"],
-            Utc.with_ymd_and_hms(2026, 4, 4, 11, 0, 0)
+            Utc.with_ymd_and_hms(2026, 4, 4, 11, 30, 0)
                 .unwrap()
                 .timestamp_millis()
                 .to_string()
@@ -393,9 +586,18 @@ mod tests {
         );
         assert_eq!(attributes["DelaySeconds"], "5");
         assert_eq!(attributes["ReceiveMessageWaitTimeSeconds"], "10");
-        assert_eq!(attributes["RedrivePolicy"], "{}");
-        assert_eq!(attributes["RedriveAllowPolicy"], "{}");
-        assert_eq!(attributes["SqsManagedSseEnabled"], "false");
+        assert_eq!(attributes["RedrivePolicy"], r#"{"maxReceiveCount":"5"}"#);
+        assert_eq!(attributes["FifoQueue"], "false");
+        assert_eq!(attributes["ContentBasedDeduplication"], "true");
+        assert_eq!(attributes["KmsMasterKeyId"], "alias/test");
+        assert_eq!(attributes["KmsDataKeyReusePeriodSeconds"], "600");
+        assert_eq!(attributes["DeduplicationScope"], "messageGroup");
+        assert_eq!(attributes["FifoThroughputLimit"], "perMessageGroupId");
+        assert_eq!(
+            attributes["RedriveAllowPolicy"],
+            r#"{"redrivePermission":"allowAll"}"#
+        );
+        assert_eq!(attributes["SqsManagedSseEnabled"], "true");
     }
 
     #[tokio::test]

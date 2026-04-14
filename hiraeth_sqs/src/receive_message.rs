@@ -270,6 +270,11 @@ mod tests {
                 .with_ymd_and_hms(2026, 4, 3, 12, 0, 0)
                 .unwrap()
                 .naive_utc(),
+            updated_at: Utc
+                .with_ymd_and_hms(2026, 4, 3, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            ..Default::default()
         }
     }
 

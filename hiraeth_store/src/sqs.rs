@@ -11,9 +11,53 @@ pub struct SqsQueue {
     pub queue_type: String,
     pub visibility_timeout_seconds: i64,
     pub delay_seconds: i64,
+    pub maximum_message_size: i64,
     pub message_retention_period_seconds: i64,
     pub receive_message_wait_time_seconds: i64,
+    pub policy: String,
+    pub redrive_policy: String,
+    pub content_based_deduplication: bool,
+    pub kms_master_key_id: Option<String>,
+    pub kms_data_key_reuse_period_seconds: i64,
+    pub deduplication_scope: String,
+    pub fifo_throughput_limit: String,
+    pub redrive_allow_policy: String,
+    pub sqs_managed_sse_enabled: bool,
     pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+
+impl Default for SqsQueue {
+    fn default() -> Self {
+        let timestamp = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)
+            .expect("default queue date should be valid")
+            .and_hms_opt(0, 0, 0)
+            .expect("default queue time should be valid");
+
+        Self {
+            id: 0,
+            name: String::new(),
+            region: String::new(),
+            account_id: String::new(),
+            queue_type: "standard".to_string(),
+            visibility_timeout_seconds: 30,
+            delay_seconds: 0,
+            maximum_message_size: 1048576,
+            message_retention_period_seconds: 345600,
+            receive_message_wait_time_seconds: 0,
+            policy: "{}".to_string(),
+            redrive_policy: "{}".to_string(),
+            content_based_deduplication: false,
+            kms_master_key_id: None,
+            kms_data_key_reuse_period_seconds: 300,
+            deduplication_scope: "queue".to_string(),
+            fifo_throughput_limit: "perQueue".to_string(),
+            redrive_allow_policy: "{}".to_string(),
+            sqs_managed_sse_enabled: false,
+            created_at: timestamp,
+            updated_at: timestamp,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

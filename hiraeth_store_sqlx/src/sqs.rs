@@ -22,15 +22,46 @@ impl SqsStore for SqliteSqsStore {
         queue: hiraeth_store::sqs::SqsQueue,
     ) -> Result<(), hiraeth_store::StoreError> {
         sqlx::query!(
-            "INSERT INTO sqs_queues (name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sqs_queues (
+                name,
+                region,
+                account_id,
+                queue_type,
+                visibility_timeout_seconds,
+                delay_seconds,
+                maximum_message_size,
+                message_retention_period_seconds,
+                receive_message_wait_time_seconds,
+                policy,
+                redrive_policy,
+                content_based_deduplication,
+                kms_master_key_id,
+                kms_data_key_reuse_period_seconds,
+                deduplication_scope,
+                fifo_throughput_limit,
+                redrive_allow_policy,
+                sqs_managed_sse_enabled,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             queue.name,
             queue.region,
             queue.account_id,
             queue.queue_type,
             queue.visibility_timeout_seconds,
             queue.delay_seconds,
+            queue.maximum_message_size,
             queue.message_retention_period_seconds,
-            queue.receive_message_wait_time_seconds
+            queue.receive_message_wait_time_seconds,
+            queue.policy,
+            queue.redrive_policy,
+            queue.content_based_deduplication,
+            queue.kms_master_key_id,
+            queue.kms_data_key_reuse_period_seconds,
+            queue.deduplication_scope,
+            queue.fifo_throughput_limit,
+            queue.redrive_allow_policy,
+            queue.sqs_managed_sse_enabled,
+            queue.updated_at
         )
         .execute(&self.pool)
         .await
@@ -54,7 +85,28 @@ impl SqsStore for SqliteSqsStore {
     ) -> Result<Option<SqsQueue>, StoreError> {
         let queue = sqlx::query_as!(
             SqsQueue,
-            "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds, created_at
+            "SELECT
+                id,
+                name,
+                region,
+                account_id,
+                queue_type,
+                visibility_timeout_seconds,
+                delay_seconds,
+                maximum_message_size,
+                message_retention_period_seconds,
+                receive_message_wait_time_seconds,
+                policy,
+                redrive_policy,
+                content_based_deduplication as \"content_based_deduplication: bool\",
+                kms_master_key_id,
+                kms_data_key_reuse_period_seconds,
+                deduplication_scope,
+                fifo_throughput_limit,
+                redrive_allow_policy,
+                sqs_managed_sse_enabled as \"sqs_managed_sse_enabled: bool\",
+                created_at,
+                updated_at
             FROM sqs_queues 
             WHERE name = ? AND region = ? AND account_id = ?",
             queue_name,
@@ -246,7 +298,28 @@ impl SqsStore for SqliteSqsStore {
         let limit = max_results.unwrap_or(1000);
         let result = sqlx::query_as!(
             SqsQueue,
-            "SELECT id, name, region, account_id, queue_type, visibility_timeout_seconds, delay_seconds, message_retention_period_seconds, receive_message_wait_time_seconds, created_at
+            "SELECT
+                id,
+                name,
+                region,
+                account_id,
+                queue_type,
+                visibility_timeout_seconds,
+                delay_seconds,
+                maximum_message_size,
+                message_retention_period_seconds,
+                receive_message_wait_time_seconds,
+                policy,
+                redrive_policy,
+                content_based_deduplication as \"content_based_deduplication: bool\",
+                kms_master_key_id,
+                kms_data_key_reuse_period_seconds,
+                deduplication_scope,
+                fifo_throughput_limit,
+                redrive_allow_policy,
+                sqs_managed_sse_enabled as \"sqs_managed_sse_enabled: bool\",
+                created_at,
+                updated_at
             FROM sqs_queues
             WHERE region = ?
             AND account_id = ?
@@ -263,9 +336,9 @@ impl SqsStore for SqliteSqsStore {
             next_token,
             limit
         )
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
 
         Ok(result)
     }
@@ -309,6 +382,8 @@ mod tests {
     }
 
     fn queue_for_account(name: &str, region: &str, account_id: &str) -> SqsQueue {
+        let now = Utc::now().naive_utc();
+
         SqsQueue {
             id: 0,
             name: name.to_string(),
@@ -319,7 +394,9 @@ mod tests {
             delay_seconds: 0,
             message_retention_period_seconds: 345600,
             receive_message_wait_time_seconds: 0,
-            created_at: Utc::now().naive_utc(),
+            created_at: now,
+            updated_at: now,
+            ..Default::default()
         }
     }
 
@@ -371,7 +448,24 @@ mod tests {
     #[tokio::test]
     async fn create_queue_and_get_queue_round_trip() {
         let (_temp_dir, store) = test_store().await;
-        let expected_queue = queue("orders", "us-east-1");
+        let expected_queue = SqsQueue {
+            queue_type: "fifo".to_string(),
+            visibility_timeout_seconds: 45,
+            delay_seconds: 5,
+            maximum_message_size: 2048,
+            message_retention_period_seconds: 86400,
+            receive_message_wait_time_seconds: 10,
+            policy: r#"{"Statement":[]}"#.to_string(),
+            redrive_policy: r#"{"maxReceiveCount":"5"}"#.to_string(),
+            content_based_deduplication: true,
+            kms_master_key_id: Some("alias/test".to_string()),
+            kms_data_key_reuse_period_seconds: 600,
+            deduplication_scope: "messageGroup".to_string(),
+            fifo_throughput_limit: "perMessageGroupId".to_string(),
+            redrive_allow_policy: r#"{"redrivePermission":"allowAll"}"#.to_string(),
+            sqs_managed_sse_enabled: true,
+            ..queue("orders.fifo", "us-east-1")
+        };
 
         store
             .create_queue(expected_queue.clone())
@@ -379,7 +473,7 @@ mod tests {
             .expect("queue insert should succeed");
 
         let queue = store
-            .get_queue("orders", "us-east-1", "123456789012")
+            .get_queue("orders.fifo", "us-east-1", "123456789012")
             .await
             .expect("queue lookup should succeed")
             .expect("queue should exist");
@@ -393,6 +487,10 @@ mod tests {
             queue.visibility_timeout_seconds,
             expected_queue.visibility_timeout_seconds
         );
+        assert_eq!(
+            queue.maximum_message_size,
+            expected_queue.maximum_message_size
+        );
         assert_eq!(queue.delay_seconds, expected_queue.delay_seconds);
         assert_eq!(
             queue.message_retention_period_seconds,
@@ -402,6 +500,34 @@ mod tests {
             queue.receive_message_wait_time_seconds,
             expected_queue.receive_message_wait_time_seconds
         );
+        assert_eq!(queue.policy, expected_queue.policy);
+        assert_eq!(queue.redrive_policy, expected_queue.redrive_policy);
+        assert_eq!(
+            queue.content_based_deduplication,
+            expected_queue.content_based_deduplication
+        );
+        assert_eq!(queue.kms_master_key_id, expected_queue.kms_master_key_id);
+        assert_eq!(
+            queue.kms_data_key_reuse_period_seconds,
+            expected_queue.kms_data_key_reuse_period_seconds
+        );
+        assert_eq!(
+            queue.deduplication_scope,
+            expected_queue.deduplication_scope
+        );
+        assert_eq!(
+            queue.fifo_throughput_limit,
+            expected_queue.fifo_throughput_limit
+        );
+        assert_eq!(
+            queue.redrive_allow_policy,
+            expected_queue.redrive_allow_policy
+        );
+        assert_eq!(
+            queue.sqs_managed_sse_enabled,
+            expected_queue.sqs_managed_sse_enabled
+        );
+        assert_eq!(queue.updated_at, expected_queue.updated_at);
     }
 
     #[tokio::test]

@@ -146,8 +146,18 @@ mod tests {
         assert_eq!(created[0].queue_type, "standard");
         assert_eq!(created[0].visibility_timeout_seconds, 30);
         assert_eq!(created[0].delay_seconds, 0);
+        assert_eq!(created[0].maximum_message_size, 1048576);
         assert_eq!(created[0].message_retention_period_seconds, 345600);
         assert_eq!(created[0].receive_message_wait_time_seconds, 0);
+        assert_eq!(created[0].policy, "{}");
+        assert_eq!(created[0].redrive_policy, "{}");
+        assert!(!created[0].content_based_deduplication);
+        assert_eq!(created[0].kms_master_key_id, None);
+        assert_eq!(created[0].kms_data_key_reuse_period_seconds, 300);
+        assert_eq!(created[0].deduplication_scope, "queue");
+        assert_eq!(created[0].fifo_throughput_limit, "perQueue");
+        assert_eq!(created[0].redrive_allow_policy, "{}");
+        assert!(!created[0].sqs_managed_sse_enabled);
     }
 
     #[tokio::test]
@@ -156,12 +166,23 @@ mod tests {
         let request = resolved_request(
             Some("AmazonSQS.CreateQueue"),
             r#"{
-                "QueueName":"configured-queue",
+                "QueueName":"configured-queue.fifo",
                 "Attributes":{
                     "VisibilityTimeout":"45",
                     "DelaySeconds":"5",
+                    "MaximumMessageSize":"2048",
                     "MessageRetentionPeriod":"86400",
-                    "ReceiveMessageWaitTimeSeconds":"10"
+                    "ReceiveMessageWaitTimeSeconds":"10",
+                    "Policy":"{\"Statement\":[]}",
+                    "RedrivePolicy":"{\"maxReceiveCount\":\"5\"}",
+                    "FifoQueue":"true",
+                    "ContentBasedDeduplication":"true",
+                    "KmsMasterKeyId":"alias/test",
+                    "KmsDataKeyReusePeriodSeconds":"600",
+                    "DeduplicationScope":"messageGroup",
+                    "FifoThroughputLimit":"perMessageGroupId",
+                    "RedriveAllowPolicy":"{\"redrivePermission\":\"allowAll\"}",
+                    "SqsManagedSseEnabled":"true"
                 }
             }"#,
         );
@@ -172,10 +193,24 @@ mod tests {
 
         let created = store.created_queues();
         assert_eq!(created.len(), 1);
+        assert_eq!(created[0].queue_type, "fifo");
         assert_eq!(created[0].visibility_timeout_seconds, 45);
         assert_eq!(created[0].delay_seconds, 5);
+        assert_eq!(created[0].maximum_message_size, 2048);
         assert_eq!(created[0].message_retention_period_seconds, 86400);
         assert_eq!(created[0].receive_message_wait_time_seconds, 10);
+        assert_eq!(created[0].policy, r#"{"Statement":[]}"#);
+        assert_eq!(created[0].redrive_policy, r#"{"maxReceiveCount":"5"}"#);
+        assert!(created[0].content_based_deduplication);
+        assert_eq!(created[0].kms_master_key_id.as_deref(), Some("alias/test"));
+        assert_eq!(created[0].kms_data_key_reuse_period_seconds, 600);
+        assert_eq!(created[0].deduplication_scope, "messageGroup");
+        assert_eq!(created[0].fifo_throughput_limit, "perMessageGroupId");
+        assert_eq!(
+            created[0].redrive_allow_policy,
+            r#"{"redrivePermission":"allowAll"}"#
+        );
+        assert!(created[0].sqs_managed_sse_enabled);
     }
 
     #[tokio::test]
@@ -207,6 +242,11 @@ mod tests {
                 .with_ymd_and_hms(2026, 4, 1, 12, 0, 0)
                 .unwrap()
                 .naive_utc(),
+            updated_at: Utc
+                .with_ymd_and_hms(2026, 4, 1, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            ..Default::default()
         });
         let request = resolved_request(
             Some("AmazonSQS.GetQueueUrl"),
