@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sqs_queues SET\n                visibility_timeout_seconds = COALESCE(?, visibility_timeout_seconds),\n                delay_seconds = COALESCE(?, delay_seconds),\n                maximum_message_size = COALESCE(?, maximum_message_size),\n                message_retention_period_seconds = COALESCE(?, message_retention_period_seconds),\n                receive_message_wait_time_seconds = COALESCE(?, receive_message_wait_time_seconds),\n                policy = COALESCE(?, policy),\n                redrive_policy = COALESCE(?, redrive_policy),\n                content_based_deduplication = COALESCE(?, content_based_deduplication),\n                kms_master_key_id = CASE WHEN ? THEN ? ELSE kms_master_key_id END,\n                kms_data_key_reuse_period_seconds = COALESCE(?, kms_data_key_reuse_period_seconds),\n                deduplication_scope = COALESCE(?, deduplication_scope),\n                fifo_throughput_limit = COALESCE(?, fifo_throughput_limit),\n                redrive_allow_policy = COALESCE(?, redrive_allow_policy),\n                sqs_managed_sse_enabled = COALESCE(?, sqs_managed_sse_enabled),\n                updated_at = ?\n            WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 17
+    },
+    "nullable": []
+  },
+  "hash": "e0e27cd53a84cf5bdaa05a66e0689b423a009ead697f68503c0935adeef1ccb1"
+}

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 
 use crate::StoreError;
@@ -77,6 +79,63 @@ pub struct SqsMessage {
     pub message_deduplication_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SqsQueueAttributeUpdate {
+    pub visibility_timeout_seconds: Option<i64>,
+    pub delay_seconds: Option<i64>,
+    pub maximum_message_size: Option<i64>,
+    pub message_retention_period_seconds: Option<i64>,
+    pub receive_message_wait_time_seconds: Option<i64>,
+    pub policy: Option<String>,
+    pub redrive_policy: Option<String>,
+    pub content_based_deduplication: Option<bool>,
+    pub kms_master_key_id: Option<Option<String>>,
+    pub kms_data_key_reuse_period_seconds: Option<i64>,
+    pub deduplication_scope: Option<String>,
+    pub fifo_throughput_limit: Option<String>,
+    pub redrive_allow_policy: Option<String>,
+    pub sqs_managed_sse_enabled: Option<bool>,
+}
+
+impl From<HashMap<String, String>> for SqsQueueAttributeUpdate {
+    fn from(attributes: HashMap<String, String>) -> Self {
+        Self {
+            visibility_timeout_seconds: attributes
+                .get("VisibilityTimeout")
+                .and_then(|s| s.parse::<i64>().ok()),
+            delay_seconds: attributes
+                .get("DelaySeconds")
+                .and_then(|s| s.parse::<i64>().ok()),
+            maximum_message_size: attributes
+                .get("MaximumMessageSize")
+                .and_then(|s| s.parse::<i64>().ok()),
+            message_retention_period_seconds: attributes
+                .get("MessageRetentionPeriod")
+                .and_then(|s| s.parse::<i64>().ok()),
+            receive_message_wait_time_seconds: attributes
+                .get("ReceiveMessageWaitTimeSeconds")
+                .and_then(|s| s.parse::<i64>().ok()),
+            policy: attributes.get("Policy").cloned(),
+            redrive_policy: attributes.get("RedrivePolicy").cloned(),
+            content_based_deduplication: attributes
+                .get("ContentBasedDeduplication")
+                .and_then(|s| s.parse::<bool>().ok()),
+            kms_master_key_id: attributes
+                .contains_key("KmsMasterKeyId")
+                .then(|| attributes.get("KmsMasterKeyId").cloned()),
+            kms_data_key_reuse_period_seconds: attributes
+                .get("KmsDataKeyReusePeriodSeconds")
+                .and_then(|s| s.parse::<i64>().ok()),
+            deduplication_scope: attributes.get("DeduplicationScope").cloned(),
+            fifo_throughput_limit: attributes.get("FifoThroughputLimit").cloned(),
+            redrive_allow_policy: attributes.get("RedriveAllowPolicy").cloned(),
+            sqs_managed_sse_enabled: attributes
+                .get("SqsManagedSseEnabled")
+                .and_then(|s| s.parse::<bool>().ok()),
+        }
+    }
+}
+
 #[async_trait]
 pub trait SqsStore {
     // queue ops
@@ -100,6 +159,11 @@ pub trait SqsStore {
         next_token: Option<&str>,
     ) -> Result<Vec<SqsQueue>, StoreError>;
     async fn purge_queue(&self, queue_id: i64) -> Result<(), StoreError>;
+    async fn set_queue_attributes(
+        &self,
+        queue_id: i64,
+        attributes: SqsQueueAttributeUpdate,
+    ) -> Result<(), StoreError>;
 
     // message ops
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError>;

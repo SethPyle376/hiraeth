@@ -1,7 +1,7 @@
 use ::chrono::Duration;
 use async_trait::async_trait;
 use hiraeth_store::StoreError;
-use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
+use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsQueueAttributeUpdate, SqsStore};
 use sqlx::types::chrono;
 
 #[derive(Clone)]
@@ -350,6 +350,58 @@ impl SqsStore for SqliteSqsStore {
             .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
         Ok(())
     }
+
+    async fn set_queue_attributes(
+        &self,
+        queue_id: i64,
+        attributes: SqsQueueAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        let updated_at = chrono::Utc::now().naive_utc();
+        let update_kms_master_key_id = attributes.kms_master_key_id.is_some();
+        let kms_master_key_id = attributes.kms_master_key_id.flatten();
+
+        sqlx::query!(
+            "UPDATE sqs_queues SET
+                visibility_timeout_seconds = COALESCE(?, visibility_timeout_seconds),
+                delay_seconds = COALESCE(?, delay_seconds),
+                maximum_message_size = COALESCE(?, maximum_message_size),
+                message_retention_period_seconds = COALESCE(?, message_retention_period_seconds),
+                receive_message_wait_time_seconds = COALESCE(?, receive_message_wait_time_seconds),
+                policy = COALESCE(?, policy),
+                redrive_policy = COALESCE(?, redrive_policy),
+                content_based_deduplication = COALESCE(?, content_based_deduplication),
+                kms_master_key_id = CASE WHEN ? THEN ? ELSE kms_master_key_id END,
+                kms_data_key_reuse_period_seconds = COALESCE(?, kms_data_key_reuse_period_seconds),
+                deduplication_scope = COALESCE(?, deduplication_scope),
+                fifo_throughput_limit = COALESCE(?, fifo_throughput_limit),
+                redrive_allow_policy = COALESCE(?, redrive_allow_policy),
+                sqs_managed_sse_enabled = COALESCE(?, sqs_managed_sse_enabled),
+                updated_at = ?
+            WHERE id = ?",
+            attributes.visibility_timeout_seconds,
+            attributes.delay_seconds,
+            attributes.maximum_message_size,
+            attributes.message_retention_period_seconds,
+            attributes.receive_message_wait_time_seconds,
+            attributes.policy,
+            attributes.redrive_policy,
+            attributes.content_based_deduplication,
+            update_kms_master_key_id,
+            kms_master_key_id,
+            attributes.kms_data_key_reuse_period_seconds,
+            attributes.deduplication_scope,
+            attributes.fifo_throughput_limit,
+            attributes.redrive_allow_policy,
+            attributes.sqs_managed_sse_enabled,
+            updated_at,
+            queue_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -359,7 +411,7 @@ mod tests {
 
     use super::SqliteSqsStore;
     use crate::{get_store_pool, run_migrations};
-    use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
+    use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsQueueAttributeUpdate, SqsStore};
 
     async fn test_store() -> (TempDir, SqliteSqsStore) {
         let temp_dir = TempDir::new().expect("temp dir should be created");
@@ -585,6 +637,156 @@ mod tests {
             .expect("queue lookup should succeed");
 
         assert!(queue.is_none());
+    }
+
+    #[tokio::test]
+    async fn set_queue_attributes_updates_only_matching_queue() {
+        let (_temp_dir, store) = test_store().await;
+        let original_updated_at = Utc::now().naive_utc() - Duration::days(1);
+
+        store
+            .create_queue(SqsQueue {
+                updated_at: original_updated_at,
+                kms_master_key_id: Some("alias/original".to_string()),
+                ..queue("orders", "us-east-1")
+            })
+            .await
+            .expect("orders queue should insert");
+        store
+            .create_queue(queue("payments", "us-east-1"))
+            .await
+            .expect("payments queue should insert");
+
+        let orders = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("orders lookup should succeed")
+            .expect("orders queue should exist");
+
+        store
+            .set_queue_attributes(
+                orders.id,
+                SqsQueueAttributeUpdate {
+                    visibility_timeout_seconds: Some(45),
+                    delay_seconds: Some(5),
+                    maximum_message_size: Some(2048),
+                    message_retention_period_seconds: Some(86400),
+                    receive_message_wait_time_seconds: Some(10),
+                    policy: Some(r#"{"Statement":[]}"#.to_string()),
+                    redrive_policy: Some(r#"{"maxReceiveCount":"5"}"#.to_string()),
+                    content_based_deduplication: Some(true),
+                    kms_master_key_id: Some(Some("alias/updated".to_string())),
+                    kms_data_key_reuse_period_seconds: Some(600),
+                    deduplication_scope: Some("messageGroup".to_string()),
+                    fifo_throughput_limit: Some("perMessageGroupId".to_string()),
+                    redrive_allow_policy: Some(r#"{"redrivePermission":"allowAll"}"#.to_string()),
+                    sqs_managed_sse_enabled: Some(true),
+                },
+            )
+            .await
+            .expect("set queue attributes should succeed");
+
+        let updated_orders = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("orders lookup should succeed")
+            .expect("orders queue should exist");
+        let payments = store
+            .get_queue("payments", "us-east-1", "123456789012")
+            .await
+            .expect("payments lookup should succeed")
+            .expect("payments queue should exist");
+
+        assert_eq!(updated_orders.visibility_timeout_seconds, 45);
+        assert_eq!(updated_orders.delay_seconds, 5);
+        assert_eq!(updated_orders.maximum_message_size, 2048);
+        assert_eq!(updated_orders.message_retention_period_seconds, 86400);
+        assert_eq!(updated_orders.receive_message_wait_time_seconds, 10);
+        assert_eq!(updated_orders.policy, r#"{"Statement":[]}"#);
+        assert_eq!(updated_orders.redrive_policy, r#"{"maxReceiveCount":"5"}"#);
+        assert!(updated_orders.content_based_deduplication);
+        assert_eq!(
+            updated_orders.kms_master_key_id.as_deref(),
+            Some("alias/updated")
+        );
+        assert_eq!(updated_orders.kms_data_key_reuse_period_seconds, 600);
+        assert_eq!(updated_orders.deduplication_scope, "messageGroup");
+        assert_eq!(updated_orders.fifo_throughput_limit, "perMessageGroupId");
+        assert_eq!(
+            updated_orders.redrive_allow_policy,
+            r#"{"redrivePermission":"allowAll"}"#
+        );
+        assert!(updated_orders.sqs_managed_sse_enabled);
+        assert!(updated_orders.updated_at > original_updated_at);
+
+        assert_eq!(payments.visibility_timeout_seconds, 30);
+        assert_eq!(payments.delay_seconds, 0);
+        assert_eq!(payments.kms_master_key_id, None);
+        assert!(!payments.sqs_managed_sse_enabled);
+    }
+
+    #[tokio::test]
+    async fn set_queue_attributes_preserves_omitted_values() {
+        let (_temp_dir, store) = test_store().await;
+        store
+            .create_queue(SqsQueue {
+                delay_seconds: 9,
+                policy: r#"{"Statement":[]}"#.to_string(),
+                kms_master_key_id: Some("alias/original".to_string()),
+                ..queue("orders", "us-east-1")
+            })
+            .await
+            .expect("queue should insert");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        store
+            .set_queue_attributes(
+                queue.id,
+                SqsQueueAttributeUpdate {
+                    visibility_timeout_seconds: Some(45),
+                    ..SqsQueueAttributeUpdate::default()
+                },
+            )
+            .await
+            .expect("set queue attributes should succeed");
+
+        let updated_queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        assert_eq!(updated_queue.visibility_timeout_seconds, 45);
+        assert_eq!(updated_queue.delay_seconds, 9);
+        assert_eq!(updated_queue.policy, r#"{"Statement":[]}"#);
+        assert_eq!(
+            updated_queue.kms_master_key_id.as_deref(),
+            Some("alias/original")
+        );
+
+        store
+            .set_queue_attributes(
+                queue.id,
+                SqsQueueAttributeUpdate {
+                    kms_master_key_id: Some(None),
+                    ..SqsQueueAttributeUpdate::default()
+                },
+            )
+            .await
+            .expect("clearing kms master key id should succeed");
+
+        let updated_queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        assert_eq!(updated_queue.kms_master_key_id, None);
     }
 
     #[tokio::test]

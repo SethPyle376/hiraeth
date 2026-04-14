@@ -10,7 +10,7 @@ use async_trait::async_trait;
 
 use crate::{
     StoreError,
-    sqs::{SqsMessage, SqsQueue, SqsStore},
+    sqs::{SqsMessage, SqsQueue, SqsQueueAttributeUpdate, SqsStore},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -282,6 +282,24 @@ impl SqsStore for SqsTestStore {
         Ok(())
     }
 
+    async fn set_queue_attributes(
+        &self,
+        queue_id: i64,
+        attributes: SqsQueueAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        if let Some(queue) = self
+            .queues
+            .lock()
+            .expect("queues mutex")
+            .iter_mut()
+            .find(|queue| queue.id == queue_id)
+        {
+            apply_queue_attribute_update(queue, attributes);
+        }
+
+        Ok(())
+    }
+
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError> {
         self.sent_messages
             .lock()
@@ -340,4 +358,51 @@ impl SqsStore for SqsTestStore {
             .push((queue_id, receipt_handle.to_string(), visible_at));
         Ok(())
     }
+}
+
+fn apply_queue_attribute_update(queue: &mut SqsQueue, attributes: SqsQueueAttributeUpdate) {
+    if let Some(value) = attributes.visibility_timeout_seconds {
+        queue.visibility_timeout_seconds = value;
+    }
+    if let Some(value) = attributes.delay_seconds {
+        queue.delay_seconds = value;
+    }
+    if let Some(value) = attributes.maximum_message_size {
+        queue.maximum_message_size = value;
+    }
+    if let Some(value) = attributes.message_retention_period_seconds {
+        queue.message_retention_period_seconds = value;
+    }
+    if let Some(value) = attributes.receive_message_wait_time_seconds {
+        queue.receive_message_wait_time_seconds = value;
+    }
+    if let Some(value) = attributes.policy {
+        queue.policy = value;
+    }
+    if let Some(value) = attributes.redrive_policy {
+        queue.redrive_policy = value;
+    }
+    if let Some(value) = attributes.content_based_deduplication {
+        queue.content_based_deduplication = value;
+    }
+    if let Some(value) = attributes.kms_master_key_id {
+        queue.kms_master_key_id = value;
+    }
+    if let Some(value) = attributes.kms_data_key_reuse_period_seconds {
+        queue.kms_data_key_reuse_period_seconds = value;
+    }
+    if let Some(value) = attributes.deduplication_scope {
+        queue.deduplication_scope = value;
+    }
+    if let Some(value) = attributes.fifo_throughput_limit {
+        queue.fifo_throughput_limit = value;
+    }
+    if let Some(value) = attributes.redrive_allow_policy {
+        queue.redrive_allow_policy = value;
+    }
+    if let Some(value) = attributes.sqs_managed_sse_enabled {
+        queue.sqs_managed_sse_enabled = value;
+    }
+
+    queue.updated_at = chrono::Utc::now().naive_utc();
 }
