@@ -60,6 +60,9 @@ where
                 "AmazonSQS.ChangeMessageVisibility" => {
                     change_message_visibility(&request, &self.store).await
                 }
+                "AmazonSQS.ChangeMessageVisibilityBatch" => {
+                    change_message_visibility_batch(&request, &self.store).await
+                }
                 op => Err(error::SqsError::UnsupportedOperation(op.to_string())),
             }),
             _ => Err(ApiError::NotFound(

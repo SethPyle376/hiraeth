@@ -352,6 +352,13 @@ impl SqsStore for SqsTestStore {
         receipt_handle: &str,
         visible_at: chrono::NaiveDateTime,
     ) -> Result<(), StoreError> {
+        if self.failing_receipt_handles.contains(receipt_handle) {
+            return Err(StoreError::StorageFailure(format!(
+                "failed to update visibility for {}",
+                receipt_handle
+            )));
+        }
+
         self.visibility_updates
             .lock()
             .expect("visibility updates mutex")

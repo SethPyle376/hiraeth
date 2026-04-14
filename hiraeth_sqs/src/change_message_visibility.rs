@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::SqsStore;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::SqsError;
 use crate::util;
@@ -13,6 +13,43 @@ struct ChangeMessageVisibilityRequest {
     pub queue_url: String,
     pub receipt_handle: String,
     pub visibility_timeout: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct ChangeMessageVisibilityBatchEntry {
+    pub id: String,
+    pub receipt_handle: String,
+    pub visibility_timeout: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct ChangeMessageVisibilityBatchRequest {
+    pub queue_url: String,
+    pub entries: Vec<ChangeMessageVisibilityBatchEntry>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct ChangeMessageVisibilityBatchSuccessEntry {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct ChangeMessageVisibilityBatchFailedEntry {
+    pub id: String,
+    pub code: String,
+    pub message: String,
+    pub sender_fault: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct ChangeMessageVisibilityBatchResponse {
+    pub successful: Vec<ChangeMessageVisibilityBatchSuccessEntry>,
+    pub failed: Vec<ChangeMessageVisibilityBatchFailedEntry>,
 }
 
 pub(crate) async fn change_message_visibility<S: SqsStore>(
@@ -38,6 +75,46 @@ pub(crate) async fn change_message_visibility<S: SqsStore>(
     })
 }
 
+pub(crate) async fn change_message_visibility_batch<S: SqsStore>(
+    request: &ResolvedRequest,
+    store: &S,
+) -> Result<ServiceResponse, SqsError> {
+    let change_request = util::parse_request_body::<ChangeMessageVisibilityBatchRequest>(request)?;
+    let queue = util::load_queue_from_url(request, store, &change_request.queue_url).await?;
+
+    let mut successful = Vec::new();
+    let mut failed = Vec::new();
+
+    for entry in change_request.entries {
+        let ChangeMessageVisibilityBatchEntry {
+            id,
+            receipt_handle,
+            visibility_timeout,
+        } = entry;
+        let visible_at = (Utc::now() + Duration::seconds(visibility_timeout as i64)).naive_utc();
+
+        match store
+            .set_message_visible_at(queue.id, &receipt_handle, visible_at)
+            .await
+        {
+            Ok(()) => successful.push(ChangeMessageVisibilityBatchSuccessEntry { id }),
+            Err(e) => failed.push(ChangeMessageVisibilityBatchFailedEntry {
+                id,
+                code: "StoreError".to_string(),
+                message: format!("Failed to change message visibility: {:?}", e),
+                sender_fault: false,
+            }),
+        }
+    }
+
+    Ok(ServiceResponse {
+        status_code: 200,
+        headers: vec![],
+        body: serde_json::to_vec(&ChangeMessageVisibilityBatchResponse { successful, failed })
+            .map_err(|e| SqsError::BadRequest(e.to_string()))?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -45,9 +122,11 @@ mod tests {
     use chrono::{Duration, TimeZone, Utc};
     use hiraeth_auth::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
+    use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
+    use serde_json::Value;
 
-    use super::change_message_visibility;
+    use super::{change_message_visibility, change_message_visibility_batch};
     use crate::error::SqsError;
 
     fn queue() -> SqsQueue {
@@ -108,6 +187,19 @@ mod tests {
         }
     }
 
+    fn resolved_request_for_target(target: &str, body: &str) -> ResolvedRequest {
+        let mut request = resolved_request(body);
+        request
+            .request
+            .headers
+            .insert("x-amz-target".to_string(), target.to_string());
+        request
+    }
+
+    fn parse_json_body(response: &ServiceResponse) -> Value {
+        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    }
+
     #[tokio::test]
     async fn change_message_visibility_updates_visible_at_for_receipt_handle() {
         let store = SqsTestStore::with_queue(queue());
@@ -148,6 +240,71 @@ mod tests {
         );
 
         let error = change_message_visibility(&request, &store)
+            .await
+            .err()
+            .expect("missing queue should error");
+
+        assert_eq!(error, SqsError::QueueNotFound);
+    }
+
+    #[tokio::test]
+    async fn change_message_visibility_batch_returns_successful_and_failed_entries() {
+        let store = SqsTestStore::with_queue(queue()).with_failing_receipt_handles(&["receipt-2"]);
+        let request = resolved_request_for_target(
+            "AmazonSQS.ChangeMessageVisibilityBatch",
+            r#"{
+                "QueueUrl":"http://localhost:4566/123456789012/orders",
+                "Entries":[
+                    {"Id":"entry-1","ReceiptHandle":"receipt-1","VisibilityTimeout":45},
+                    {"Id":"entry-2","ReceiptHandle":"receipt-2","VisibilityTimeout":90},
+                    {"Id":"entry-3","ReceiptHandle":"receipt-3","VisibilityTimeout":0}
+                ]
+            }"#,
+        );
+
+        let before = Utc::now().naive_utc();
+        let response = change_message_visibility_batch(&request, &store)
+            .await
+            .expect("change message visibility batch should succeed");
+        let after = Utc::now().naive_utc();
+
+        assert_eq!(response.status_code, 200);
+
+        let body = parse_json_body(&response);
+        assert_eq!(body["Successful"].as_array().unwrap().len(), 2);
+        assert_eq!(body["Failed"].as_array().unwrap().len(), 1);
+        assert_eq!(body["Successful"][0]["Id"], "entry-1");
+        assert_eq!(body["Successful"][1]["Id"], "entry-3");
+        assert_eq!(body["Failed"][0]["Id"], "entry-2");
+        assert_eq!(body["Failed"][0]["Code"], "StoreError");
+        assert_eq!(body["Failed"][0]["SenderFault"], false);
+
+        let updates = store.visibility_updates();
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].0, 42);
+        assert_eq!(updates[0].1, "receipt-1");
+        assert!(updates[0].2 >= before + Duration::seconds(45));
+        assert!(updates[0].2 <= after + Duration::seconds(45));
+        assert_eq!(updates[1].0, 42);
+        assert_eq!(updates[1].1, "receipt-3");
+        assert!(updates[1].2 >= before);
+        assert!(updates[1].2 <= after);
+    }
+
+    #[tokio::test]
+    async fn change_message_visibility_batch_returns_not_found_for_missing_queue() {
+        let store = SqsTestStore::default();
+        let request = resolved_request_for_target(
+            "AmazonSQS.ChangeMessageVisibilityBatch",
+            r#"{
+                "QueueUrl":"http://localhost:4566/123456789012/orders",
+                "Entries":[
+                    {"Id":"entry-1","ReceiptHandle":"receipt-1","VisibilityTimeout":45}
+                ]
+            }"#,
+        );
+
+        let error = change_message_visibility_batch(&request, &store)
             .await
             .err()
             .expect("missing queue should error");

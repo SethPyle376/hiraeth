@@ -1314,4 +1314,86 @@ mod tests {
 
         assert_eq!(visible_at, updated_visible_at);
     }
+
+    #[tokio::test]
+    async fn set_message_visible_at_scopes_update_to_queue_id() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("orders queue insert should succeed");
+        store
+            .create_queue(queue("payments", "us-east-1"))
+            .await
+            .expect("payments queue insert should succeed");
+
+        let orders_queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("orders queue lookup should succeed")
+            .expect("orders queue should exist");
+        let payments_queue = store
+            .get_queue("payments", "us-east-1", "123456789012")
+            .await
+            .expect("payments queue lookup should succeed")
+            .expect("payments queue should exist");
+
+        let now = Utc::now().naive_utc();
+        let orders_initial_visible_at = now - Duration::seconds(10);
+        let payments_initial_visible_at = now - Duration::seconds(5);
+        let updated_visible_at = now + Duration::minutes(3);
+
+        store
+            .send_message(&SqsMessage {
+                receipt_handle: Some("receipt-1".to_string()),
+                ..message(
+                    orders_queue.id,
+                    "orders-msg-1",
+                    now - Duration::seconds(20),
+                    orders_initial_visible_at,
+                    now + Duration::hours(1),
+                )
+            })
+            .await
+            .expect("orders message should insert");
+        store
+            .send_message(&SqsMessage {
+                receipt_handle: Some("receipt-1".to_string()),
+                ..message(
+                    payments_queue.id,
+                    "payments-msg-1",
+                    now - Duration::seconds(15),
+                    payments_initial_visible_at,
+                    now + Duration::hours(1),
+                )
+            })
+            .await
+            .expect("payments message should insert");
+
+        store
+            .set_message_visible_at(orders_queue.id, "receipt-1", updated_visible_at)
+            .await
+            .expect("set message visible at should succeed");
+
+        let orders_visible_at = sqlx::query_scalar::<_, chrono::NaiveDateTime>(
+            "SELECT visible_at FROM sqs_messages WHERE queue_id = ? AND receipt_handle = ?",
+        )
+        .bind(orders_queue.id)
+        .bind("receipt-1")
+        .fetch_one(&store.pool)
+        .await
+        .expect("orders visible_at query should succeed");
+        let payments_visible_at = sqlx::query_scalar::<_, chrono::NaiveDateTime>(
+            "SELECT visible_at FROM sqs_messages WHERE queue_id = ? AND receipt_handle = ?",
+        )
+        .bind(payments_queue.id)
+        .bind("receipt-1")
+        .fetch_one(&store.pool)
+        .await
+        .expect("payments visible_at query should succeed");
+
+        assert_eq!(orders_visible_at, updated_visible_at);
+        assert_eq!(payments_visible_at, payments_initial_visible_at);
+    }
 }
