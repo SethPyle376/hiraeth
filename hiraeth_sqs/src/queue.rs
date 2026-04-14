@@ -5,7 +5,7 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use crate::{error::SqsError, util};
+use crate::{error::SqsError, queue_attributes::QueueAttributeValues, util};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -26,6 +26,7 @@ pub(crate) async fn create_queue<S: SqsStore>(
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
     let request_body = util::parse_request_body::<CreateQueueRequest>(request)?;
+    let queue_attributes = QueueAttributeValues::from_attribute_map(&request_body.attributes);
 
     let queue = SqsQueue {
         id: 0,
@@ -33,26 +34,10 @@ pub(crate) async fn create_queue<S: SqsStore>(
         region: request.region.clone(),
         account_id: request.auth_context.principal.account_id.clone(),
         queue_type: "standard".to_string(),
-        visibility_timeout_seconds: request_body
-            .attributes
-            .get("VisibilityTimeout")
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or(30),
-        delay_seconds: request_body
-            .attributes
-            .get("DelaySeconds")
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or(0),
-        message_retention_period_seconds: request_body
-            .attributes
-            .get("MessageRetentionPeriod")
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or(345600),
-        receive_message_wait_time_seconds: request_body
-            .attributes
-            .get("ReceiveMessageWaitTimeSeconds")
-            .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or(0),
+        visibility_timeout_seconds: queue_attributes.visibility_timeout_seconds,
+        delay_seconds: queue_attributes.delay_seconds,
+        message_retention_period_seconds: queue_attributes.message_retention_period_seconds,
+        receive_message_wait_time_seconds: queue_attributes.receive_message_wait_time_seconds,
         created_at: chrono::Utc::now().naive_utc(),
     };
 
