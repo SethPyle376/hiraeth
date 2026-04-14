@@ -43,9 +43,10 @@ pub(crate) async fn send_message<S: SqsStore>(
 ) -> Result<ServiceResponse, SqsError> {
     let request_body = util::parse_request_body::<SendMessageRequest>(request)?;
     let queue = util::load_queue_from_url(request, store, &request_body.queue_url).await?;
+    validate_message_body(&request_body.message_body, queue.maximum_message_size)?;
+    let delay_seconds = resolve_delay_seconds(request_body.delay_seconds, queue.delay_seconds)?;
 
-    let visible_at = request.date.naive_utc()
-        + chrono::Duration::seconds(request_body.delay_seconds.unwrap_or(queue.delay_seconds));
+    let visible_at = request.date.naive_utc() + chrono::Duration::seconds(delay_seconds);
 
     let expires_at = request.date.naive_utc()
         + chrono::Duration::seconds(queue.message_retention_period_seconds);
@@ -169,14 +170,30 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
 ) -> Result<ServiceResponse, SqsError> {
     let request_body = util::parse_request_body::<SendMessageBatchRequest>(request)?;
     let queue = util::load_queue_from_url(request, store, &request_body.queue_url).await?;
+    util::validate_batch_request(request_body.entries.iter().map(|entry| entry.id.as_str()))?;
 
     let expires_at = request.date.naive_utc()
         + chrono::Duration::seconds(queue.message_retention_period_seconds);
 
     let messages = futures::stream::iter(request_body.entries)
         .map(|entry| async move {
-            let visible_at = request.date.naive_utc()
-                + chrono::Duration::seconds(entry.delay_seconds.unwrap_or(queue.delay_seconds));
+            let delay_seconds = resolve_delay_seconds(entry.delay_seconds, queue.delay_seconds)
+                .map_err(|e| BatchResultErrorEntry {
+                    id: entry.id.clone(),
+                    code: "InvalidParameterValue".to_string(),
+                    message: e.to_string(),
+                    sender_fault: true,
+                })?;
+            validate_message_body(&entry.message_body, queue.maximum_message_size).map_err(
+                |e| BatchResultErrorEntry {
+                    id: entry.id.clone(),
+                    code: "InvalidParameterValue".to_string(),
+                    message: e.to_string(),
+                    sender_fault: true,
+                },
+            )?;
+
+            let visible_at = request.date.naive_utc() + chrono::Duration::seconds(delay_seconds);
 
             let message_attributes = entry
                 .message_attributes
@@ -281,6 +298,31 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
         body: serde_json::to_vec(&SendMessageBatchResponse { successful, failed })
             .unwrap_or_default(),
     });
+}
+
+fn resolve_delay_seconds(
+    requested_delay_seconds: Option<i64>,
+    queue_delay_seconds: i64,
+) -> Result<i64, SqsError> {
+    let delay_seconds = requested_delay_seconds.unwrap_or(queue_delay_seconds);
+    if !(0..=900).contains(&delay_seconds) {
+        return Err(SqsError::BadRequest(
+            "DelaySeconds must be between 0 and 900".to_string(),
+        ));
+    }
+
+    Ok(delay_seconds)
+}
+
+fn validate_message_body(message_body: &str, maximum_message_size: i64) -> Result<(), SqsError> {
+    if message_body.len() > maximum_message_size as usize {
+        return Err(SqsError::BadRequest(format!(
+            "MessageBody exceeds the queue MaximumMessageSize of {} bytes",
+            maximum_message_size
+        )));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -573,5 +615,23 @@ mod tests {
             "853c383c82274bde6eac88d91ee96efe"
         );
         assert!(successful[1].get("Success").is_none());
+    }
+
+    #[tokio::test]
+    async fn send_message_batch_rejects_duplicate_entry_ids() {
+        let store = SqsTestStore::with_queue(queue());
+        let request = batch_resolved_request(
+            r#"{
+                "QueueUrl":"http://localhost:4566/123456789012/orders",
+                "Entries":[
+                    {"Id":"duplicate","MessageBody":"hello"},
+                    {"Id":"duplicate","MessageBody":"goodbye"}
+                ]
+            }"#,
+        );
+
+        let result = send_message_batch(&request, &store).await;
+
+        assert!(matches!(result, Err(SqsError::BatchEntryIdsNotDistinct)));
     }
 }

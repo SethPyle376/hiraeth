@@ -41,6 +41,11 @@ async fn hash_request(
         .headers
         .get("x-amz-date")
         .ok_or(AuthError::MissingSignedHeader("x-amz-date".to_string()))?;
+    if !request_timestamp.starts_with(&sigv4_params.date) {
+        return Err(AuthError::InvalidAuthorizationHeader(
+            "Credential date does not match x-amz-date".to_string(),
+        ));
+    }
 
     let string_to_sign = format!(
         "{}\n{}\n{}/{}/{}/aws4_request\n{}",
@@ -88,76 +93,80 @@ fn extract_sigv4_params(request: &IncomingRequest) -> Result<SigV4AuthParameters
     let (algorithm, key_value_pairs) = split.ok_or(AuthError::InvalidAuthorizationHeader(
         "Authorization header format invalid".to_string(),
     ))?;
-    let mut kv_split = key_value_pairs.trim().split(',').map(str::trim);
-    let mut credential = kv_split
-        .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader(
-            "Credential missing".to_string(),
-        ))?
-        .split('=')
-        .nth(1)
-        .ok_or(AuthError::InvalidAuthorizationHeader(
-            "Credential value missing".to_string(),
-        ))?
-        .split('/');
 
-    let access_key = credential
-        .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader(
-            "Key ID Missing".to_string(),
-        ))?
-        .to_string();
-    let date = credential
-        .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader(
-            "Date missing".to_string(),
-        ))?
-        .to_string();
-    let region = credential
-        .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader(
-            "Region missing".to_string(),
-        ))?
-        .to_string();
-    let service = credential
-        .next()
-        .ok_or(AuthError::InvalidAuthorizationHeader(
-            "Service missing".to_string(),
-        ))?
-        .to_string();
+    if algorithm != "AWS4-HMAC-SHA256" {
+        return Err(AuthError::InvalidAuthorizationHeader(format!(
+            "Unsupported algorithm: {}",
+            algorithm
+        )));
+    }
 
-    let signed_headers = kv_split
-        .next()
+    let mut credential = None;
+    let mut signed_headers = None;
+    let mut signature = None;
+
+    for pair in key_value_pairs.trim().split(',').map(str::trim) {
+        let (key, value) = pair
+            .split_once('=')
+            .ok_or(AuthError::InvalidAuthorizationHeader(format!(
+                "Authorization parameter '{}' is malformed",
+                pair
+            )))?;
+
+        match key {
+            "Credential" => credential = Some(value),
+            "SignedHeaders" => signed_headers = Some(value),
+            "Signature" => signature = Some(value),
+            _ => {}
+        }
+    }
+
+    let credential = credential.ok_or(AuthError::InvalidAuthorizationHeader(
+        "Credential missing".to_string(),
+    ))?;
+    let credential_parts = credential.split('/').collect::<Vec<_>>();
+    if credential_parts.len() != 5 {
+        return Err(AuthError::InvalidAuthorizationHeader(
+            "Credential scope format invalid".to_string(),
+        ));
+    }
+    if credential_parts[4] != "aws4_request" {
+        return Err(AuthError::InvalidAuthorizationHeader(
+            "Credential scope terminator invalid".to_string(),
+        ));
+    }
+
+    let signed_headers = signed_headers
         .ok_or(AuthError::InvalidAuthorizationHeader(
             "Signed headers missing".to_string(),
         ))?
-        .split('=')
-        .nth(1)
-        .ok_or(AuthError::InvalidAuthorizationHeader(
-            "Signed headers value missing".to_string(),
-        ))?
         .split(';')
+        .filter(|header| !header.is_empty())
         .map(|s| s.to_string())
-        .collect();
+        .collect::<Vec<_>>();
+    if signed_headers.is_empty() {
+        return Err(AuthError::InvalidAuthorizationHeader(
+            "Signed headers value missing".to_string(),
+        ));
+    }
 
-    let signature = kv_split
-        .next()
+    let signature = signature
         .ok_or(AuthError::InvalidAuthorizationHeader(
             "Signature missing".to_string(),
         ))?
-        .split('=')
-        .nth(1)
-        .ok_or(AuthError::InvalidAuthorizationHeader(
-            "Signature value missing".to_string(),
-        ))?
         .to_string();
+    if signature.is_empty() {
+        return Err(AuthError::InvalidAuthorizationHeader(
+            "Signature value missing".to_string(),
+        ));
+    }
 
     Ok(SigV4AuthParameters {
         algorithm: algorithm.to_string(),
-        access_key,
-        date,
-        region,
-        service,
+        access_key: credential_parts[0].to_string(),
+        date: credential_parts[1].to_string(),
+        region: credential_parts[2].to_string(),
+        service: credential_parts[3].to_string(),
         signed_headers,
         signature,
     })

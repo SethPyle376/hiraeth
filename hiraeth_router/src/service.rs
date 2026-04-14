@@ -7,8 +7,5 @@ use crate::ServiceResponse;
 #[async_trait]
 pub trait Service {
     fn can_handle(&self, request: &ResolvedRequest) -> bool;
-    async fn handle_request(
-        &self,
-        request: ResolvedRequest,
-    ) -> Result<ServiceResponse, ApiError>;
+    async fn handle_request(&self, request: ResolvedRequest) -> Result<ServiceResponse, ApiError>;
 }

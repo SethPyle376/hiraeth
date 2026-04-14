@@ -15,6 +15,16 @@ impl SqliteSqsStore {
     }
 }
 
+fn map_sqlx_error(err: sqlx::Error) -> StoreError {
+    if let sqlx::Error::Database(database_error) = &err {
+        if database_error.is_unique_violation() {
+            return StoreError::Conflict(database_error.message().to_string());
+        }
+    }
+
+    StoreError::StorageFailure(err.to_string())
+}
+
 #[async_trait]
 impl SqsStore for SqliteSqsStore {
     async fn create_queue(
@@ -65,15 +75,18 @@ impl SqsStore for SqliteSqsStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|err| hiraeth_store::StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
         Ok(())
     }
 
     async fn delete_queue(&self, queue_id: i64) -> Result<(), StoreError> {
-        sqlx::query!("DELETE FROM sqs_queues WHERE id = ?", queue_id)
+        let result = sqlx::query!("DELETE FROM sqs_queues WHERE id = ?", queue_id)
             .execute(&self.pool)
             .await
-            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+            .map_err(map_sqlx_error)?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound("queue not found".to_string()));
+        }
         Ok(())
     }
 
@@ -115,7 +128,7 @@ impl SqsStore for SqliteSqsStore {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
         Ok(queue)
     }
 
@@ -139,7 +152,7 @@ impl SqsStore for SqliteSqsStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
         Ok(())
     }
 
@@ -149,11 +162,7 @@ impl SqsStore for SqliteSqsStore {
         max_number_of_messages: i64,
         visibility_timeout_seconds: u32,
     ) -> Result<Vec<SqsMessage>, StoreError> {
-        let mut conn = self
-            .pool
-            .acquire()
-            .await
-            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        let mut conn = self.pool.acquire().await.map_err(map_sqlx_error)?;
 
         let now = chrono::Utc::now().naive_utc();
 
@@ -167,9 +176,9 @@ impl SqsStore for SqliteSqsStore {
         sqlx::query!("BEGIN IMMEDIATE")
             .execute(&mut *conn)
             .await
-            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+            .map_err(map_sqlx_error)?;
 
-        let messages = sqlx::query_as!(
+        let messages = match sqlx::query_as!(
             SqsMessage,
             "WITH selected AS (
                 SELECT id FROM sqs_messages
@@ -204,14 +213,21 @@ impl SqsStore for SqliteSqsStore {
         )
             .fetch_all(&mut *conn)
             .await
-            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        {
+            Ok(messages) => messages,
+            Err(err) => {
+                let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+                return Err(map_sqlx_error(err));
+            }
+        };
 
-        sqlx::query!("COMMIT")
-            .execute(&mut *conn)
-            .await
-            .map_err(|err| {
-                StoreError::StorageFailure(format!("failed to commit transaction: {}", err))
-            })?;
+        if let Err(err) = sqlx::query!("COMMIT").execute(&mut *conn).await {
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            return Err(StoreError::StorageFailure(format!(
+                "failed to commit transaction: {}",
+                err
+            )));
+        }
 
         Ok(messages)
     }
@@ -225,7 +241,7 @@ impl SqsStore for SqliteSqsStore {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
         Ok(count)
     }
 
@@ -239,7 +255,7 @@ impl SqsStore for SqliteSqsStore {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
         Ok(count)
     }
 
@@ -253,19 +269,22 @@ impl SqsStore for SqliteSqsStore {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
         Ok(count)
     }
 
     async fn delete_message(&self, queue_id: i64, receipt_handle: &str) -> Result<(), StoreError> {
-        sqlx::query!(
+        let result = sqlx::query!(
             "DELETE FROM sqs_messages WHERE queue_id = ? AND receipt_handle = ?",
             queue_id,
             receipt_handle
         )
         .execute(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound("receipt handle not found".to_string()));
+        }
         Ok(())
     }
 
@@ -275,7 +294,7 @@ impl SqsStore for SqliteSqsStore {
         receipt_handle: &str,
         visible_at: chrono::NaiveDateTime,
     ) -> Result<(), StoreError> {
-        sqlx::query!(
+        let result = sqlx::query!(
             "UPDATE sqs_messages SET visible_at = ? WHERE queue_id = ? AND receipt_handle = ?",
             visible_at,
             queue_id,
@@ -283,7 +302,10 @@ impl SqsStore for SqliteSqsStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound("receipt handle not found".to_string()));
+        }
         Ok(())
     }
 
@@ -338,7 +360,7 @@ impl SqsStore for SqliteSqsStore {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
 
         Ok(result)
     }
@@ -347,7 +369,7 @@ impl SqsStore for SqliteSqsStore {
         sqlx::query!("DELETE FROM sqs_messages WHERE queue_id = ?", queue_id)
             .execute(&self.pool)
             .await
-            .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+            .map_err(map_sqlx_error)?;
         Ok(())
     }
 
@@ -360,7 +382,7 @@ impl SqsStore for SqliteSqsStore {
         let update_kms_master_key_id = attributes.kms_master_key_id.is_some();
         let kms_master_key_id = attributes.kms_master_key_id.flatten();
 
-        sqlx::query!(
+        let result = sqlx::query!(
             "UPDATE sqs_queues SET
                 visibility_timeout_seconds = COALESCE(?, visibility_timeout_seconds),
                 delay_seconds = COALESCE(?, delay_seconds),
@@ -398,7 +420,10 @@ impl SqsStore for SqliteSqsStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound("queue not found".to_string()));
+        }
 
         Ok(())
     }
@@ -411,7 +436,10 @@ mod tests {
 
     use super::SqliteSqsStore;
     use crate::{get_store_pool, run_migrations};
-    use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsQueueAttributeUpdate, SqsStore};
+    use hiraeth_store::{
+        StoreError,
+        sqs::{SqsMessage, SqsQueue, SqsQueueAttributeUpdate, SqsStore},
+    };
 
     async fn test_store() -> (TempDir, SqliteSqsStore) {
         let temp_dir = TempDir::new().expect("temp dir should be created");
@@ -1185,6 +1213,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_message_returns_not_found_for_missing_receipt_handle() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let result = store.delete_message(queue.id, "missing-receipt").await;
+
+        assert!(matches!(result, Err(StoreError::NotFound(_))));
+    }
+
+    #[tokio::test]
     async fn purge_queue_removes_only_messages_for_matching_queue() {
         let (_temp_dir, store) = test_store().await;
 
@@ -1313,6 +1361,28 @@ mod tests {
         .expect("visible_at query should succeed");
 
         assert_eq!(visible_at, updated_visible_at);
+    }
+
+    #[tokio::test]
+    async fn set_message_visible_at_returns_not_found_for_missing_receipt_handle() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let result = store
+            .set_message_visible_at(queue.id, "missing-receipt", Utc::now().naive_utc())
+            .await;
+
+        assert!(matches!(result, Err(StoreError::NotFound(_))));
     }
 
     #[tokio::test]

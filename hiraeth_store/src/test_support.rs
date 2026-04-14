@@ -167,6 +167,23 @@ impl SqsTestStore {
 #[async_trait]
 impl SqsStore for SqsTestStore {
     async fn create_queue(&self, queue: SqsQueue) -> Result<(), StoreError> {
+        if self
+            .queues
+            .lock()
+            .expect("queues mutex")
+            .iter()
+            .any(|existing| {
+                existing.name == queue.name
+                    && existing.region == queue.region
+                    && existing.account_id == queue.account_id
+            })
+        {
+            return Err(StoreError::Conflict(format!(
+                "queue already exists: {}",
+                queue.name
+            )));
+        }
+
         self.queues
             .lock()
             .expect("queues mutex")
@@ -332,8 +349,8 @@ impl SqsStore for SqsTestStore {
 
     async fn delete_message(&self, queue_id: i64, receipt_handle: &str) -> Result<(), StoreError> {
         if self.failing_receipt_handles.contains(receipt_handle) {
-            return Err(StoreError::StorageFailure(format!(
-                "failed to delete {}",
+            return Err(StoreError::NotFound(format!(
+                "receipt handle not found: {}",
                 receipt_handle
             )));
         }
@@ -353,8 +370,8 @@ impl SqsStore for SqsTestStore {
         visible_at: chrono::NaiveDateTime,
     ) -> Result<(), StoreError> {
         if self.failing_receipt_handles.contains(receipt_handle) {
-            return Err(StoreError::StorageFailure(format!(
-                "failed to update visibility for {}",
+            return Err(StoreError::NotFound(format!(
+                "receipt handle not found: {}",
                 receipt_handle
             )));
         }

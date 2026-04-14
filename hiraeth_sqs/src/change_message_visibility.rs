@@ -4,7 +4,7 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use crate::error::SqsError;
+use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error};
 use crate::util;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -58,6 +58,7 @@ pub(crate) async fn change_message_visibility<S: SqsStore>(
 ) -> Result<ServiceResponse, SqsError> {
     let change_request = util::parse_request_body::<ChangeMessageVisibilityRequest>(request)?;
     let queue = util::load_queue_from_url(request, store, &change_request.queue_url).await?;
+    validate_visibility_timeout(change_request.visibility_timeout)?;
 
     store
         .set_message_visible_at(
@@ -66,7 +67,7 @@ pub(crate) async fn change_message_visibility<S: SqsStore>(
             (Utc::now() + Duration::seconds(change_request.visibility_timeout as i64)).naive_utc(),
         )
         .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?;
+        .map_err(map_receipt_handle_store_error)?;
 
     Ok(ServiceResponse {
         status_code: 200,
@@ -81,6 +82,7 @@ pub(crate) async fn change_message_visibility_batch<S: SqsStore>(
 ) -> Result<ServiceResponse, SqsError> {
     let change_request = util::parse_request_body::<ChangeMessageVisibilityBatchRequest>(request)?;
     let queue = util::load_queue_from_url(request, store, &change_request.queue_url).await?;
+    util::validate_batch_request(change_request.entries.iter().map(|entry| entry.id.as_str()))?;
 
     let mut successful = Vec::new();
     let mut failed = Vec::new();
@@ -91,6 +93,16 @@ pub(crate) async fn change_message_visibility_batch<S: SqsStore>(
             receipt_handle,
             visibility_timeout,
         } = entry;
+        if let Err(e) = validate_visibility_timeout(visibility_timeout) {
+            failed.push(ChangeMessageVisibilityBatchFailedEntry {
+                id,
+                code: "InvalidParameterValue".to_string(),
+                message: e.to_string(),
+                sender_fault: true,
+            });
+            continue;
+        }
+
         let visible_at = (Utc::now() + Duration::seconds(visibility_timeout as i64)).naive_utc();
 
         match store
@@ -98,12 +110,16 @@ pub(crate) async fn change_message_visibility_batch<S: SqsStore>(
             .await
         {
             Ok(()) => successful.push(ChangeMessageVisibilityBatchSuccessEntry { id }),
-            Err(e) => failed.push(ChangeMessageVisibilityBatchFailedEntry {
-                id,
-                code: "StoreError".to_string(),
-                message: format!("Failed to change message visibility: {:?}", e),
-                sender_fault: false,
-            }),
+            Err(e) => {
+                let error = map_receipt_handle_store_error(e);
+                let (code, sender_fault) = batch_error_details(&error);
+                failed.push(ChangeMessageVisibilityBatchFailedEntry {
+                    id,
+                    code: code.to_string(),
+                    message: error.to_string(),
+                    sender_fault,
+                })
+            }
         }
     }
 
@@ -113,6 +129,16 @@ pub(crate) async fn change_message_visibility_batch<S: SqsStore>(
         body: serde_json::to_vec(&ChangeMessageVisibilityBatchResponse { successful, failed })
             .map_err(|e| SqsError::BadRequest(e.to_string()))?,
     })
+}
+
+fn validate_visibility_timeout(visibility_timeout: u32) -> Result<(), SqsError> {
+    if visibility_timeout > 43200 {
+        return Err(SqsError::BadRequest(
+            "VisibilityTimeout must be between 0 and 43200".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -276,8 +302,8 @@ mod tests {
         assert_eq!(body["Successful"][0]["Id"], "entry-1");
         assert_eq!(body["Successful"][1]["Id"], "entry-3");
         assert_eq!(body["Failed"][0]["Id"], "entry-2");
-        assert_eq!(body["Failed"][0]["Code"], "StoreError");
-        assert_eq!(body["Failed"][0]["SenderFault"], false);
+        assert_eq!(body["Failed"][0]["Code"], "ReceiptHandleIsInvalid");
+        assert_eq!(body["Failed"][0]["SenderFault"], true);
 
         let updates = store.visibility_updates();
         assert_eq!(updates.len(), 2);

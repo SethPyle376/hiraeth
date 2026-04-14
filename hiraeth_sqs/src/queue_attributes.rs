@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_router::ServiceResponse;
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_store::sqs::{SqsQueue, SqsQueueAttributeUpdate, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use crate::{error::SqsError, util};
@@ -39,6 +39,41 @@ pub(crate) struct QueueAttributeValues {
     pub sqs_managed_sse_enabled: bool,
 }
 
+const CREATE_QUEUE_ATTRIBUTES: &[&str] = &[
+    "VisibilityTimeout",
+    "DelaySeconds",
+    "MaximumMessageSize",
+    "MessageRetentionPeriod",
+    "ReceiveMessageWaitTimeSeconds",
+    "Policy",
+    "RedrivePolicy",
+    "FifoQueue",
+    "ContentBasedDeduplication",
+    "KmsMasterKeyId",
+    "KmsDataKeyReusePeriodSeconds",
+    "DeduplicationScope",
+    "FifoThroughputLimit",
+    "RedriveAllowPolicy",
+    "SqsManagedSseEnabled",
+];
+
+const SET_QUEUE_ATTRIBUTES: &[&str] = &[
+    "VisibilityTimeout",
+    "DelaySeconds",
+    "MaximumMessageSize",
+    "MessageRetentionPeriod",
+    "ReceiveMessageWaitTimeSeconds",
+    "Policy",
+    "RedrivePolicy",
+    "ContentBasedDeduplication",
+    "KmsMasterKeyId",
+    "KmsDataKeyReusePeriodSeconds",
+    "DeduplicationScope",
+    "FifoThroughputLimit",
+    "RedriveAllowPolicy",
+    "SqsManagedSseEnabled",
+];
+
 impl Default for QueueAttributeValues {
     fn default() -> Self {
         Self {
@@ -62,71 +97,143 @@ impl Default for QueueAttributeValues {
 }
 
 impl QueueAttributeValues {
-    pub(crate) fn from_attribute_map(attributes: &HashMap<String, String>) -> Self {
+    pub(crate) fn from_attribute_map(
+        attributes: &HashMap<String, String>,
+    ) -> Result<Self, SqsError> {
+        validate_supported_attributes(attributes, CREATE_QUEUE_ATTRIBUTES)?;
         let defaults = Self::default();
 
-        Self {
+        Ok(Self {
             visibility_timeout_seconds: get_i64_attribute(
                 attributes,
                 "VisibilityTimeout",
                 defaults.visibility_timeout_seconds,
-            ),
-            delay_seconds: get_i64_attribute(attributes, "DelaySeconds", defaults.delay_seconds),
+                0,
+                43200,
+            )?,
+            delay_seconds: get_i64_attribute(
+                attributes,
+                "DelaySeconds",
+                defaults.delay_seconds,
+                0,
+                900,
+            )?,
             maximum_message_size: get_i64_attribute(
                 attributes,
                 "MaximumMessageSize",
                 defaults.maximum_message_size,
-            ),
+                1024,
+                1048576,
+            )?,
             message_retention_period_seconds: get_i64_attribute(
                 attributes,
                 "MessageRetentionPeriod",
                 defaults.message_retention_period_seconds,
-            ),
+                60,
+                1209600,
+            )?,
             receive_message_wait_time_seconds: get_i64_attribute(
                 attributes,
                 "ReceiveMessageWaitTimeSeconds",
                 defaults.receive_message_wait_time_seconds,
-            ),
-            policy: get_string_attribute(attributes, "Policy", &defaults.policy),
-            redrive_policy: get_string_attribute(
+                0,
+                20,
+            )?,
+            policy: get_json_string_attribute(attributes, "Policy", &defaults.policy)?,
+            redrive_policy: get_json_string_attribute(
                 attributes,
                 "RedrivePolicy",
                 &defaults.redrive_policy,
-            ),
-            fifo_queue: get_bool_attribute(attributes, "FifoQueue", defaults.fifo_queue),
+            )?,
+            fifo_queue: get_bool_attribute(attributes, "FifoQueue", defaults.fifo_queue)?,
             content_based_deduplication: get_bool_attribute(
                 attributes,
                 "ContentBasedDeduplication",
                 defaults.content_based_deduplication,
-            ),
+            )?,
             kms_master_key_id: attributes.get("KmsMasterKeyId").cloned(),
             kms_data_key_reuse_period_seconds: get_i64_attribute(
                 attributes,
                 "KmsDataKeyReusePeriodSeconds",
                 defaults.kms_data_key_reuse_period_seconds,
-            ),
-            deduplication_scope: get_string_attribute(
+                60,
+                86400,
+            )?,
+            deduplication_scope: get_allowed_string_attribute(
                 attributes,
                 "DeduplicationScope",
                 &defaults.deduplication_scope,
-            ),
-            fifo_throughput_limit: get_string_attribute(
+                &["queue", "messageGroup"],
+            )?,
+            fifo_throughput_limit: get_allowed_string_attribute(
                 attributes,
                 "FifoThroughputLimit",
                 &defaults.fifo_throughput_limit,
-            ),
-            redrive_allow_policy: get_string_attribute(
+                &["perQueue", "perMessageGroupId"],
+            )?,
+            redrive_allow_policy: get_json_string_attribute(
                 attributes,
                 "RedriveAllowPolicy",
                 &defaults.redrive_allow_policy,
-            ),
+            )?,
             sqs_managed_sse_enabled: get_bool_attribute(
                 attributes,
                 "SqsManagedSseEnabled",
                 defaults.sqs_managed_sse_enabled,
-            ),
-        }
+            )?,
+        })
     }
+}
+
+pub(crate) fn parse_queue_attribute_update(
+    attributes: &HashMap<String, String>,
+) -> Result<SqsQueueAttributeUpdate, SqsError> {
+    validate_supported_attributes(attributes, SET_QUEUE_ATTRIBUTES)?;
+
+    Ok(SqsQueueAttributeUpdate {
+        visibility_timeout_seconds: parse_i64_attribute(attributes, "VisibilityTimeout", 0, 43200)?,
+        delay_seconds: parse_i64_attribute(attributes, "DelaySeconds", 0, 900)?,
+        maximum_message_size: parse_i64_attribute(attributes, "MaximumMessageSize", 1024, 1048576)?,
+        message_retention_period_seconds: parse_i64_attribute(
+            attributes,
+            "MessageRetentionPeriod",
+            60,
+            1209600,
+        )?,
+        receive_message_wait_time_seconds: parse_i64_attribute(
+            attributes,
+            "ReceiveMessageWaitTimeSeconds",
+            0,
+            20,
+        )?,
+        policy: parse_json_string_attribute(attributes, "Policy")?,
+        redrive_policy: parse_json_string_attribute(attributes, "RedrivePolicy")?,
+        content_based_deduplication: parse_bool_attribute(attributes, "ContentBasedDeduplication")?,
+        kms_master_key_id: attributes.contains_key("KmsMasterKeyId").then(|| {
+            attributes
+                .get("KmsMasterKeyId")
+                .filter(|value| !value.is_empty())
+                .cloned()
+        }),
+        kms_data_key_reuse_period_seconds: parse_i64_attribute(
+            attributes,
+            "KmsDataKeyReusePeriodSeconds",
+            60,
+            86400,
+        )?,
+        deduplication_scope: parse_allowed_string_attribute(
+            attributes,
+            "DeduplicationScope",
+            &["queue", "messageGroup"],
+        )?,
+        fifo_throughput_limit: parse_allowed_string_attribute(
+            attributes,
+            "FifoThroughputLimit",
+            &["perQueue", "perMessageGroupId"],
+        )?,
+        redrive_allow_policy: parse_json_string_attribute(attributes, "RedriveAllowPolicy")?,
+        sqs_managed_sse_enabled: parse_bool_attribute(attributes, "SqsManagedSseEnabled")?,
+    })
 }
 
 pub(crate) async fn get_queue_attributes<S: SqsStore>(
@@ -315,29 +422,135 @@ pub(crate) async fn collect_queue_attributes<S: SqsStore>(
     Ok(attributes)
 }
 
-fn get_i64_attribute(attributes: &HashMap<String, String>, name: &str, default: i64) -> i64 {
-    attributes
-        .get(name)
-        .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(default)
+fn validate_supported_attributes(
+    attributes: &HashMap<String, String>,
+    supported_attributes: &[&str],
+) -> Result<(), SqsError> {
+    for attribute in attributes.keys() {
+        if !supported_attributes.contains(&attribute.as_str()) {
+            return Err(SqsError::BadRequest(format!(
+                "Unsupported queue attribute: {}",
+                attribute
+            )));
+        }
+    }
+
+    Ok(())
 }
 
-fn get_bool_attribute(attributes: &HashMap<String, String>, name: &str, default: bool) -> bool {
-    attributes
-        .get(name)
-        .and_then(|value| match value.to_ascii_lowercase().as_str() {
-            "true" => Some(true),
-            "false" => Some(false),
-            _ => None,
-        })
-        .unwrap_or(default)
+fn get_i64_attribute(
+    attributes: &HashMap<String, String>,
+    name: &str,
+    default: i64,
+    min: i64,
+    max: i64,
+) -> Result<i64, SqsError> {
+    Ok(parse_i64_attribute(attributes, name, min, max)?.unwrap_or(default))
 }
 
-fn get_string_attribute(attributes: &HashMap<String, String>, name: &str, default: &str) -> String {
-    attributes
-        .get(name)
-        .cloned()
-        .unwrap_or_else(|| default.to_string())
+fn parse_i64_attribute(
+    attributes: &HashMap<String, String>,
+    name: &str,
+    min: i64,
+    max: i64,
+) -> Result<Option<i64>, SqsError> {
+    let Some(raw) = attributes.get(name) else {
+        return Ok(None);
+    };
+
+    let value = raw.parse::<i64>().map_err(|_| {
+        SqsError::BadRequest(format!(
+            "{} must be an integer between {} and {}",
+            name, min, max
+        ))
+    })?;
+
+    if !(min..=max).contains(&value) {
+        return Err(SqsError::BadRequest(format!(
+            "{} must be between {} and {}",
+            name, min, max
+        )));
+    }
+
+    Ok(Some(value))
+}
+
+fn get_bool_attribute(
+    attributes: &HashMap<String, String>,
+    name: &str,
+    default: bool,
+) -> Result<bool, SqsError> {
+    Ok(parse_bool_attribute(attributes, name)?.unwrap_or(default))
+}
+
+fn parse_bool_attribute(
+    attributes: &HashMap<String, String>,
+    name: &str,
+) -> Result<Option<bool>, SqsError> {
+    let Some(raw) = attributes.get(name) else {
+        return Ok(None);
+    };
+
+    match raw.to_ascii_lowercase().as_str() {
+        "true" => Ok(Some(true)),
+        "false" => Ok(Some(false)),
+        _ => Err(SqsError::BadRequest(format!(
+            "{} must be either true or false",
+            name
+        ))),
+    }
+}
+
+fn get_json_string_attribute(
+    attributes: &HashMap<String, String>,
+    name: &str,
+    default: &str,
+) -> Result<String, SqsError> {
+    Ok(parse_json_string_attribute(attributes, name)?.unwrap_or_else(|| default.to_string()))
+}
+
+fn parse_json_string_attribute(
+    attributes: &HashMap<String, String>,
+    name: &str,
+) -> Result<Option<String>, SqsError> {
+    let Some(raw) = attributes.get(name) else {
+        return Ok(None);
+    };
+
+    serde_json::from_str::<serde_json::Value>(raw)
+        .map_err(|e| SqsError::BadRequest(format!("{} must be valid JSON: {}", name, e)))?;
+
+    Ok(Some(raw.clone()))
+}
+
+fn parse_allowed_string_attribute(
+    attributes: &HashMap<String, String>,
+    name: &str,
+    allowed: &[&str],
+) -> Result<Option<String>, SqsError> {
+    let Some(raw) = attributes.get(name) else {
+        return Ok(None);
+    };
+
+    if allowed.contains(&raw.as_str()) {
+        Ok(Some(raw.clone()))
+    } else {
+        Err(SqsError::BadRequest(format!(
+            "{} must be one of: {}",
+            name,
+            allowed.join(", ")
+        )))
+    }
+}
+
+fn get_allowed_string_attribute(
+    attributes: &HashMap<String, String>,
+    name: &str,
+    default: &str,
+    allowed: &[&str],
+) -> Result<String, SqsError> {
+    Ok(parse_allowed_string_attribute(attributes, name, allowed)?
+        .unwrap_or_else(|| default.to_string()))
 }
 
 fn insert_i64_attribute(
@@ -470,7 +683,8 @@ mod tests {
 
     #[test]
     fn queue_attribute_values_uses_defaults_for_missing_attributes() {
-        let attributes = QueueAttributeValues::from_attribute_map(&HashMap::new());
+        let attributes = QueueAttributeValues::from_attribute_map(&HashMap::new())
+            .expect("missing attributes should use defaults");
 
         assert_eq!(attributes, QueueAttributeValues::default());
     }
@@ -511,7 +725,8 @@ mod tests {
                 r#"{"redrivePermission":"allowAll"}"#.to_string(),
             ),
             ("SqsManagedSseEnabled".to_string(), "true".to_string()),
-        ]));
+        ]))
+        .expect("supported attributes should parse");
 
         assert_eq!(
             attributes,
@@ -536,19 +751,23 @@ mod tests {
     }
 
     #[test]
-    fn queue_attribute_values_falls_back_to_defaults_for_invalid_values() {
-        let attributes = QueueAttributeValues::from_attribute_map(&HashMap::from([
+    fn queue_attribute_values_rejects_invalid_values() {
+        let result = QueueAttributeValues::from_attribute_map(&HashMap::from([
             ("VisibilityTimeout".to_string(), "not-a-number".to_string()),
             ("DelaySeconds".to_string(), "5".to_string()),
         ]));
 
-        assert_eq!(
-            attributes,
-            QueueAttributeValues {
-                delay_seconds: 5,
-                ..QueueAttributeValues::default()
-            }
-        );
+        assert!(matches!(result, Err(SqsError::BadRequest(_))));
+    }
+
+    #[test]
+    fn queue_attribute_values_rejects_unknown_attributes() {
+        let result = QueueAttributeValues::from_attribute_map(&HashMap::from([(
+            "UnsupportedAttribute".to_string(),
+            "value".to_string(),
+        )]));
+
+        assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }
 
     #[tokio::test]

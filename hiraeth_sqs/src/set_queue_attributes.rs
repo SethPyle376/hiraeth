@@ -2,10 +2,13 @@ use std::collections::HashMap;
 
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_router::ServiceResponse;
-use hiraeth_store::sqs::{SqsQueueAttributeUpdate, SqsStore};
+use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use crate::{error::SqsError, util};
+use crate::{
+    error::{SqsError, map_store_error},
+    queue_attributes, util,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -24,7 +27,7 @@ pub(crate) async fn set_queue_attributes<S: SqsStore>(
     store
         .set_queue_attributes(
             queue.id,
-            SqsQueueAttributeUpdate::from(request_body.attributes),
+            queue_attributes::parse_queue_attribute_update(&request_body.attributes)?,
         )
         .await
         .map(|_| ServiceResponse {
@@ -32,7 +35,7 @@ pub(crate) async fn set_queue_attributes<S: SqsStore>(
             headers: vec![],
             body: vec![],
         })
-        .map_err(|e| SqsError::InternalError(e.to_string()))
+        .map_err(map_store_error)
 }
 
 #[cfg(test)]
@@ -153,5 +156,20 @@ mod tests {
         let result = set_queue_attributes(&request, &store).await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
+    }
+
+    #[tokio::test]
+    async fn set_queue_attributes_rejects_invalid_attribute_values() {
+        let store = SqsTestStore::with_queue(queue());
+        let request = resolved_request(
+            r#"{
+                "QueueUrl":"http://localhost:4566/123456789012/orders",
+                "Attributes":{"VisibilityTimeout":"not-a-number"}
+            }"#,
+        );
+
+        let result = set_queue_attributes(&request, &store).await;
+
+        assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }
 }

@@ -28,20 +28,17 @@ pub(crate) struct App {
 }
 
 impl App {
-    pub async fn new(config: &Config) -> Self {
-        let store = SqlxStore::new(&config.database_url)
-            .await
-            .inspect_err(|e| eprintln!("Failed to initialize store: {:?}", e))
-            .expect("Store should be initialized");
+    pub async fn new(config: &Config) -> Result<Self, hiraeth_store_sqlx::StoreError> {
+        let store = SqlxStore::new(&config.database_url).await?;
 
         let mut router = ServiceRouter::default();
         router.register_service(Box::new(SqsService::new(store.sqs_store.clone())));
 
-        Self {
+        Ok(Self {
             store,
             router,
             config: config.clone(),
-        }
+        })
     }
 
     pub async fn handle_request(&self, incoming_request: IncomingRequest) -> AppRequestOutcome {

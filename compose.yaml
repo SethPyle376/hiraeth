@@ -10,8 +10,4 @@ services:
       HIRAETH_DATABASE_URL: sqlite:///data/db.sqlite
     ports:
       - "4566:4566"
-    volumes:
-      - hiraeth-data:/data
 
-volumes:
-  hiraeth-data:

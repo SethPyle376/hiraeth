@@ -3,7 +3,10 @@ use hiraeth_router::ServiceResponse;
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::SqsError, util};
+use crate::{
+    error::{SqsError, batch_error_details, map_receipt_handle_store_error},
+    util,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -22,7 +25,7 @@ pub(crate) async fn delete_message<S: SqsStore>(
     store
         .delete_message(queue.id, &delete_request.receipt_handle)
         .await
-        .map_err(|e| SqsError::InternalError(e.to_string()))?;
+        .map_err(map_receipt_handle_store_error)?;
 
     Ok(ServiceResponse {
         status_code: 200,
@@ -73,6 +76,7 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
 ) -> Result<ServiceResponse, SqsError> {
     let delete_request = util::parse_request_body::<DeleteMessageBatchRequest>(request)?;
     let queue = util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
+    util::validate_batch_request(delete_request.entries.iter().map(|entry| entry.id.as_str()))?;
 
     let mut successful = Vec::new();
     let mut failed = Vec::new();
@@ -82,11 +86,13 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
             .delete_message(queue.id, &entry.receipt_handle)
             .await
             .inspect_err(|e| {
+                let error = map_receipt_handle_store_error(e.clone());
+                let (code, sender_fault) = batch_error_details(&error);
                 failed.push(DeleteMessageBatchFailedEntry {
                     id: entry.id.clone(),
-                    code: "StoreError".to_string(),
-                    message: format!("Failed to delete message: {:?}", e),
-                    sender_fault: false,
+                    code: code.to_string(),
+                    message: error.to_string(),
+                    sender_fault,
                 })
             })
             .inspect(|_| {
@@ -246,8 +252,8 @@ mod tests {
         assert_eq!(body["Successful"][0]["Id"], "entry-1");
         assert_eq!(body["Successful"][1]["Id"], "entry-3");
         assert_eq!(body["Failed"][0]["Id"], "entry-2");
-        assert_eq!(body["Failed"][0]["Code"], "StoreError");
-        assert_eq!(body["Failed"][0]["SenderFault"], false);
+        assert_eq!(body["Failed"][0]["Code"], "ReceiptHandleIsInvalid");
+        assert_eq!(body["Failed"][0]["SenderFault"], true);
 
         let deleted = store.deleted_messages();
         assert_eq!(

@@ -3,7 +3,7 @@ use std::{cmp::min, collections::BTreeMap};
 use chrono::Utc;
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_router::ServiceResponse;
-use hiraeth_store::{StoreError, sqs::SqsStore};
+use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{error::SqsError, util};
@@ -58,6 +58,7 @@ pub(crate) async fn receive_message<S: SqsStore>(
 ) -> Result<ServiceResponse, SqsError> {
     let receive_request = util::parse_request_body::<ReceiveMessageRequest>(request)?;
     let queue = util::load_queue_from_url(request, store, &receive_request.queue_url).await?;
+    validate_receive_request(&receive_request)?;
 
     let visibility_timeout_seconds = receive_request
         .visibility_timeout
@@ -131,6 +132,34 @@ pub(crate) async fn receive_message<S: SqsStore>(
         headers: vec![],
         body: serde_json::to_vec(&response).unwrap_or_default(),
     })
+}
+
+fn validate_receive_request(request: &ReceiveMessageRequest) -> Result<(), SqsError> {
+    if !(1..=10).contains(&request.max_number_of_messages) {
+        return Err(SqsError::BadRequest(
+            "MaxNumberOfMessages must be between 1 and 10".to_string(),
+        ));
+    }
+
+    if request
+        .visibility_timeout
+        .is_some_and(|visibility_timeout| visibility_timeout > 43200)
+    {
+        return Err(SqsError::BadRequest(
+            "VisibilityTimeout must be between 0 and 43200".to_string(),
+        ));
+    }
+
+    if request
+        .wait_time_seconds
+        .is_some_and(|wait_time_seconds| wait_time_seconds > 20)
+    {
+        return Err(SqsError::BadRequest(
+            "WaitTimeSeconds must be between 0 and 20".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn epoch_millis(value: chrono::NaiveDateTime) -> String {
@@ -454,6 +483,21 @@ mod tests {
         let result = receive_message(&request, &store).await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
+    }
+
+    #[tokio::test]
+    async fn receive_message_rejects_invalid_max_number_of_messages() {
+        let store = SqsTestStore::with_queue(queue());
+        let request = resolved_request(
+            r#"{
+                "QueueUrl":"http://localhost:4566/123456789012/orders",
+                "MaxNumberOfMessages":11
+            }"#,
+        );
+
+        let result = receive_message(&request, &store).await;
+
+        assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }
 
     #[tokio::test]

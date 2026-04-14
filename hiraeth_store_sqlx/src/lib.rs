@@ -15,6 +15,17 @@ pub enum StoreError {
     MigrationError(String),
 }
 
+impl std::fmt::Display for StoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoreError::ConnectionError(msg) => write!(f, "connection error: {}", msg),
+            StoreError::MigrationError(msg) => write!(f, "migration error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for StoreError {}
+
 pub struct SqlxStore {
     pub access_key_store: SqliteAccessKeyStore,
     pub principal_store: SqlitePrincipalStore,

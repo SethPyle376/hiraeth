@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use base64::Engine;
 use hiraeth_auth::ResolvedRequest;
@@ -64,6 +64,30 @@ pub(crate) async fn load_queue_from_url<S: SqsStore>(
 
 pub(crate) fn queue_url(host: &str, account_id: &str, queue_name: &str) -> String {
     format!("http://{host}/{account_id}/{queue_name}")
+}
+
+pub(crate) fn validate_batch_request<'a>(
+    entry_ids: impl IntoIterator<Item = &'a str>,
+) -> Result<(), SqsError> {
+    let mut count = 0;
+    let mut seen = HashSet::new();
+
+    for entry_id in entry_ids {
+        count += 1;
+        if !seen.insert(entry_id) {
+            return Err(SqsError::BatchEntryIdsNotDistinct);
+        }
+    }
+
+    if count == 0 {
+        return Err(SqsError::EmptyBatchRequest);
+    }
+
+    if count > 10 {
+        return Err(SqsError::TooManyEntriesInBatchRequest);
+    }
+
+    Ok(())
 }
 
 pub(crate) fn calculate_message_attributes_md5<'a>(

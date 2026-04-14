@@ -13,6 +13,16 @@ impl SqliteAccessKeyStore {
     }
 }
 
+fn map_sqlx_error(err: sqlx::Error) -> StoreError {
+    if let sqlx::Error::Database(database_error) = &err {
+        if database_error.is_unique_violation() {
+            return StoreError::Conflict(database_error.message().to_string());
+        }
+    }
+
+    StoreError::StorageFailure(err.to_string())
+}
+
 impl AccessKeyStore for SqliteAccessKeyStore {
     async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError> {
         sqlx::query_as!(
@@ -22,7 +32,7 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))
+        .map_err(map_sqlx_error)
     }
 
     async fn insert_secret_key(
@@ -39,7 +49,7 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         )
         .execute(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        .map_err(map_sqlx_error)?;
         Ok(())
     }
 }
@@ -114,7 +124,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_secret_key_returns_storage_error_for_duplicate_key() {
+    async fn insert_secret_key_returns_conflict_for_duplicate_key() {
         let (_temp_dir, mut store) = test_store().await;
 
         store
@@ -126,6 +136,6 @@ mod tests {
             .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "other-secret", 1)
             .await;
 
-        assert!(matches!(duplicate_insert, Err(StoreError::StorageFailure(_))));
+        assert!(matches!(duplicate_insert, Err(StoreError::Conflict(_))));
     }
 }

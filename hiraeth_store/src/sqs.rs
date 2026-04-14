@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 
 use crate::StoreError;
@@ -95,45 +93,6 @@ pub struct SqsQueueAttributeUpdate {
     pub fifo_throughput_limit: Option<String>,
     pub redrive_allow_policy: Option<String>,
     pub sqs_managed_sse_enabled: Option<bool>,
-}
-
-impl From<HashMap<String, String>> for SqsQueueAttributeUpdate {
-    fn from(attributes: HashMap<String, String>) -> Self {
-        Self {
-            visibility_timeout_seconds: attributes
-                .get("VisibilityTimeout")
-                .and_then(|s| s.parse::<i64>().ok()),
-            delay_seconds: attributes
-                .get("DelaySeconds")
-                .and_then(|s| s.parse::<i64>().ok()),
-            maximum_message_size: attributes
-                .get("MaximumMessageSize")
-                .and_then(|s| s.parse::<i64>().ok()),
-            message_retention_period_seconds: attributes
-                .get("MessageRetentionPeriod")
-                .and_then(|s| s.parse::<i64>().ok()),
-            receive_message_wait_time_seconds: attributes
-                .get("ReceiveMessageWaitTimeSeconds")
-                .and_then(|s| s.parse::<i64>().ok()),
-            policy: attributes.get("Policy").cloned(),
-            redrive_policy: attributes.get("RedrivePolicy").cloned(),
-            content_based_deduplication: attributes
-                .get("ContentBasedDeduplication")
-                .and_then(|s| s.parse::<bool>().ok()),
-            kms_master_key_id: attributes
-                .contains_key("KmsMasterKeyId")
-                .then(|| attributes.get("KmsMasterKeyId").cloned()),
-            kms_data_key_reuse_period_seconds: attributes
-                .get("KmsDataKeyReusePeriodSeconds")
-                .and_then(|s| s.parse::<i64>().ok()),
-            deduplication_scope: attributes.get("DeduplicationScope").cloned(),
-            fifo_throughput_limit: attributes.get("FifoThroughputLimit").cloned(),
-            redrive_allow_policy: attributes.get("RedriveAllowPolicy").cloned(),
-            sqs_managed_sse_enabled: attributes
-                .get("SqsManagedSseEnabled")
-                .and_then(|s| s.parse::<bool>().ok()),
-        }
-    }
 }
 
 #[async_trait]
