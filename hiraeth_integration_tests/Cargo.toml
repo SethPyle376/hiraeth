@@ -1,0 +1,16 @@
+[package]
+name = "hiraeth_integration_tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dev-dependencies]
+anyhow = "1.0"
+aws-config = "1"
+aws-credential-types = "1"
+aws-sdk-sqs = "1"
+hiraeth_runtime = { path = "../hiraeth_runtime" }
+hiraeth_store_sqlx = { path = "../hiraeth_store_sqlx" }
+tempfile = "3"
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "net"] }
+uuid = { version = "1.18", features = ["v4"] }
