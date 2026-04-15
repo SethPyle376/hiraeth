@@ -1,10 +1,7 @@
 use std::{net::IpAddr, str::FromStr};
 
-use crate::app::App;
+use hiraeth_runtime::{app::App, serve};
 use hiraeth_store_sqlx::SqlxStore;
-
-mod app;
-mod serve;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

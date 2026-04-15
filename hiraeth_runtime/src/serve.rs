@@ -24,7 +24,10 @@ static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 pub async fn serve(addr: SocketAddr, app: Arc<App>) -> anyhow::Result<()> {
     let listener = TcpListener::bind(addr).await?;
+    serve_listener(listener, app).await
+}
 
+pub async fn serve_listener(listener: TcpListener, app: Arc<App>) -> anyhow::Result<()> {
     loop {
         let (stream, peer_addr) = listener.accept().await?;
         let app = Arc::clone(&app);

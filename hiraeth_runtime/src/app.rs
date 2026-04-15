@@ -6,7 +6,7 @@ use hiraeth_router::{ServiceResponse, ServiceRouter};
 use hiraeth_sqs::SqsService;
 use hiraeth_store_sqlx::SqlxStore;
 
-pub(crate) struct RequestTrace {
+pub struct RequestTrace {
     pub auth_ms: u128,
     pub route_ms: Option<u128>,
     pub service: Option<String>,
@@ -16,12 +16,12 @@ pub(crate) struct RequestTrace {
     pub access_key: Option<String>,
 }
 
-pub(crate) struct AppRequestOutcome {
+pub struct AppRequestOutcome {
     pub response: Result<ServiceResponse, ApiError>,
     pub trace: RequestTrace,
 }
 
-pub(crate) struct App {
+pub struct App {
     store: SqlxStore,
     router: ServiceRouter,
 }

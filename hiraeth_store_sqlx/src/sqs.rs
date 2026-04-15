@@ -227,7 +227,7 @@ impl SqsStore for SqliteSqsStore {
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError> {
         sqlx::query!(
             "INSERT INTO sqs_messages (message_id, queue_id, body, message_attributes, aws_trace_header, sent_at, visible_at, expires_at, receive_count, receipt_handle, first_received_at, message_group_id, message_deduplication_id)
-            VALUES (?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            VALUES (?, ?, ?, COALESCE(?, '{}'), ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             message.message_id,
             message.queue_id,
             message.body,
