@@ -4,8 +4,19 @@
 
 {% block content %}
 <section class="mx-auto max-w-3xl py-16">
-  <div class="alert alert-error">
-    <span>{{ message }}</span>
+  <div class="card border border-error/40 bg-base-100 shadow-xl">
+    <div class="card-body">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="badge badge-error">{{ status_code }}</span>
+        <p class="text-sm font-semibold uppercase tracking-[0.3em] text-error">Request failed</p>
+      </div>
+      <h1 class="mt-2 text-4xl font-black tracking-tight">{{ title }}</h1>
+      <p class="mt-2 text-base-content/70">{{ message }}</p>
+      <div class="card-actions mt-6">
+        <a class="btn btn-primary" href="/">Back to admin</a>
+        <a class="btn btn-outline" href="/sqs">Open SQS</a>
+      </div>
+    </div>
   </div>
 </section>
 {% endblock %}

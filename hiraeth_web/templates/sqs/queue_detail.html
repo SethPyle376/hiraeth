@@ -15,12 +15,15 @@
         <span class="text-base-content/40">/</span>
         <span class="badge badge-outline">{{ queue.queue_type }}</span>
       </p>
+      <p class="mt-3 break-all font-mono text-sm text-base-content/50">{{ queue_arn }}</p>
     </div>
 
     <div class="card border border-base-300 bg-base-100/90 shadow-sm">
       <div class="card-body p-4">
-        <div class="grid gap-2 sm:grid-cols-3">
+        <div class="mb-3 text-sm font-semibold uppercase tracking-wider text-base-content/50">Queue actions</div>
+        <div class="grid gap-2 sm:grid-cols-4">
           <a class="btn btn-ghost" href="/sqs/queues?region={{ queue.region }}&account_id={{ queue.account_id }}">Back</a>
+          <a class="btn btn-outline" href="/sqs/queues/{{ queue.id }}?message_limit={{ message_limit }}">Reload</a>
           <form method="post" action="/sqs/queues/{{ queue.id }}/purge" onsubmit="return confirm('Purge every message in this queue?')">
             <button class="btn btn-warning w-full" type="submit">Purge</button>
           </form>
@@ -37,7 +40,7 @@
       <div class="card-body">
         <div class="text-sm text-base-content/60">Messages</div>
         <div class="text-4xl font-black text-primary">{{ summary.message_count }}</div>
-        <div class="text-sm text-base-content/50">retained and not expired</div>
+        <div class="text-sm text-base-content/50">stored and not expired</div>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-sm">
@@ -62,7 +65,9 @@
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 class="card-title text-2xl">Recent messages</h2>
-            <p class="text-sm text-base-content/60">Showing up to {{ message_limit }} messages, newest first.</p>
+            <p class="text-sm text-base-content/60">
+              Showing up to {{ message_limit }} stored messages, newest first. Receiving through the AWS API may hide messages with a visibility timeout.
+            </p>
           </div>
           <form class="join self-start lg:self-auto" method="get" action="/sqs/queues/{{ queue.id }}">
             <input class="input join-item input-bordered w-28" type="number" min="1" max="500" name="message_limit" value="{{ message_limit }}">
@@ -188,7 +193,7 @@
         {% else %}
         <div class="mt-6 rounded-box border border-dashed border-base-300 bg-base-200/50 p-12 text-center">
           <h3 class="text-xl font-bold">No messages in this queue</h3>
-          <p class="mt-2 text-base-content/60">Send a message through the emulator and refresh this page to inspect it here.</p>
+          <p class="mt-2 text-base-content/60">Send a message through the emulator, then refresh this page to inspect the stored payload and metadata.</p>
         </div>
         {% endif %}
       </div>
@@ -200,6 +205,14 @@
           <h2 class="card-title">Queue metadata</h2>
           <div class="space-y-3 text-sm">
             <div>
+              <div class="text-base-content/50">ARN</div>
+              <div class="break-all font-mono">{{ queue_arn }}</div>
+            </div>
+            <div>
+              <div class="text-base-content/50">Database ID</div>
+              <div class="break-all font-mono">{{ queue.id }}</div>
+            </div>
+            <div>
               <div class="text-base-content/50">Created</div>
               <div class="break-all font-mono">{{ queue.created_at }}</div>
             </div>
@@ -208,6 +221,31 @@
               <div class="break-all font-mono">{{ queue.updated_at }}</div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="card-title">Tags</h2>
+            <span class="badge badge-outline">{{ tag_count }}</span>
+          </div>
+          {% if has_tags %}
+          <div class="max-h-80 overflow-auto">
+            <table class="table table-xs">
+              <tbody>
+                {% for tag in tags %}
+                <tr>
+                  <th class="align-top text-base-content/60">{{ tag.key }}</th>
+                  <td class="break-all font-mono">{{ tag.value }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <p class="text-sm text-base-content/60">No tags are stored for this queue.</p>
+          {% endif %}
         </div>
       </section>
 

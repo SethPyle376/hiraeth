@@ -1,6 +1,6 @@
 use askama::Template;
 
-use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary};
+use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
 
 #[derive(Template)]
 #[template(path = "home.html")]
@@ -9,6 +9,8 @@ pub(crate) struct HomeTemplate;
 #[derive(Template)]
 #[template(path = "error.html")]
 pub(crate) struct ErrorTemplate<'a> {
+    pub(crate) status_code: u16,
+    pub(crate) title: &'a str,
     pub(crate) message: &'a str,
 }
 
@@ -40,9 +42,13 @@ pub(crate) struct SqsQueuesTemplate<'a> {
 #[template(path = "sqs/queue_detail.html")]
 pub(crate) struct SqsQueueDetailTemplate<'a> {
     pub(crate) queue: &'a hiraeth_store::sqs::SqsQueue,
+    pub(crate) queue_arn: &'a str,
     pub(crate) summary: &'a QueueSummary,
     pub(crate) attributes: &'a [QueueAttribute],
+    pub(crate) tags: &'a [QueueTag],
     pub(crate) messages: &'a [MessageSummary],
+    pub(crate) tag_count: usize,
+    pub(crate) has_tags: bool,
     pub(crate) has_messages: bool,
     pub(crate) message_limit: i64,
 }

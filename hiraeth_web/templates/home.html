@@ -6,17 +6,23 @@
 <section class="mx-auto max-w-[94rem] py-10 lg:py-16">
   <div class="grid items-end gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
     <div>
-      <p class="mb-4 text-sm font-semibold uppercase tracking-[0.45em] text-primary">Hiraeth Admin</p>
-      <h1 class="max-w-4xl text-5xl font-black tracking-tight text-base-content md:text-7xl">
-        Local emulator state in one place.
+      <p class="mb-4 text-sm font-semibold uppercase tracking-[0.45em] text-primary">Local Admin</p>
+      <h1 class="text-balance max-w-4xl text-5xl font-black tracking-tight text-base-content md:text-7xl">
+        Inspect the emulator while tests are running.
       </h1>
       <p class="mt-6 max-w-2xl text-lg leading-8 text-base-content/70">
-        Use this page to inspect service data, check what test clients have created,
-        and make small admin changes without querying SQLite by hand.
+        This UI reads the same SQLite database as the AWS-compatible endpoint. Use it to inspect
+        emulator state, verify test resources, and handle small local admin tasks without opening
+        the database by hand.
       </p>
+      <div class="alert mt-6 max-w-3xl border border-warning/50 bg-warning/15 text-base-content shadow-sm">
+        <span class="badge badge-warning font-bold text-warning-content">Local only</span>
+        <span>
+          This admin UI is not SigV4 protected. Bind it only to a trusted interface.
+        </span>
+      </div>
       <div class="mt-8 flex flex-wrap gap-3">
-        <a class="btn btn-primary" href="/sqs">Open service dashboard</a>
-        <a class="btn btn-outline" href="/sqs/queues">Browse queues</a>
+        <a class="btn btn-primary" href="/sqs">Open SQS dashboard</a>
       </div>
     </div>
 
@@ -28,7 +34,7 @@
             <span class="text-2xl font-black text-primary">SQS</span>
           </div>
           <h2 class="card-title mt-5">SQS queues</h2>
-          <p class="text-base-content/70">View queues, message counts, attributes, and stored message bodies.</p>
+          <p class="text-base-content/70">View queues, message counts, attributes, tags, and stored message bodies.</p>
         </div>
       </a>
       <div class="card border border-base-300 bg-base-100/70 shadow-sm">
@@ -67,7 +73,7 @@
   <div class="mt-10 grid gap-4 lg:grid-cols-3">
     <div class="card border border-base-300 bg-base-100/80">
       <div class="card-body">
-        <h2 class="card-title">Separate server</h2>
+        <h2 class="card-title">Separate port</h2>
         <p class="text-base-content/70">The admin UI runs on its own port and does not use the SigV4 request path.</p>
       </div>
     </div>
@@ -79,8 +85,8 @@
     </div>
     <div class="card border border-base-300 bg-base-100/80">
       <div class="card-body">
-        <h2 class="card-title">Service sections</h2>
-        <p class="text-base-content/70">Each service can add its own pages without changing the AWS API routes.</p>
+        <h2 class="card-title">Read-first workflow</h2>
+        <p class="text-base-content/70">The first release focuses on inspection with a small set of explicit admin actions.</p>
       </div>
     </div>
   </div>

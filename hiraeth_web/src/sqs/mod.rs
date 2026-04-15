@@ -74,6 +74,11 @@ pub(crate) struct QueueAttribute {
     pub(crate) value: String,
 }
 
+pub(crate) struct QueueTag {
+    pub(crate) key: String,
+    pub(crate) value: String,
+}
+
 pub(crate) struct MessageSummary {
     pub(crate) message_id: String,
     pub(crate) body_preview: String,
@@ -212,12 +217,18 @@ async fn queue_detail(
         .map(message_summary)
         .collect::<Vec<_>>();
     let attributes = queue_attributes(&queue);
+    let tags = queue_tags(state.sqs_store.list_queue_tags(queue.id).await?);
+    let queue_arn = queue_arn(&queue);
 
     let template = SqsQueueDetailTemplate {
         queue: &queue,
+        queue_arn: &queue_arn,
         summary: &summary,
         attributes: &attributes,
+        tags: &tags,
         messages: &message_summaries,
+        tag_count: tags.len(),
+        has_tags: !tags.is_empty(),
         has_messages: !message_summaries.is_empty(),
         message_limit,
     };
@@ -229,6 +240,7 @@ async fn purge_queue(
     State(state): State<WebState>,
     Path(queue_id): Path<i64>,
 ) -> Result<Redirect, WebError> {
+    load_queue_by_id(&state, queue_id).await?;
     state.sqs_store.purge_queue(queue_id).await?;
     Ok(Redirect::to(&format!("/sqs/queues/{queue_id}")))
 }
@@ -237,8 +249,12 @@ async fn delete_queue(
     State(state): State<WebState>,
     Path(queue_id): Path<i64>,
 ) -> Result<Redirect, WebError> {
+    let queue = load_queue_by_id(&state, queue_id).await?;
     state.sqs_store.delete_queue(queue_id).await?;
-    Ok(Redirect::to("/sqs/queues"))
+    Ok(Redirect::to(&format!(
+        "/sqs/queues?region={}&account_id={}",
+        queue.region, queue.account_id
+    )))
 }
 
 async fn delete_message(
@@ -275,6 +291,14 @@ async fn load_queue_summaries(
     Ok(summaries)
 }
 
+async fn load_queue_by_id(state: &WebState, queue_id: i64) -> Result<SqsQueue, WebError> {
+    state
+        .sqs_store
+        .get_queue_by_id(queue_id)
+        .await?
+        .ok_or_else(|| StoreError::NotFound("queue not found".to_string()).into())
+}
+
 async fn queue_summary(state: &WebState, queue: SqsQueue) -> Result<QueueSummary, WebError> {
     let message_count = state.sqs_store.get_message_count(queue.id).await?;
     let visible_message_count = state.sqs_store.get_visible_message_count(queue.id).await?;
@@ -290,6 +314,20 @@ async fn queue_summary(state: &WebState, queue: SqsQueue) -> Result<QueueSummary
         visible_message_count,
         delayed_message_count,
     })
+}
+
+fn queue_arn(queue: &SqsQueue) -> String {
+    format!(
+        "arn:aws:sqs:{}:{}:{}",
+        queue.region, queue.account_id, queue.name
+    )
+}
+
+fn queue_tags(tags: std::collections::HashMap<String, String>) -> Vec<QueueTag> {
+    BTreeMap::from_iter(tags)
+        .into_iter()
+        .map(|(key, value)| QueueTag { key, value })
+        .collect()
 }
 
 fn queue_attributes(queue: &SqsQueue) -> Vec<QueueAttribute> {
@@ -472,7 +510,11 @@ fn format_datetime(value: chrono::NaiveDateTime) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_message_attributes;
+    use std::collections::HashMap;
+
+    use hiraeth_store::sqs::SqsQueue;
+
+    use super::{parse_message_attributes, queue_arn, queue_tags};
 
     #[test]
     fn parse_message_attributes_extracts_attribute_names_and_values() {
@@ -495,5 +537,30 @@ mod tests {
         assert!(parsed.has_unparsed);
         assert!(parsed.attributes.is_empty());
         assert_eq!(parsed.raw, "not-json");
+    }
+
+    #[test]
+    fn queue_arn_uses_queue_identity_fields() {
+        let arn = queue_arn(&SqsQueue {
+            name: "orders".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "000000000000".to_string(),
+            ..Default::default()
+        });
+
+        assert_eq!(arn, "arn:aws:sqs:us-east-1:000000000000:orders");
+    }
+
+    #[test]
+    fn queue_tags_are_sorted_for_stable_rendering() {
+        let tags = queue_tags(HashMap::from([
+            ("zeta".to_string(), "last".to_string()),
+            ("alpha".to_string(), "first".to_string()),
+        ]));
+
+        assert_eq!(tags[0].key, "alpha");
+        assert_eq!(tags[0].value, "first");
+        assert_eq!(tags[1].key, "zeta");
+        assert_eq!(tags[1].value, "last");
     }
 }

@@ -1,11 +1,11 @@
 {% if has_queues %}
-<div class="overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-sm">
+<div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 shadow-sm">
   <table class="table">
     <thead>
       <tr>
         <th>Name</th>
         <th>Type</th>
-        <th>Region</th>
+        <th>Scope</th>
         <th class="text-right">Messages</th>
         <th class="text-right">Visible</th>
         <th class="text-right">Delayed</th>
@@ -14,13 +14,16 @@
     </thead>
     <tbody>
       {% for queue in queues %}
-      <tr>
+      <tr class="hover:bg-base-200/60">
         <td>
           <div class="font-bold">{{ queue.name }}</div>
           <div class="text-xs text-base-content/50">id {{ queue.id }}</div>
         </td>
         <td><span class="badge badge-outline">{{ queue.queue_type }}</span></td>
-        <td class="font-mono text-sm">{{ queue.region }}</td>
+        <td>
+          <div class="font-mono text-sm">{{ queue.region }}</div>
+          <div class="font-mono text-xs text-base-content/50">{{ queue.account_id }}</div>
+        </td>
         <td class="text-right">{{ queue.message_count }}</td>
         <td class="text-right">{{ queue.visible_message_count }}</td>
         <td class="text-right">{{ queue.delayed_message_count }}</td>
@@ -36,7 +39,9 @@
 <div class="card border border-dashed border-base-300 bg-base-100/70">
   <div class="card-body items-center py-16 text-center">
     <h2 class="card-title">No queues found</h2>
-    <p class="max-w-md text-base-content/70">Create a queue through the AWS emulator, then refresh this view to inspect it here.</p>
+    <p class="max-w-md text-base-content/70">
+      Create a queue through the AWS emulator, or adjust the account, region, or prefix filter.
+    </p>
   </div>
 </div>
 {% endif %}

@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Hiraeth local AWS emulator admin UI">
     <title>{% block title %}Hiraeth{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
@@ -47,12 +48,17 @@
           radial-gradient(circle at top left, rgba(250, 189, 47, 0.16), transparent 28rem),
           radial-gradient(circle at bottom right, rgba(131, 165, 152, 0.14), transparent 26rem);
       }
+
+      .text-balance {
+        text-wrap: balance;
+      }
     </style>
   </head>
   <body class="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-accent/10 text-base-content">
     <div class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/90 px-6 backdrop-blur">
       <div class="flex-1">
         <a class="text-xl font-black tracking-tight" href="/">Hiraeth</a>
+        <span class="ml-3 hidden rounded-full border border-primary/30 px-2 py-1 text-xs font-semibold uppercase tracking-widest text-primary sm:inline-flex">Admin</span>
       </div>
       <div class="flex-none gap-2">
         <a class="btn btn-ghost btn-sm" href="/sqs">SQS</a>
@@ -61,6 +67,11 @@
       </div>
     </div>
     <main class="px-4 py-8 sm:px-6 lg:px-10">
+      <noscript>
+        <div class="alert alert-warning mx-auto mb-6 max-w-[94rem]">
+          <span>JavaScript is disabled. Basic forms still work, but live fragments will reload as full pages.</span>
+        </div>
+      </noscript>
       {% block content %}{% endblock %}
     </main>
   </body>
