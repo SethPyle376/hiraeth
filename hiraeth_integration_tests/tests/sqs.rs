@@ -261,6 +261,65 @@ async fn set_and_get_queue_attributes_round_trip() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn queue_tags_round_trip() -> anyhow::Result<()> {
+    let server = sqs_test_server().await?;
+    let queue_url = server
+        .client
+        .create_queue()
+        .queue_name(queue_name("tags"))
+        .tags("environment", "test")
+        .send()
+        .await
+        .context("create queue with tags should succeed")?
+        .queue_url()
+        .context("created queue should have url")?
+        .to_string();
+
+    server
+        .client
+        .tag_queue()
+        .queue_url(&queue_url)
+        .tags("owner", "hiraeth")
+        .tags("environment", "integration")
+        .send()
+        .await
+        .context("tag queue should succeed")?;
+
+    let response = server
+        .client
+        .list_queue_tags()
+        .queue_url(&queue_url)
+        .send()
+        .await
+        .context("list queue tags should succeed")?;
+    let tags = response.tags().context("response should include tags")?;
+    assert_eq!(tags.get("environment"), Some(&"integration".to_string()));
+    assert_eq!(tags.get("owner"), Some(&"hiraeth".to_string()));
+
+    server
+        .client
+        .untag_queue()
+        .queue_url(&queue_url)
+        .tag_keys("owner")
+        .send()
+        .await
+        .context("untag queue should succeed")?;
+
+    let response = server
+        .client
+        .list_queue_tags()
+        .queue_url(&queue_url)
+        .send()
+        .await
+        .context("list queue tags after untag should succeed")?;
+    let tags = response.tags().context("response should include tags")?;
+    assert_eq!(tags.get("environment"), Some(&"integration".to_string()));
+    assert!(!tags.contains_key("owner"));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn purge_queue_removes_messages() -> anyhow::Result<()> {
     let server = sqs_test_server().await?;
     let queue_url = server

@@ -1,7 +1,7 @@
 use crate::{
     change_message_visibility::*, delete_message::*, list_queues::list_queues, queue::*,
     queue_attributes::get_queue_attributes, receive_message::*, send_message::*,
-    set_queue_attributes::*,
+    set_queue_attributes::*, tags::*,
 };
 use async_trait::async_trait;
 use hiraeth_auth::ResolvedRequest;
@@ -18,6 +18,7 @@ mod queue_attributes;
 mod receive_message;
 mod send_message;
 mod set_queue_attributes;
+mod tags;
 mod util;
 
 pub struct SqsService<S: SqsStore> {
@@ -55,6 +56,9 @@ where
                 "AmazonSQS.SendMessageBatch" => send_message_batch(&request, &self.store).await,
                 "AmazonSQS.ReceiveMessage" => receive_message(&request, &self.store).await,
                 "AmazonSQS.GetQueueAttributes" => get_queue_attributes(&request, &self.store).await,
+                "AmazonSQS.ListQueueTags" => list_queue_tags(&request, &self.store).await,
+                "AmazonSQS.TagQueue" => tag_queue(&request, &self.store).await,
+                "AmazonSQS.UntagQueue" => untag_queue(&request, &self.store).await,
                 "AmazonSQS.DeleteMessage" => delete_message(&request, &self.store).await,
                 "AmazonSQS.DeleteMessageBatch" => delete_message_batch(&request, &self.store).await,
                 "AmazonSQS.ChangeMessageVisibility" => {

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ::chrono::Duration;
 use async_trait::async_trait;
 use hiraeth_store::StoreError;
@@ -101,6 +103,20 @@ impl SqliteSqsStore {
 
         if result.rows_affected() == 0 {
             return Err(StoreError::NotFound("message not found".to_string()));
+        }
+
+        Ok(())
+    }
+
+    async fn ensure_queue_exists(&self, queue_id: i64) -> Result<(), StoreError> {
+        let queue_count =
+            sqlx::query_scalar!("SELECT COUNT(*) FROM sqs_queues WHERE id = ?", queue_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(map_sqlx_error)?;
+
+        if queue_count == 0 {
+            return Err(StoreError::NotFound("queue not found".to_string()));
         }
 
         Ok(())
@@ -519,10 +535,70 @@ impl SqsStore for SqliteSqsStore {
 
         Ok(())
     }
+
+    async fn list_queue_tags(&self, queue_id: i64) -> Result<HashMap<String, String>, StoreError> {
+        self.ensure_queue_exists(queue_id).await?;
+
+        let rows = sqlx::query!(
+            "SELECT tag_key, tag_value FROM sqs_queue_tags WHERE queue_id = ? ORDER BY tag_key",
+            queue_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.tag_key, row.tag_value))
+            .collect())
+    }
+
+    async fn tag_queue(
+        &self,
+        queue_id: i64,
+        tags: HashMap<String, String>,
+    ) -> Result<(), StoreError> {
+        self.ensure_queue_exists(queue_id).await?;
+
+        for (key, value) in tags {
+            sqlx::query!(
+                "INSERT INTO sqs_queue_tags (queue_id, tag_key, tag_value)
+                VALUES (?, ?, ?)
+                ON CONFLICT(queue_id, tag_key) DO UPDATE SET tag_value = excluded.tag_value",
+                queue_id,
+                key,
+                value
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_error)?;
+        }
+
+        Ok(())
+    }
+
+    async fn untag_queue(&self, queue_id: i64, tag_keys: Vec<String>) -> Result<(), StoreError> {
+        self.ensure_queue_exists(queue_id).await?;
+
+        for key in tag_keys {
+            sqlx::query!(
+                "DELETE FROM sqs_queue_tags WHERE queue_id = ? AND tag_key = ?",
+                queue_id,
+                key
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_error)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use chrono::{Duration, Utc};
     use tempfile::TempDir;
 
@@ -615,6 +691,20 @@ mod tests {
         .expect("sqs_queues table should exist after migrations");
 
         assert_eq!(table_name, "sqs_queues");
+    }
+
+    #[tokio::test]
+    async fn run_migrations_creates_sqs_queue_tags_table() {
+        let (_temp_dir, store) = test_store().await;
+
+        let table_name = sqlx::query_scalar::<_, String>(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sqs_queue_tags'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("sqs_queue_tags table should exist after migrations");
+
+        assert_eq!(table_name, "sqs_queue_tags");
     }
 
     #[tokio::test]
@@ -931,6 +1021,159 @@ mod tests {
             .expect("queue should exist");
 
         assert_eq!(updated_queue.kms_master_key_id, None);
+    }
+
+    #[tokio::test]
+    async fn tag_queue_upserts_and_list_queue_tags_returns_tags() {
+        let (_temp_dir, store) = test_store().await;
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue should insert");
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        store
+            .tag_queue(
+                queue.id,
+                [
+                    ("environment".to_string(), "test".to_string()),
+                    ("owner".to_string(), "old".to_string()),
+                ]
+                .into_iter()
+                .collect(),
+            )
+            .await
+            .expect("initial tags should insert");
+        store
+            .tag_queue(
+                queue.id,
+                [("owner".to_string(), "hiraeth".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .await
+            .expect("existing tag should update");
+
+        let tags = store
+            .list_queue_tags(queue.id)
+            .await
+            .expect("tags should list");
+
+        assert_eq!(
+            tags,
+            [
+                ("environment".to_string(), "test".to_string()),
+                ("owner".to_string(), "hiraeth".to_string()),
+            ]
+            .into_iter()
+            .collect::<HashMap<_, _>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn untag_queue_removes_requested_tags() {
+        let (_temp_dir, store) = test_store().await;
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue should insert");
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+        store
+            .tag_queue(
+                queue.id,
+                [
+                    ("environment".to_string(), "test".to_string()),
+                    ("owner".to_string(), "hiraeth".to_string()),
+                ]
+                .into_iter()
+                .collect(),
+            )
+            .await
+            .expect("tags should insert");
+
+        store
+            .untag_queue(queue.id, vec!["owner".to_string(), "missing".to_string()])
+            .await
+            .expect("tags should delete idempotently");
+
+        let tags = store
+            .list_queue_tags(queue.id)
+            .await
+            .expect("tags should list");
+
+        assert_eq!(
+            tags,
+            [("environment".to_string(), "test".to_string())]
+                .into_iter()
+                .collect::<HashMap<_, _>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_queue_cascades_queue_tags() {
+        let (_temp_dir, store) = test_store().await;
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue should insert");
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+        store
+            .tag_queue(
+                queue.id,
+                [("environment".to_string(), "test".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .await
+            .expect("tags should insert");
+
+        store
+            .delete_queue(queue.id)
+            .await
+            .expect("queue should delete");
+
+        let tag_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sqs_queue_tags WHERE queue_id = ?")
+                .bind(queue.id)
+                .fetch_one(&store.pool)
+                .await
+                .expect("tag count query should succeed");
+
+        assert_eq!(tag_count, 0);
+    }
+
+    #[tokio::test]
+    async fn queue_tag_methods_return_not_found_for_missing_queue() {
+        let (_temp_dir, store) = test_store().await;
+
+        let list_result = store.list_queue_tags(999).await;
+        let tag_result = store
+            .tag_queue(
+                999,
+                [("environment".to_string(), "test".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .await;
+        let untag_result = store
+            .untag_queue(999, vec!["environment".to_string()])
+            .await;
+
+        assert!(matches!(list_result, Err(StoreError::NotFound(_))));
+        assert!(matches!(tag_result, Err(StoreError::NotFound(_))));
+        assert!(matches!(untag_result, Err(StoreError::NotFound(_))));
     }
 
     #[tokio::test]

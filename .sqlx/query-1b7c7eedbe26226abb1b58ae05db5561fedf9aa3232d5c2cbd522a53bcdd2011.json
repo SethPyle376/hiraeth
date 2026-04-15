@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sqs_queue_tags (queue_id, tag_key, tag_value)\n                VALUES (?, ?, ?)\n                ON CONFLICT(queue_id, tag_key) DO UPDATE SET tag_value = excluded.tag_value",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1b7c7eedbe26226abb1b58ae05db5561fedf9aa3232d5c2cbd522a53bcdd2011"
+}

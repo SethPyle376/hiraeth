@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{
         Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -35,6 +35,7 @@ pub struct SqsTestStore {
     failing_receipt_handles: HashSet<String>,
     visibility_updates: Mutex<Vec<(i64, String, chrono::NaiveDateTime)>>,
     list_queues_calls: Mutex<Vec<ListQueuesCall>>,
+    queue_tags: Mutex<HashMap<i64, HashMap<String, String>>>,
     message_count: Option<i64>,
     visible_message_count: Option<i64>,
     delayed_message_count: Option<i64>,
@@ -54,6 +55,7 @@ impl Default for SqsTestStore {
             failing_receipt_handles: HashSet::new(),
             visibility_updates: Mutex::new(Vec::new()),
             list_queues_calls: Mutex::new(Vec::new()),
+            queue_tags: Mutex::new(HashMap::new()),
             message_count: None,
             visible_message_count: None,
             delayed_message_count: None,
@@ -152,6 +154,23 @@ impl SqsTestStore {
             .lock()
             .expect("list queues calls mutex")
             .clone()
+    }
+
+    pub fn queue_tags(&self, queue_id: i64) -> HashMap<String, String> {
+        self.queue_tags
+            .lock()
+            .expect("queue tags mutex")
+            .get(&queue_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn has_queue(&self, queue_id: i64) -> bool {
+        self.queues
+            .lock()
+            .expect("queues mutex")
+            .iter()
+            .any(|queue| queue.id == queue_id)
     }
 
     fn sent_message_count(&self, queue_id: i64) -> i64 {
@@ -314,6 +333,45 @@ impl SqsStore for SqsTestStore {
             apply_queue_attribute_update(queue, attributes);
         }
 
+        Ok(())
+    }
+
+    async fn list_queue_tags(&self, queue_id: i64) -> Result<HashMap<String, String>, StoreError> {
+        if !self.has_queue(queue_id) {
+            return Err(StoreError::NotFound("queue not found".to_string()));
+        }
+
+        Ok(self.queue_tags(queue_id))
+    }
+
+    async fn tag_queue(
+        &self,
+        queue_id: i64,
+        tags: HashMap<String, String>,
+    ) -> Result<(), StoreError> {
+        if !self.has_queue(queue_id) {
+            return Err(StoreError::NotFound("queue not found".to_string()));
+        }
+
+        let mut queue_tags = self.queue_tags.lock().expect("queue tags mutex");
+        let tags_for_queue = queue_tags.entry(queue_id).or_default();
+        for (key, value) in tags {
+            tags_for_queue.insert(key, value);
+        }
+        Ok(())
+    }
+
+    async fn untag_queue(&self, queue_id: i64, tag_keys: Vec<String>) -> Result<(), StoreError> {
+        if !self.has_queue(queue_id) {
+            return Err(StoreError::NotFound("queue not found".to_string()));
+        }
+
+        let mut queue_tags = self.queue_tags.lock().expect("queue tags mutex");
+        if let Some(tags_for_queue) = queue_tags.get_mut(&queue_id) {
+            for key in tag_keys {
+                tags_for_queue.remove(&key);
+            }
+        }
         Ok(())
     }
 

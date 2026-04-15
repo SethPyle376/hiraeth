@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM sqs_queue_tags WHERE queue_id = ? AND tag_key = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "666b3fa080e4cd4640c7a286f5f900e2b956257c1b647ceabfccf2f82e0a7a04"
+}

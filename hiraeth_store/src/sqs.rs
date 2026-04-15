@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 
 use crate::StoreError;
@@ -123,6 +125,13 @@ pub trait SqsStore {
         queue_id: i64,
         attributes: SqsQueueAttributeUpdate,
     ) -> Result<(), StoreError>;
+    async fn list_queue_tags(&self, queue_id: i64) -> Result<HashMap<String, String>, StoreError>;
+    async fn tag_queue(
+        &self,
+        queue_id: i64,
+        tags: HashMap<String, String>,
+    ) -> Result<(), StoreError>;
+    async fn untag_queue(&self, queue_id: i64, tag_keys: Vec<String>) -> Result<(), StoreError>;
 
     // message ops
     async fn send_message(&self, message: &SqsMessage) -> Result<(), StoreError>;

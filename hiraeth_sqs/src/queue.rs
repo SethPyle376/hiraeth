@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{SqsError, map_store_error},
     queue_attributes::QueueAttributeValues,
+    tags::validate_tags,
     util,
 };
 
@@ -18,6 +19,8 @@ struct CreateQueueRequest {
     queue_name: String,
     #[serde(default)]
     attributes: HashMap<String, String>,
+    #[serde(default)]
+    tags: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -33,6 +36,7 @@ pub(crate) async fn create_queue<S: SqsStore>(
     let request_body = util::parse_request_body::<CreateQueueRequest>(request)?;
     let queue_attributes = QueueAttributeValues::from_attribute_map(&request_body.attributes)?;
     validate_queue_name(&request_body.queue_name, queue_attributes.fifo_queue)?;
+    validate_tags(&request_body.tags, true)?;
 
     let now = chrono::Utc::now().naive_utc();
     let queue = SqsQueue {
@@ -64,11 +68,34 @@ pub(crate) async fn create_queue<S: SqsStore>(
     };
 
     match store.create_queue(queue.clone()).await {
-        Ok(()) => create_queue_response(
-            request,
-            &request.auth_context.principal.account_id,
-            &request_body.queue_name,
-        ),
+        Ok(()) => {
+            if !request_body.tags.is_empty() {
+                let created_queue = store
+                    .get_queue(
+                        &request_body.queue_name,
+                        &request.region,
+                        &request.auth_context.principal.account_id,
+                    )
+                    .await
+                    .map_err(|e| SqsError::InternalError(e.to_string()))?
+                    .ok_or_else(|| {
+                        SqsError::InternalError(
+                            "created queue could not be loaded for tagging".to_string(),
+                        )
+                    })?;
+
+                store
+                    .tag_queue(created_queue.id, request_body.tags)
+                    .await
+                    .map_err(map_store_error)?;
+            }
+
+            create_queue_response(
+                request,
+                &request.auth_context.principal.account_id,
+                &request_body.queue_name,
+            )
+        }
         Err(StoreError::Conflict(_)) => {
             let existing_queue = store
                 .get_queue(
@@ -258,7 +285,7 @@ mod tests {
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
 
-    use super::{delete_queue, purge_queue};
+    use super::{create_queue, delete_queue, purge_queue};
     use crate::error::SqsError;
 
     fn resolved_request(target: &str, body: &str) -> ResolvedRequest {
@@ -333,6 +360,36 @@ mod tests {
 
         let deleted = store.deleted_queue_ids();
         assert_eq!(deleted, vec![42]);
+    }
+
+    #[tokio::test]
+    async fn create_queue_persists_supplied_tags() {
+        let store = SqsTestStore::default();
+        let request = resolved_request(
+            "AmazonSQS.CreateQueue",
+            r#"{
+                "QueueName":"orders",
+                "Tags":{
+                    "environment":"test",
+                    "owner":"hiraeth"
+                }
+            }"#,
+        );
+
+        let response = create_queue(&request, &store)
+            .await
+            .expect("create queue should succeed");
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(
+            store.queue_tags(0),
+            [
+                ("environment".to_string(), "test".to_string()),
+                ("owner".to_string(), "hiraeth".to_string()),
+            ]
+            .into_iter()
+            .collect::<HashMap<_, _>>()
+        );
     }
 
     #[tokio::test]

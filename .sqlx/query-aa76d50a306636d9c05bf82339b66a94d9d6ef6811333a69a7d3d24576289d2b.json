@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT tag_key, tag_value FROM sqs_queue_tags WHERE queue_id = ? ORDER BY tag_key",
+  "describe": {
+    "columns": [
+      {
+        "name": "tag_key",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "tag_value",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "aa76d50a306636d9c05bf82339b66a94d9d6ef6811333a69a7d3d24576289d2b"
+}
