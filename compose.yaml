@@ -13,3 +13,8 @@ services:
     ports:
       - "4566:4566"
       - "4567:4567"
+    volumes:
+      - hiraeth-data:/data
+
+volumes:
+  hiraeth-data:
