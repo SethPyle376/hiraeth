@@ -5,6 +5,8 @@ release target is SQS: signed AWS SDK requests go through a local HTTP endpoint,
 state is stored in SQLite, and an optional web UI exposes the local emulator
 state for debugging.
 
+![Hiraeth web UI showing the SQS dashboard](docs/assets/hiraeth-web-ui.png)
+
 This project is early. It is intended for local development and test
 environments, not as a production AWS replacement.
 
