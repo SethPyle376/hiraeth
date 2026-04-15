@@ -2,14 +2,17 @@ use std::{net::IpAddr, str::FromStr};
 
 use hiraeth_runtime::{app::App, serve};
 use hiraeth_store_sqlx::SqlxStore;
+use tracing_subscriber::{EnvFilter, fmt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    init_tracing();
+
     let config = config::Config::builder()
         .add_source(config::Environment::with_prefix("HIRAETH"))
         .build()?
         .try_deserialize::<hiraeth_core::Config>()?;
-    println!("Starting Hiraeth with config: {:?}", config);
+    tracing::info!(config = ?config, "starting Hiraeth");
 
     let store = SqlxStore::new(&config.database_url).await?;
     let app = std::sync::Arc::new(App::new(store.clone()));
@@ -17,8 +20,8 @@ async fn main() -> anyhow::Result<()> {
 
     if config.web_enabled {
         let web_addr = (IpAddr::from_str(&config.web_host)?, config.web_port).into();
-        println!("Starting AWS emulator on {}", aws_addr);
-        println!("Starting web UI on {}", web_addr);
+        tracing::info!(addr = %aws_addr, "starting AWS emulator");
+        tracing::info!(addr = %web_addr, "starting web UI");
 
         tokio::try_join!(
             serve::serve(aws_addr, app),
@@ -28,9 +31,16 @@ async fn main() -> anyhow::Result<()> {
             )
         )?;
     } else {
-        println!("Starting AWS emulator on {}", aws_addr);
+        tracing::info!(addr = %aws_addr, "starting AWS emulator");
         serve::serve(aws_addr, app).await?;
     }
 
     Ok(())
+}
+
+fn init_tracing() {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("hiraeth_runtime=info,hiraeth_web=info"));
+
+    fmt().with_env_filter(env_filter).init();
 }

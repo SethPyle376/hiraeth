@@ -18,7 +18,7 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
-use crate::app::{App, AppRequestOutcome};
+use crate::{app::App, request::AppRequestOutcome};
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -36,7 +36,11 @@ pub async fn serve_listener(listener: TcpListener, app: Arc<App>) -> anyhow::Res
         tokio::spawn(async move {
             let io = TokioIo::new(stream);
             if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
-                eprintln!("Connection error from {}: {:?}", peer_addr, e);
+                tracing::error!(
+                    peer_addr = %peer_addr,
+                    error = ?e,
+                    "connection error"
+                );
             }
         });
     }
@@ -53,10 +57,12 @@ async fn handle_request(
         Ok(incoming_request) => incoming_request,
         Err(error) => {
             let total_elapsed = started_at.elapsed();
-            eprintln!(
-                "[request {request_id}] parse_err total_ms={} error={:?}",
-                total_elapsed.as_millis(),
-                error,
+
+            tracing::warn!(
+                request_id,
+                total_ms = total_elapsed.as_millis() as u64,
+                error = ?error,
+                "failed to parse request"
             );
 
             let builder = hyper::Response::builder().status(400);
@@ -81,24 +87,25 @@ async fn handle_request(
             response: Ok(response),
             trace,
         } => {
-            eprintln!(
-                "[request {request_id}] method={} host={} path={} query={} target={} service={} region={} account={} principal={} access_key={} request_bytes={} response_bytes={} status={} auth_ms={} route_ms={} total_ms={}",
-                method,
-                host,
-                path,
-                query.as_deref().unwrap_or(""),
-                target.as_deref().unwrap_or(""),
-                trace.service.as_deref().unwrap_or(""),
-                trace.region.as_deref().unwrap_or(""),
-                trace.account_id.as_deref().unwrap_or(""),
-                trace.principal.as_deref().unwrap_or(""),
-                trace.access_key.as_deref().unwrap_or(""),
-                body_bytes,
-                response.body.len(),
-                response.status_code,
-                trace.auth_ms,
-                trace.route_ms.unwrap_or(0),
-                total_elapsed.as_millis(),
+            tracing::info!(
+                request_id,
+                method = %method,
+                host = %host,
+                path = %path,
+                query = query.as_deref().unwrap_or(""),
+                target = target.as_deref().unwrap_or(""),
+                service = trace.service.as_deref().unwrap_or(""),
+                region = trace.region.as_deref().unwrap_or(""),
+                account = trace.account_id.as_deref().unwrap_or(""),
+                principal = trace.principal.as_deref().unwrap_or(""),
+                access_key = trace.access_key.as_deref().unwrap_or(""),
+                request_bytes = body_bytes as u64,
+                response_bytes = response.body.len() as u64,
+                status = response.status_code,
+                auth_ms = trace.auth_ms as u64,
+                route_ms = trace.route_ms.unwrap_or(0) as u64,
+                total_ms = total_elapsed.as_millis() as u64,
+                "request handled"
             );
             let mut builder = hyper::Response::builder().status(response.status_code);
             for (name, value) in response.headers {
@@ -111,25 +118,27 @@ async fn handle_request(
             trace,
         } => {
             let error_message = e.message();
-            eprintln!(
-                "[request {request_id}] method={} host={} path={} query={} target={} service={} region={} account={} principal={} access_key={} request_bytes={} response_bytes={} status={} auth_ms={} route_ms={} total_ms={} error={:?}",
-                method,
-                host,
-                path,
-                query.as_deref().unwrap_or(""),
-                target.as_deref().unwrap_or(""),
-                trace.service.as_deref().unwrap_or(""),
-                trace.region.as_deref().unwrap_or(""),
-                trace.account_id.as_deref().unwrap_or(""),
-                trace.principal.as_deref().unwrap_or(""),
-                trace.access_key.as_deref().unwrap_or(""),
-                body_bytes,
-                error_message.len(),
-                e.status_code(),
-                trace.auth_ms,
-                trace.route_ms.unwrap_or(0),
-                total_elapsed.as_millis(),
-                e,
+
+            tracing::warn!(
+                request_id,
+                method = %method,
+                host = %host,
+                path = %path,
+                query = query.as_deref().unwrap_or(""),
+                target = target.as_deref().unwrap_or(""),
+                service = trace.service.as_deref().unwrap_or(""),
+                region = trace.region.as_deref().unwrap_or(""),
+                account = trace.account_id.as_deref().unwrap_or(""),
+                principal = trace.principal.as_deref().unwrap_or(""),
+                access_key = trace.access_key.as_deref().unwrap_or(""),
+                request_bytes = body_bytes as u64,
+                response_bytes = error_message.len() as u64,
+                status = e.status_code(),
+                auth_ms = trace.auth_ms as u64,
+                route_ms = trace.route_ms.unwrap_or(0) as u64,
+                total_ms = total_elapsed.as_millis() as u64,
+                error = ?e,
+                "request failed"
             );
             let builder = hyper::Response::builder().status(e.status_code());
             Ok(builder.body(Full::from(error_message)).unwrap())
