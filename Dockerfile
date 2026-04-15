@@ -43,9 +43,11 @@ COPY --from=builder /tmp/hiraeth /usr/local/bin/hiraeth
 
 ENV HIRAETH_HOST=0.0.0.0 \
     HIRAETH_PORT=4566 \
+    HIRAETH_WEB_HOST=0.0.0.0 \
+    HIRAETH_WEB_PORT=4567 \
     HIRAETH_DATABASE_URL=sqlite:///data/db.sqlite
 
-EXPOSE 4566
+EXPOSE 4566 4567
 
 USER nonroot:nonroot
 ENTRYPOINT ["/usr/local/bin/hiraeth"]

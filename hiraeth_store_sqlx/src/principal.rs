@@ -3,6 +3,7 @@ use hiraeth_store::{
     principal::{Principal, PrincipalStore},
 };
 
+#[derive(Clone)]
 pub struct SqlitePrincipalStore {
     pool: sqlx::SqlitePool,
 }

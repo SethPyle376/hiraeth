@@ -26,6 +26,7 @@ impl std::fmt::Display for StoreError {
 
 impl std::error::Error for StoreError {}
 
+#[derive(Clone)]
 pub struct SqlxStore {
     pub access_key_store: SqliteAccessKeyStore,
     pub principal_store: SqlitePrincipalStore,

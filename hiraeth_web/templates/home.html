@@ -1,0 +1,88 @@
+{% extends "layout.html" %}
+
+{% block title %}Hiraeth{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-[94rem] py-10 lg:py-16">
+  <div class="grid items-end gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
+    <div>
+      <p class="mb-4 text-sm font-semibold uppercase tracking-[0.45em] text-primary">Hiraeth Admin</p>
+      <h1 class="max-w-4xl text-5xl font-black tracking-tight text-base-content md:text-7xl">
+        Local emulator state in one place.
+      </h1>
+      <p class="mt-6 max-w-2xl text-lg leading-8 text-base-content/70">
+        Use this page to inspect service data, check what test clients have created,
+        and make small admin changes without querying SQLite by hand.
+      </p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a class="btn btn-primary" href="/sqs">Open service dashboard</a>
+        <a class="btn btn-outline" href="/sqs/queues">Browse queues</a>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <a class="card border border-primary/40 bg-base-100 shadow-xl transition hover:-translate-y-0.5 hover:border-primary" href="/sqs">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-primary badge-outline">Available</span>
+            <span class="text-2xl font-black text-primary">SQS</span>
+          </div>
+          <h2 class="card-title mt-5">SQS queues</h2>
+          <p class="text-base-content/70">View queues, message counts, attributes, and stored message bodies.</p>
+        </div>
+      </a>
+      <div class="card border border-base-300 bg-base-100/70 shadow-sm">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-ghost">Planned</span>
+            <span class="text-2xl font-black text-base-content/40">IAM</span>
+          </div>
+          <h2 class="card-title mt-5">IAM data</h2>
+          <p class="text-base-content/60">Planned views for principals, access keys, and policy checks.</p>
+        </div>
+      </div>
+      <div class="card border border-base-300 bg-base-100/70 shadow-sm">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-ghost">Planned</span>
+            <span class="text-2xl font-black text-base-content/40">S3</span>
+          </div>
+          <h2 class="card-title mt-5">S3 data</h2>
+          <p class="text-base-content/60">Placeholder for bucket and object state if S3 support is added.</p>
+        </div>
+      </div>
+      <div class="card border border-base-300 bg-base-100/70 shadow-sm">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-ghost">Planned</span>
+            <span class="text-2xl font-black text-base-content/40">SNS</span>
+          </div>
+          <h2 class="card-title mt-5">SNS data</h2>
+          <p class="text-base-content/60">Placeholder for topics, subscriptions, and delivery state.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-10 grid gap-4 lg:grid-cols-3">
+    <div class="card border border-base-300 bg-base-100/80">
+      <div class="card-body">
+        <h2 class="card-title">Separate server</h2>
+        <p class="text-base-content/70">The admin UI runs on its own port and does not use the SigV4 request path.</p>
+      </div>
+    </div>
+    <div class="card border border-base-300 bg-base-100/80">
+      <div class="card-body">
+        <h2 class="card-title">Same database</h2>
+        <p class="text-base-content/70">Views read from the same SQLite database used by the emulator.</p>
+      </div>
+    </div>
+    <div class="card border border-base-300 bg-base-100/80">
+      <div class="card-body">
+        <h2 class="card-title">Service sections</h2>
+        <p class="text-base-content/70">Each service can add its own pages without changing the AWS API routes.</p>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

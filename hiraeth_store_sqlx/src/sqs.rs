@@ -13,6 +13,98 @@ impl SqliteSqsStore {
     pub fn new(pool: &sqlx::SqlitePool) -> Self {
         Self { pool: pool.clone() }
     }
+
+    pub async fn get_queue_by_id(&self, queue_id: i64) -> Result<Option<SqsQueue>, StoreError> {
+        let queue = sqlx::query_as!(
+            SqsQueue,
+            "SELECT
+                id,
+                name,
+                region,
+                account_id,
+                queue_type,
+                visibility_timeout_seconds,
+                delay_seconds,
+                maximum_message_size,
+                message_retention_period_seconds,
+                receive_message_wait_time_seconds,
+                policy,
+                redrive_policy,
+                content_based_deduplication as \"content_based_deduplication: bool\",
+                kms_master_key_id,
+                kms_data_key_reuse_period_seconds,
+                deduplication_scope,
+                fifo_throughput_limit,
+                redrive_allow_policy,
+                sqs_managed_sse_enabled as \"sqs_managed_sse_enabled: bool\",
+                created_at,
+                updated_at
+            FROM sqs_queues
+            WHERE id = ?",
+            queue_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        Ok(queue)
+    }
+
+    pub async fn list_messages(
+        &self,
+        queue_id: i64,
+        limit: i64,
+    ) -> Result<Vec<SqsMessage>, StoreError> {
+        let messages = sqlx::query_as!(
+            SqsMessage,
+            "SELECT
+                message_id,
+                queue_id,
+                body,
+                message_attributes,
+                aws_trace_header,
+                sent_at,
+                visible_at,
+                expires_at,
+                receive_count,
+                receipt_handle,
+                first_received_at,
+                message_group_id,
+                message_deduplication_id
+            FROM sqs_messages
+            WHERE queue_id = ?
+            ORDER BY sent_at DESC, message_id
+            LIMIT ?",
+            queue_id,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        Ok(messages)
+    }
+
+    pub async fn delete_message_by_id(
+        &self,
+        queue_id: i64,
+        message_id: &str,
+    ) -> Result<(), StoreError> {
+        let result = sqlx::query!(
+            "DELETE FROM sqs_messages WHERE queue_id = ? AND message_id = ?",
+            queue_id,
+            message_id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound("message not found".to_string()));
+        }
+
+        Ok(())
+    }
 }
 
 fn map_sqlx_error(err: sqlx::Error) -> StoreError {
@@ -608,6 +700,30 @@ mod tests {
             expected_queue.sqs_managed_sse_enabled
         );
         assert_eq!(queue.updated_at, expected_queue.updated_at);
+    }
+
+    #[tokio::test]
+    async fn get_queue_by_id_returns_matching_queue() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let queue_by_id = store
+            .get_queue_by_id(queue.id)
+            .await
+            .expect("queue lookup by id should succeed")
+            .expect("queue should exist");
+
+        assert_eq!(queue_by_id, queue);
     }
 
     #[tokio::test]
@@ -1210,6 +1326,102 @@ mod tests {
 
         assert_eq!(remaining, 1);
         assert_eq!(remaining_message_id, "msg-2");
+    }
+
+    #[tokio::test]
+    async fn list_messages_returns_recent_messages_in_descending_sent_order() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let now = Utc::now().naive_utc();
+        for (message_id, sent_at) in [
+            ("msg-old", now - Duration::minutes(3)),
+            ("msg-new", now - Duration::minutes(1)),
+            ("msg-middle", now - Duration::minutes(2)),
+        ] {
+            store
+                .send_message(&message(
+                    queue.id,
+                    message_id,
+                    sent_at,
+                    sent_at,
+                    now + Duration::hours(1),
+                ))
+                .await
+                .expect("message should insert");
+        }
+
+        let messages = store
+            .list_messages(queue.id, 2)
+            .await
+            .expect("messages should list");
+
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.message_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["msg-new", "msg-middle"]
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_message_by_id_removes_matching_message() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_queue(queue("orders", "us-east-1"))
+            .await
+            .expect("queue insert should succeed");
+
+        let queue = store
+            .get_queue("orders", "us-east-1", "123456789012")
+            .await
+            .expect("queue lookup should succeed")
+            .expect("queue should exist");
+
+        let now = Utc::now().naive_utc();
+        store
+            .send_message(&message(
+                queue.id,
+                "msg-delete",
+                now,
+                now,
+                now + Duration::hours(1),
+            ))
+            .await
+            .expect("message should insert");
+
+        store
+            .delete_message_by_id(queue.id, "msg-delete")
+            .await
+            .expect("message should delete");
+
+        let messages = store
+            .list_messages(queue.id, 10)
+            .await
+            .expect("messages should list");
+
+        assert!(messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_message_by_id_returns_not_found_for_missing_message() {
+        let (_temp_dir, store) = test_store().await;
+
+        let result = store.delete_message_by_id(1, "missing-message").await;
+
+        assert!(matches!(result, Err(StoreError::NotFound(_))));
     }
 
     #[tokio::test]

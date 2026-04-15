@@ -1,0 +1,92 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n                message_id,\n                queue_id,\n                body,\n                message_attributes,\n                aws_trace_header,\n                sent_at,\n                visible_at,\n                expires_at,\n                receive_count,\n                receipt_handle,\n                first_received_at,\n                message_group_id,\n                message_deduplication_id\n            FROM sqs_messages\n            WHERE queue_id = ?\n            ORDER BY sent_at DESC, message_id\n            LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "message_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "queue_id",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "body",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "message_attributes",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "aws_trace_header",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "sent_at",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "visible_at",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "expires_at",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "receive_count",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "receipt_handle",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "first_received_at",
+        "ordinal": 10,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "message_group_id",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "message_deduplication_id",
+        "ordinal": 12,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8f29c7c163e6290d801b4f8cec0c3efafdb0c2fe860ead68f09facf243745e0e"
+}

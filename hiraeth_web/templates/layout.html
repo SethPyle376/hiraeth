@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" data-theme="gruvbox">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Hiraeth{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+      [data-theme="gruvbox"] {
+        color-scheme: dark;
+        --color-base-100: #282828;
+        --color-base-200: #1d2021;
+        --color-base-300: #3c3836;
+        --color-base-content: #ebdbb2;
+        --color-primary: #fabd2f;
+        --color-primary-content: #1d2021;
+        --color-secondary: #b8bb26;
+        --color-secondary-content: #1d2021;
+        --color-accent: #83a598;
+        --color-accent-content: #1d2021;
+        --color-neutral: #504945;
+        --color-neutral-content: #fbf1c7;
+        --color-info: #8ec07c;
+        --color-info-content: #1d2021;
+        --color-success: #b8bb26;
+        --color-success-content: #1d2021;
+        --color-warning: #fe8019;
+        --color-warning-content: #1d2021;
+        --color-error: #fb4934;
+        --color-error-content: #1d2021;
+        --radius-selector: 0.75rem;
+        --radius-field: 0.75rem;
+        --radius-box: 1rem;
+        --border: 1px;
+        --depth: 1;
+        --noise: 0;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(circle at top left, rgba(250, 189, 47, 0.16), transparent 28rem),
+          radial-gradient(circle at bottom right, rgba(131, 165, 152, 0.14), transparent 26rem);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-accent/10 text-base-content">
+    <div class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/90 px-6 backdrop-blur">
+      <div class="flex-1">
+        <a class="text-xl font-black tracking-tight" href="/">Hiraeth</a>
+      </div>
+      <div class="flex-none gap-2">
+        <a class="btn btn-ghost btn-sm" href="/sqs">SQS</a>
+        <a class="btn btn-ghost btn-sm btn-disabled">IAM</a>
+        <a class="btn btn-ghost btn-sm btn-disabled">S3</a>
+      </div>
+    </div>
+    <main class="px-4 py-8 sm:px-6 lg:px-10">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

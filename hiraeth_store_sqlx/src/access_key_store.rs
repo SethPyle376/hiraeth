@@ -3,6 +3,7 @@ use hiraeth_store::{
     access_key_store::{AccessKey, AccessKeyStore},
 };
 
+#[derive(Clone)]
 pub struct SqliteAccessKeyStore {
     pool: sqlx::SqlitePool,
 }
