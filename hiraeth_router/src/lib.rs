@@ -2,13 +2,8 @@ mod service;
 
 use hiraeth_auth::ResolvedRequest;
 use hiraeth_core::ApiError;
+pub use hiraeth_core::ServiceResponse;
 pub use service::Service;
-
-pub struct ServiceResponse {
-    pub status_code: u16,
-    pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceRouterError {

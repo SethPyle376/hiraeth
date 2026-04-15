@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_router::ServiceResponse;
+use hiraeth_core::{ServiceResponse, empty_response};
 use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
@@ -30,11 +30,7 @@ pub(crate) async fn set_queue_attributes<S: SqsStore>(
             queue_attributes::parse_queue_attribute_update(&request_body.attributes)?,
         )
         .await
-        .map(|_| ServiceResponse {
-            status_code: 200,
-            headers: vec![],
-            body: vec![],
-        })
+        .map(|_| empty_response())
         .map_err(map_store_error)
 }
 

@@ -2,7 +2,7 @@ use std::{cmp::min, collections::BTreeMap};
 
 use chrono::Utc;
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_router::ServiceResponse;
+use hiraeth_core::{ServiceResponse, json_response};
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
@@ -127,11 +127,7 @@ pub(crate) async fn receive_message<S: SqsStore>(
     let response = ReceiveMessageResponse {
         messages: received_messages,
     };
-    Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: serde_json::to_vec(&response).unwrap_or_default(),
-    })
+    json_response(&response).map_err(Into::into)
 }
 
 fn validate_receive_request(request: &ReceiveMessageRequest) -> Result<(), SqsError> {

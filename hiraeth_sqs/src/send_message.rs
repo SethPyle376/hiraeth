@@ -2,11 +2,14 @@ use std::collections::HashMap;
 
 use futures::StreamExt;
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_router::ServiceResponse;
+use hiraeth_core::{ServiceResponse, json_response};
 use hiraeth_store::sqs::{SqsMessage, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use crate::{error::SqsError, util};
+use crate::{
+    error::{SqsError, batch_error_details},
+    util,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -103,11 +106,7 @@ pub(crate) async fn send_message<S: SqsStore>(
         sequence_number: None,
     };
 
-    Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: serde_json::to_vec(&response).unwrap_or_default(),
-    })
+    json_response(&response).map_err(Into::into)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -178,20 +177,9 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
     let messages = futures::stream::iter(request_body.entries)
         .map(|entry| async move {
             let delay_seconds = resolve_delay_seconds(entry.delay_seconds, queue.delay_seconds)
-                .map_err(|e| BatchResultErrorEntry {
-                    id: entry.id.clone(),
-                    code: "InvalidParameterValue".to_string(),
-                    message: e.to_string(),
-                    sender_fault: true,
-                })?;
-            validate_message_body(&entry.message_body, queue.maximum_message_size).map_err(
-                |e| BatchResultErrorEntry {
-                    id: entry.id.clone(),
-                    code: "InvalidParameterValue".to_string(),
-                    message: e.to_string(),
-                    sender_fault: true,
-                },
-            )?;
+                .map_err(|e| batch_error_entry(&entry.id, e))?;
+            validate_message_body(&entry.message_body, queue.maximum_message_size)
+                .map_err(|e| batch_error_entry(&entry.id, e))?;
 
             let visible_at = request.date.naive_utc() + chrono::Duration::seconds(delay_seconds);
 
@@ -200,12 +188,7 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
                 .as_ref()
                 .map(util::serialize_message_attributes)
                 .transpose()
-                .map_err(|e| BatchResultErrorEntry {
-                    id: entry.id.clone(),
-                    code: "InvalidParameterValue".to_string(),
-                    message: format!("{:?}", e),
-                    sender_fault: true,
-                })?;
+                .map_err(|e| batch_error_entry(&entry.id, e))?;
 
             let md5_of_message_attributes = entry
                 .message_attributes
@@ -213,22 +196,11 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
                 .filter(|attrs| !attrs.is_empty())
                 .map(util::calculate_message_attributes_md5)
                 .transpose()
-                .map_err(|e| BatchResultErrorEntry {
-                    id: entry.id.clone(),
-                    code: "InvalidParameterValue".to_string(),
-                    message: format!("{:?}", e),
-                    sender_fault: true,
-                })?;
+                .map_err(|e| batch_error_entry(&entry.id, e))?;
 
-            let aws_trace_header = util::extract_aws_trace_header(
-                entry.message_system_attributes.as_ref(),
-            )
-            .map_err(|e| BatchResultErrorEntry {
-                id: entry.id.clone(),
-                code: "InvalidParameterValue".to_string(),
-                message: format!("{:?}", e),
-                sender_fault: true,
-            })?;
+            let aws_trace_header =
+                util::extract_aws_trace_header(entry.message_system_attributes.as_ref())
+                    .map_err(|e| batch_error_entry(&entry.id, e))?;
 
             let md5_of_message_system_attributes = entry
                 .message_system_attributes
@@ -236,12 +208,7 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
                 .filter(|attrs| !attrs.is_empty())
                 .map(util::calculate_message_attributes_md5)
                 .transpose()
-                .map_err(|e| BatchResultErrorEntry {
-                    id: entry.id.clone(),
-                    code: "InvalidParameterValue".to_string(),
-                    message: format!("{:?}", e),
-                    sender_fault: true,
-                })?;
+                .map_err(|e| batch_error_entry(&entry.id, e))?;
 
             let message = SqsMessage {
                 message_id: uuid::Uuid::new_v4().to_string(),
@@ -259,15 +226,9 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
                 message_deduplication_id: entry.message_deduplication_id.clone(),
             };
 
-            store
-                .send_message(&message)
-                .await
-                .map_err(|e| BatchResultErrorEntry {
-                    id: entry.id.clone(),
-                    code: "InternalError".to_string(),
-                    message: format!("{:?}", e),
-                    sender_fault: false,
-                })?;
+            store.send_message(&message).await.map_err(|e| {
+                batch_error_entry(&entry.id, SqsError::InternalError(e.to_string()))
+            })?;
 
             Ok(SendMessageBatchResultEntry {
                 id: entry.id.clone(),
@@ -292,12 +253,17 @@ pub(crate) async fn send_message_batch<S: SqsStore>(
         .filter_map(|result| result.as_ref().err().cloned())
         .collect();
 
-    return Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: serde_json::to_vec(&SendMessageBatchResponse { successful, failed })
-            .unwrap_or_default(),
-    });
+    json_response(&SendMessageBatchResponse { successful, failed }).map_err(Into::into)
+}
+
+fn batch_error_entry(id: &str, error: SqsError) -> BatchResultErrorEntry {
+    let (code, sender_fault) = batch_error_details(&error);
+    BatchResultErrorEntry {
+        id: id.to_string(),
+        code: code.to_string(),
+        message: error.to_string(),
+        sender_fault,
+    }
 }
 
 fn resolve_delay_seconds(

@@ -1,6 +1,12 @@
 mod config;
+mod protocol;
 
 pub use config::Config;
+pub use protocol::{
+    AwsErrorFault, AwsServiceError, RequestBodyParseError, ResponseSerializationError,
+    ServiceResponse, aws_batch_error_details, empty_response, json_body, json_response,
+    parse_json_body, render_aws_json_error, render_result,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {

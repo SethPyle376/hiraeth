@@ -1,5 +1,5 @@
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_router::ServiceResponse;
+use hiraeth_core::{ServiceResponse, empty_response, json_response};
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
@@ -27,11 +27,7 @@ pub(crate) async fn delete_message<S: SqsStore>(
         .await
         .map_err(map_receipt_handle_store_error)?;
 
-    Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: vec![],
-    })
+    Ok(empty_response())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -104,11 +100,7 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
 
     let response = DeleteMessageBatchResponse { successful, failed };
 
-    Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: serde_json::to_vec(&response).map_err(|e| SqsError::BadRequest(e.to_string()))?,
-    })
+    json_response(&response).map_err(Into::into)
 }
 
 #[cfg(test)]

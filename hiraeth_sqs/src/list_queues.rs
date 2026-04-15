@@ -1,5 +1,5 @@
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_router::ServiceResponse;
+use hiraeth_core::{ServiceResponse, json_response};
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
@@ -77,11 +77,7 @@ pub(crate) async fn list_queues<S: SqsStore>(
         next_token,
     };
 
-    Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: serde_json::to_vec(&list_response).unwrap_or_default(),
-    })
+    json_response(&list_response).map_err(Into::into)
 }
 
 #[cfg(test)]

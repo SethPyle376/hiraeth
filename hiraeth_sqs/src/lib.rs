@@ -1,12 +1,12 @@
 use crate::{
-    change_message_visibility::*, delete_message::*, error::render_result,
-    list_queues::list_queues, queue::*, queue_attributes::get_queue_attributes, receive_message::*,
-    send_message::*, set_queue_attributes::*,
+    change_message_visibility::*, delete_message::*, list_queues::list_queues, queue::*,
+    queue_attributes::get_queue_attributes, receive_message::*, send_message::*,
+    set_queue_attributes::*,
 };
 use async_trait::async_trait;
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_core::ApiError;
-use hiraeth_router::{Service, ServiceResponse};
+use hiraeth_core::{ApiError, ServiceResponse, render_result};
+use hiraeth_router::Service;
 use hiraeth_store::sqs::SqsStore;
 
 mod change_message_visibility;

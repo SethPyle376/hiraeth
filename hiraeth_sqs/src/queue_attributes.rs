@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_router::ServiceResponse;
+use hiraeth_core::{ServiceResponse, json_response};
 use hiraeth_store::sqs::{SqsQueue, SqsQueueAttributeUpdate, SqsStore};
 use serde::{Deserialize, Serialize};
 
@@ -246,12 +246,7 @@ pub(crate) async fn get_queue_attributes<S: SqsStore>(
     let attributes =
         collect_queue_attributes(store, &queue, &attributes_request.attribute_names).await?;
 
-    Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: serde_json::to_vec(&GetQueueAttributesResponse { attributes })
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?,
-    })
+    json_response(&GetQueueAttributesResponse { attributes }).map_err(Into::into)
 }
 
 pub(crate) async fn collect_queue_attributes<S: SqsStore>(

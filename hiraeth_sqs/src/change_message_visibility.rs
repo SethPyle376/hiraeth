@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_router::ServiceResponse;
+use hiraeth_core::{ServiceResponse, empty_response, json_response};
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
@@ -69,11 +69,7 @@ pub(crate) async fn change_message_visibility<S: SqsStore>(
         .await
         .map_err(map_receipt_handle_store_error)?;
 
-    Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: vec![],
-    })
+    Ok(empty_response())
 }
 
 pub(crate) async fn change_message_visibility_batch<S: SqsStore>(
@@ -123,12 +119,7 @@ pub(crate) async fn change_message_visibility_batch<S: SqsStore>(
         }
     }
 
-    Ok(ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: serde_json::to_vec(&ChangeMessageVisibilityBatchResponse { successful, failed })
-            .map_err(|e| SqsError::BadRequest(e.to_string()))?,
-    })
+    json_response(&ChangeMessageVisibilityBatchResponse { successful, failed }).map_err(Into::into)
 }
 
 fn validate_visibility_timeout(visibility_timeout: u32) -> Result<(), SqsError> {

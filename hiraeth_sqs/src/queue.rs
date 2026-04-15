@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_router::ServiceResponse;
+use hiraeth_core::{ServiceResponse, empty_response, json_response};
 use hiraeth_store::StoreError;
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -64,11 +64,11 @@ pub(crate) async fn create_queue<S: SqsStore>(
     };
 
     match store.create_queue(queue.clone()).await {
-        Ok(()) => Ok(create_queue_response(
+        Ok(()) => create_queue_response(
             request,
             &request.auth_context.principal.account_id,
             &request_body.queue_name,
-        )),
+        ),
         Err(StoreError::Conflict(_)) => {
             let existing_queue = store
                 .get_queue(
@@ -81,11 +81,11 @@ pub(crate) async fn create_queue<S: SqsStore>(
 
             match existing_queue {
                 Some(existing_queue) if queue_configuration_matches(&existing_queue, &queue) => {
-                    Ok(create_queue_response(
+                    create_queue_response(
                         request,
                         &request.auth_context.principal.account_id,
                         &request_body.queue_name,
-                    ))
+                    )
                 }
                 Some(_) => Err(SqsError::QueueAlreadyExists(format!(
                     "A queue named '{}' already exists with different attributes.",
@@ -116,11 +116,7 @@ pub(crate) async fn delete_queue<S: SqsStore>(
     store
         .delete_queue(queue.id)
         .await
-        .map(|_| ServiceResponse {
-            status_code: 200,
-            headers: vec![],
-            body: vec![],
-        })
+        .map(|_| empty_response())
         .map_err(map_store_error)
 }
 
@@ -165,11 +161,7 @@ pub(crate) async fn get_queue_url<S: SqsStore>(
                     &request_body.queue_name,
                 ),
             };
-            Ok(ServiceResponse {
-                status_code: 200,
-                headers: vec![],
-                body: serde_json::to_vec(&response).unwrap_or_default(),
-            })
+            json_response(&response).map_err(Into::into)
         }
         None => Err(SqsError::QueueNotFound),
     }
@@ -179,15 +171,11 @@ fn create_queue_response(
     request: &ResolvedRequest,
     account_id: &str,
     queue_name: &str,
-) -> ServiceResponse {
+) -> Result<ServiceResponse, SqsError> {
     let response = CreateQueueResponse {
         queue_url: util::queue_url(&request.request.host, account_id, queue_name),
     };
-    ServiceResponse {
-        status_code: 200,
-        headers: vec![],
-        body: serde_json::to_vec(&response).unwrap_or_default(),
-    }
+    json_response(&response).map_err(Into::into)
 }
 
 fn validate_queue_name(queue_name: &str, fifo_queue: bool) -> Result<(), SqsError> {
@@ -257,11 +245,7 @@ pub(crate) async fn purge_queue<S: SqsStore>(
     store
         .purge_queue(queue.id)
         .await
-        .map(|_| ServiceResponse {
-            status_code: 200,
-            headers: vec![],
-            body: vec![],
-        })
+        .map(|_| empty_response())
         .map_err(map_store_error)
 }
 

@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use base64::Engine;
 use hiraeth_auth::ResolvedRequest;
+use hiraeth_core::parse_json_body;
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -44,7 +45,7 @@ pub(crate) fn parse_queue_url(queue_url: &str, default_region: &str) -> Option<Q
 pub(crate) fn parse_request_body<T: DeserializeOwned>(
     request: &ResolvedRequest,
 ) -> Result<T, SqsError> {
-    serde_json::from_slice(&request.request.body).map_err(|e| SqsError::BadRequest(e.to_string()))
+    parse_json_body(&request.request.body).map_err(Into::into)
 }
 
 pub(crate) async fn load_queue_from_url<S: SqsStore>(
@@ -141,7 +142,9 @@ pub(crate) fn serialize_message_attributes<'a>(
         .map(|(name, value)| (name.as_str(), value))
         .collect::<BTreeMap<_, _>>();
 
-    serde_json::to_string(&ordered_attributes).map_err(|e| SqsError::BadRequest(e.to_string()))
+    serde_json::to_string(&ordered_attributes).map_err(|e| {
+        SqsError::InternalError(format!("failed to serialize message attributes: {}", e))
+    })
 }
 
 pub(crate) fn extract_aws_trace_header<'a>(
