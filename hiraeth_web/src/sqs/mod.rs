@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use askama::Template;
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Form, Path, Query, State},
     response::{Html, Redirect},
     routing::{get, post},
 };
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use hiraeth_store::{
     StoreError,
     sqs::{SqsMessage, SqsQueue, SqsStore},
@@ -18,7 +18,8 @@ use crate::{
     WebState,
     error::WebError,
     templates::{
-        QueueListTemplate, SqsDashboardTemplate, SqsQueueDetailTemplate, SqsQueuesTemplate,
+        QueueDetailStatsTemplate, QueueListTemplate, QueueMessageListTemplate,
+        SqsDashboardStatsTemplate, SqsDashboardTemplate, SqsQueueDetailTemplate, SqsQueuesTemplate,
     },
 };
 
@@ -48,6 +49,29 @@ fn default_message_limit() -> i64 {
 struct QueueDetailParams {
     #[serde(default = "default_message_limit")]
     message_limit: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CreateQueueForm {
+    queue_name: String,
+    region: String,
+    account_id: String,
+    queue_type: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SendMessageForm {
+    message_body: String,
+    #[serde(default)]
+    delay_seconds: String,
+    #[serde(default)]
+    message_attributes_json: String,
+    #[serde(default)]
+    aws_trace_header: String,
+    #[serde(default)]
+    message_group_id: String,
+    #[serde(default)]
+    message_deduplication_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -112,14 +136,25 @@ pub fn router() -> Router<WebState> {
     Router::new()
         .route("/", get(dashboard))
         .route("/queues", get(queues_page))
+        .route("/queues/create", post(create_queue))
         .route("/queues/{queue_id}", get(queue_detail))
         .route("/queues/{queue_id}/delete", post(delete_queue))
         .route("/queues/{queue_id}/purge", post(purge_queue))
+        .route("/queues/{queue_id}/messages", post(send_message))
         .route(
             "/queues/{queue_id}/messages/{message_id}/delete",
             post(delete_message),
         )
         .route("/fragments/queues", get(queues_fragment))
+        .route("/fragments/dashboard-stats", get(dashboard_stats_fragment))
+        .route(
+            "/fragments/queues/{queue_id}/stats",
+            get(queue_detail_stats_fragment),
+        )
+        .route(
+            "/fragments/queues/{queue_id}/messages",
+            get(queue_messages_fragment),
+        )
         .route("/api/queues", get(queues_api))
 }
 
@@ -171,6 +206,43 @@ async fn queues_page(
     Ok(Html(template.render()?))
 }
 
+async fn create_queue(
+    State(state): State<WebState>,
+    Form(form): Form<CreateQueueForm>,
+) -> Result<Redirect, WebError> {
+    let queue_name = form.queue_name.trim();
+    let region = form.region.trim();
+    let account_id = form.account_id.trim();
+    let queue_type = form.queue_type.trim();
+
+    validate_required("Queue name", queue_name)?;
+    validate_required("Region", region)?;
+    validate_required("Account ID", account_id)?;
+    validate_queue_name(queue_name, queue_type)?;
+
+    let now = Utc::now().naive_utc();
+    let queue = SqsQueue {
+        id: 0,
+        name: queue_name.to_string(),
+        region: region.to_string(),
+        account_id: account_id.to_string(),
+        queue_type: queue_type.to_string(),
+        created_at: now,
+        updated_at: now,
+        ..Default::default()
+    };
+
+    state.sqs_store.create_queue(queue).await?;
+
+    let created_queue = state
+        .sqs_store
+        .get_queue(queue_name, region, account_id)
+        .await?
+        .ok_or_else(|| WebError::internal("created queue could not be loaded"))?;
+
+    Ok(Redirect::to(&format!("/sqs/queues/{}", created_queue.id)))
+}
+
 async fn queues_fragment(
     State(state): State<WebState>,
     Query(params): Query<QueueListParams>,
@@ -179,6 +251,33 @@ async fn queues_fragment(
     let template = QueueListTemplate {
         queues: &summaries,
         has_queues: !summaries.is_empty(),
+    };
+
+    Ok(Html(template.render()?))
+}
+
+async fn dashboard_stats_fragment(
+    State(state): State<WebState>,
+    Query(params): Query<QueueListParams>,
+) -> Result<Html<String>, WebError> {
+    let summaries = load_queue_summaries(&state, &params).await?;
+    let total_messages = summaries.iter().map(|queue| queue.message_count).sum();
+    let visible_messages = summaries
+        .iter()
+        .map(|queue| queue.visible_message_count)
+        .sum();
+    let delayed_messages = summaries
+        .iter()
+        .map(|queue| queue.delayed_message_count)
+        .sum();
+
+    let template = SqsDashboardStatsTemplate {
+        region: &params.region,
+        account_id: &params.account_id,
+        total_queues: summaries.len(),
+        total_messages,
+        visible_messages,
+        delayed_messages,
     };
 
     Ok(Html(template.render()?))
@@ -221,6 +320,7 @@ async fn queue_detail(
     let queue_arn = queue_arn(&queue);
 
     let template = SqsQueueDetailTemplate {
+        queue_id: queue.id,
         queue: &queue,
         queue_arn: &queue_arn,
         summary: &summary,
@@ -236,12 +336,96 @@ async fn queue_detail(
     Ok(Html(template.render()?))
 }
 
+async fn queue_detail_stats_fragment(
+    State(state): State<WebState>,
+    Path(queue_id): Path<i64>,
+) -> Result<Html<String>, WebError> {
+    let queue = load_queue_by_id(&state, queue_id).await?;
+    let summary = queue_summary(&state, queue).await?;
+    let template = QueueDetailStatsTemplate {
+        queue_id,
+        summary: &summary,
+    };
+
+    Ok(Html(template.render()?))
+}
+
+async fn queue_messages_fragment(
+    State(state): State<WebState>,
+    Path(queue_id): Path<i64>,
+    Query(params): Query<QueueDetailParams>,
+) -> Result<Html<String>, WebError> {
+    load_queue_by_id(&state, queue_id).await?;
+    let message_limit = params.message_limit.clamp(1, 500);
+    let messages = state
+        .sqs_store
+        .list_messages(queue_id, message_limit)
+        .await?;
+    let message_summaries = messages
+        .into_iter()
+        .map(message_summary)
+        .collect::<Vec<_>>();
+    let template = QueueMessageListTemplate {
+        queue_id,
+        messages: &message_summaries,
+        has_messages: !message_summaries.is_empty(),
+        message_limit,
+    };
+
+    Ok(Html(template.render()?))
+}
+
 async fn purge_queue(
     State(state): State<WebState>,
     Path(queue_id): Path<i64>,
 ) -> Result<Redirect, WebError> {
     load_queue_by_id(&state, queue_id).await?;
     state.sqs_store.purge_queue(queue_id).await?;
+    Ok(Redirect::to(&format!("/sqs/queues/{queue_id}")))
+}
+
+async fn send_message(
+    State(state): State<WebState>,
+    Path(queue_id): Path<i64>,
+    Form(form): Form<SendMessageForm>,
+) -> Result<Redirect, WebError> {
+    let queue = load_queue_by_id(&state, queue_id).await?;
+    if form.message_body.is_empty() {
+        return Err(WebError::bad_request("Message body must not be empty"));
+    }
+    if form.message_body.len() > queue.maximum_message_size as usize {
+        return Err(WebError::bad_request(format!(
+            "Message body exceeds the queue maximum size of {} bytes",
+            queue.maximum_message_size
+        )));
+    }
+
+    let delay_seconds = parse_optional_i64(&form.delay_seconds, "DelaySeconds", 0, 900)?
+        .unwrap_or(queue.delay_seconds);
+    let now = Utc::now().naive_utc();
+    let visible_at = now + Duration::seconds(delay_seconds);
+    let expires_at = now + Duration::seconds(queue.message_retention_period_seconds);
+    let message_attributes =
+        normalize_optional_json_object(&form.message_attributes_json, "Message attributes JSON")?;
+
+    let message = SqsMessage {
+        message_id: uuid::Uuid::new_v4().to_string(),
+        queue_id: queue.id,
+        body: form.message_body,
+        message_attributes,
+        aws_trace_header: non_empty_trimmed(form.aws_trace_header),
+        sent_at: now,
+        visible_at,
+        expires_at,
+        receive_count: 0,
+        receipt_handle: None,
+        first_received_at: None,
+        message_group_id: non_empty_trimmed(form.message_group_id),
+        message_deduplication_id: non_empty_trimmed(form.message_deduplication_id),
+    };
+
+    state.sqs_store.send_message(&message).await?;
+
     Ok(Redirect::to(&format!("/sqs/queues/{queue_id}")))
 }
 
@@ -321,6 +505,111 @@ fn queue_arn(queue: &SqsQueue) -> String {
         "arn:aws:sqs:{}:{}:{}",
         queue.region, queue.account_id, queue.name
     )
+}
+
+fn validate_required(field_name: &str, value: &str) -> Result<(), WebError> {
+    if value.is_empty() {
+        return Err(WebError::bad_request(format!("{field_name} is required")));
+    }
+
+    Ok(())
+}
+
+fn validate_queue_name(queue_name: &str, queue_type: &str) -> Result<(), WebError> {
+    let fifo_queue = match queue_type {
+        "standard" => false,
+        "fifo" => true,
+        _ => {
+            return Err(WebError::bad_request(
+                "Queue type must be either standard or fifo",
+            ));
+        }
+    };
+
+    if queue_name.len() > 80 {
+        return Err(WebError::bad_request(
+            "Queue name must be at most 80 characters",
+        ));
+    }
+
+    let name_without_fifo_suffix = queue_name.strip_suffix(".fifo").unwrap_or(queue_name);
+    let valid_chars = name_without_fifo_suffix
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
+    if !valid_chars {
+        return Err(WebError::bad_request(
+            "Queue name may only contain alphanumeric characters, hyphens, and underscores",
+        ));
+    }
+
+    if fifo_queue && !queue_name.ends_with(".fifo") {
+        return Err(WebError::bad_request(
+            "FIFO queue names must end with .fifo",
+        ));
+    }
+
+    if !fifo_queue && queue_name.ends_with(".fifo") {
+        return Err(WebError::bad_request(
+            "Queue names ending with .fifo must use the FIFO queue type",
+        ));
+    }
+
+    Ok(())
+}
+
+fn parse_optional_i64(
+    raw: &str,
+    field_name: &str,
+    min: i64,
+    max: i64,
+) -> Result<Option<i64>, WebError> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+
+    let value = raw.parse::<i64>().map_err(|_| {
+        WebError::bad_request(format!(
+            "{field_name} must be an integer between {min} and {max}"
+        ))
+    })?;
+
+    if !(min..=max).contains(&value) {
+        return Err(WebError::bad_request(format!(
+            "{field_name} must be between {min} and {max}"
+        )));
+    }
+
+    Ok(Some(value))
+}
+
+fn normalize_optional_json_object(raw: &str, field_name: &str) -> Result<Option<String>, WebError> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+
+    let value = serde_json::from_str::<serde_json::Value>(raw)
+        .map_err(|e| WebError::bad_request(format!("{field_name} must be valid JSON: {e}")))?;
+
+    if !value.is_object() {
+        return Err(WebError::bad_request(format!(
+            "{field_name} must be a JSON object"
+        )));
+    }
+
+    if value.as_object().is_some_and(|object| object.is_empty()) {
+        return Ok(None);
+    }
+
+    serde_json::to_string(&value)
+        .map(Some)
+        .map_err(|e| WebError::internal(format!("failed to serialize JSON: {e}")))
+}
+
+fn non_empty_trimmed(value: String) -> Option<String> {
+    let value = value.trim().to_string();
+    (!value.is_empty()).then_some(value)
 }
 
 fn queue_tags(tags: std::collections::HashMap<String, String>) -> Vec<QueueTag> {
@@ -514,7 +803,10 @@ mod tests {
 
     use hiraeth_store::sqs::SqsQueue;
 
-    use super::{parse_message_attributes, queue_arn, queue_tags};
+    use super::{
+        normalize_optional_json_object, parse_message_attributes, parse_optional_i64, queue_arn,
+        queue_tags, validate_queue_name,
+    };
 
     #[test]
     fn parse_message_attributes_extracts_attribute_names_and_values() {
@@ -562,5 +854,54 @@ mod tests {
         assert_eq!(tags[0].value, "first");
         assert_eq!(tags[1].key, "zeta");
         assert_eq!(tags[1].value, "last");
+    }
+
+    #[test]
+    fn validate_queue_name_rejects_fifo_name_for_standard_queue() {
+        let result = validate_queue_name("orders.fifo", "standard");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_queue_name_accepts_fifo_queue_with_fifo_suffix() {
+        let result = validate_queue_name("orders.fifo", "fifo");
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn parse_optional_i64_allows_blank_values() {
+        let value = parse_optional_i64("", "DelaySeconds", 0, 900)
+            .expect("blank optional number should parse");
+
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn parse_optional_i64_rejects_out_of_range_values() {
+        let result = parse_optional_i64("901", "DelaySeconds", 0, 900);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn normalize_optional_json_object_minifies_json_objects() {
+        let value = normalize_optional_json_object(
+            r#"{
+                "trace_id": {
+                    "DataType": "String",
+                    "StringValue": "abc123",
+                    "BinaryValue": null
+                }
+            }"#,
+            "Message attributes JSON",
+        )
+        .expect("message attributes should parse");
+
+        assert_eq!(
+            value.as_deref(),
+            Some(r#"{"trace_id":{"BinaryValue":null,"DataType":"String","StringValue":"abc123"}}"#)
+        );
     }
 }

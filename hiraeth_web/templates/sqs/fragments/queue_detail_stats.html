@@ -1,0 +1,27 @@
+<div id="queue-detail-stats"
+     class="mb-6 grid gap-3 md:grid-cols-3"
+     hx-get="/sqs/fragments/queues/{{ queue_id }}/stats"
+     hx-trigger="every 3s"
+     hx-swap="outerHTML">
+  <div class="card border border-base-300 bg-base-100">
+    <div class="card-body">
+      <div class="text-sm text-base-content/60">Messages</div>
+      <div class="text-3xl font-black text-primary">{{ summary.message_count }}</div>
+      <div class="text-sm text-base-content/50">stored and not expired</div>
+    </div>
+  </div>
+  <div class="card border border-base-300 bg-base-100">
+    <div class="card-body">
+      <div class="text-sm text-base-content/60">Visible</div>
+      <div class="text-3xl font-black text-success">{{ summary.visible_message_count }}</div>
+      <div class="text-sm text-base-content/50">available to consumers</div>
+    </div>
+  </div>
+  <div class="card border border-base-300 bg-base-100">
+    <div class="card-body">
+      <div class="text-sm text-base-content/60">Delayed</div>
+      <div class="text-3xl font-black text-info">{{ summary.delayed_message_count }}</div>
+      <div class="text-sm text-base-content/50">waiting for delay to expire</div>
+    </div>
+  </div>
+</div>

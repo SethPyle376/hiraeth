@@ -4,11 +4,11 @@
 
 {% block content %}
 <section class="mx-auto max-w-[94rem]">
-  <div class="mb-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+  <div class="mb-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
     <div>
-      <p class="text-sm font-semibold uppercase tracking-[0.45em] text-primary">Service Dashboard</p>
-      <h1 class="mt-2 text-5xl font-black tracking-tight">SQS</h1>
-      <p class="mt-3 max-w-2xl text-base-content/70">
+      <p class="text-xs font-semibold uppercase tracking-[0.45em] text-primary">Service Dashboard</p>
+      <h1 class="mt-2 text-4xl font-black tracking-tight md:text-5xl">SQS</h1>
+      <p class="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
         Inspect queue state for one account and region. Use the AWS SDK or CLI to create resources;
         use this page to verify what the emulator stored.
       </p>
@@ -19,46 +19,57 @@
     </div>
   </div>
 
-  <div class="mb-6 grid gap-4 md:grid-cols-4">
-    <div class="stats border border-base-300 bg-base-100 shadow-sm">
-      <div class="stat">
-        <div class="stat-title">Queues</div>
-        <div class="stat-value text-primary">{{ total_queues }}</div>
-        <div class="stat-desc">{{ account_id }} / {{ region }}</div>
-      </div>
-    </div>
-    <div class="stats border border-base-300 bg-base-100 shadow-sm">
-      <div class="stat">
-        <div class="stat-title">Messages</div>
-        <div class="stat-value text-secondary">{{ total_messages }}</div>
-        <div class="stat-desc">retained and not expired</div>
-      </div>
-    </div>
-    <div class="stats border border-base-300 bg-base-100 shadow-sm">
-      <div class="stat">
-        <div class="stat-title">Visible</div>
-        <div class="stat-value text-success">{{ visible_messages }}</div>
-        <div class="stat-desc">available to consumers</div>
-      </div>
-    </div>
-    <div class="stats border border-base-300 bg-base-100 shadow-sm">
-      <div class="stat">
-        <div class="stat-title">Delayed</div>
-        <div class="stat-value text-info">{{ delayed_messages }}</div>
-        <div class="stat-desc">waiting for delay</div>
-      </div>
-    </div>
-  </div>
+  {% include "sqs/fragments/dashboard_stats.html" %}
 
-  <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-    <section class="card border border-base-300 bg-base-100 shadow-sm">
+  <form class="card mb-5 border border-primary/30 bg-base-100"
+        action="/sqs/queues/create"
+        method="post">
+    <div class="card-body">
+      <div class="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h2 class="card-title text-xl">Create queue</h2>
+          <p class="text-sm text-base-content/60">Create a queue in the active local SQS scope.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 text-sm text-base-content/60">
+          <span class="badge badge-outline font-mono">{{ account_id }}</span>
+          <span class="badge badge-outline font-mono">{{ region }}</span>
+        </div>
+      </div>
+      <div class="grid gap-3 xl:grid-cols-[minmax(12rem,1fr)_8rem_10rem_13rem_auto] xl:items-end">
+        <label class="form-control">
+          <div class="label py-1"><span class="label-text">Queue name</span></div>
+          <input class="input input-bordered" name="queue_name" placeholder="orders" required>
+        </label>
+        <label class="form-control">
+          <div class="label py-1"><span class="label-text">Type</span></div>
+          <select class="select select-bordered" name="queue_type">
+            <option value="standard">standard</option>
+            <option value="fifo">fifo</option>
+          </select>
+        </label>
+        <label class="form-control">
+          <div class="label py-1"><span class="label-text">Region</span></div>
+          <input class="input input-bordered" name="region" value="{{ region }}" required>
+        </label>
+        <label class="form-control">
+          <div class="label py-1"><span class="label-text">Account ID</span></div>
+          <input class="input input-bordered font-mono" name="account_id" value="{{ account_id }}" required>
+        </label>
+        <button class="btn btn-primary" type="submit">Create</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
+    <section class="card border border-base-300 bg-base-100">
       <div class="card-body">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 class="card-title text-2xl">Queues</h2>
+            <h2 class="card-title text-xl">Queues</h2>
             <p class="text-sm text-base-content/60">Showing up to 100 queues for the selected account and region.</p>
           </div>
-          <form class="grid gap-2 sm:grid-cols-[10rem_13rem_minmax(8rem,1fr)_auto]"
+          <form id="dashboard-queue-filter"
+                class="grid gap-2 sm:grid-cols-[10rem_13rem_minmax(8rem,1fr)_auto]"
                 action="/sqs"
                 method="get"
                 hx-get="/sqs/fragments/queues"
@@ -70,14 +81,19 @@
           </form>
         </div>
 
-        <div id="dashboard-queue-list" class="mt-5">
+        <div id="dashboard-queue-list"
+             class="mt-4"
+             hx-get="/sqs/fragments/queues"
+             hx-trigger="every 3s"
+             hx-include="#dashboard-queue-filter"
+             hx-swap="innerHTML">
           {% include "sqs/fragments/queue_list.html" %}
         </div>
       </div>
     </section>
 
-    <aside class="space-y-4">
-      <div class="card border border-base-300 bg-base-100/80 shadow-sm">
+    <aside class="space-y-3">
+      <div class="card border border-base-300 bg-base-100/80">
         <div class="card-body">
           <h2 class="card-title">Quick filters</h2>
           <div class="grid gap-2">
@@ -87,7 +103,7 @@
           </div>
         </div>
       </div>
-      <div class="card border border-base-300 bg-base-100/80 shadow-sm">
+      <div class="card border border-base-300 bg-base-100/80">
         <div class="card-body">
           <h2 class="card-title">Admin actions live per queue</h2>
           <p class="text-sm text-base-content/70">
@@ -96,7 +112,7 @@
           </p>
         </div>
       </div>
-      <div class="alert border-warning/40 bg-warning/10 text-sm">
+      <div class="alert border-warning/40 bg-warning/10 py-3 text-sm">
         <span>This UI is intended for local emulator data. Do not expose it as a shared admin console.</span>
       </div>
     </aside>

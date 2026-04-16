@@ -3,74 +3,74 @@
 {% block title %}Hiraeth{% endblock %}
 
 {% block content %}
-<section class="mx-auto max-w-[94rem] py-10 lg:py-16">
-  <div class="grid items-end gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
+<section class="mx-auto max-w-[94rem] py-8 lg:py-12">
+  <div class="grid items-end gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
     <div>
-      <p class="mb-4 text-sm font-semibold uppercase tracking-[0.45em] text-primary">Local Admin</p>
-      <h1 class="text-balance max-w-4xl text-5xl font-black tracking-tight text-base-content md:text-7xl">
+      <p class="mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-primary">Local Admin</p>
+      <h1 class="text-balance max-w-4xl text-5xl font-black tracking-tight text-base-content md:text-6xl">
         Inspect the emulator while tests are running.
       </h1>
-      <p class="mt-6 max-w-2xl text-lg leading-8 text-base-content/70">
+      <p class="mt-5 max-w-2xl text-base leading-7 text-base-content/70">
         This UI reads the same SQLite database as the AWS-compatible endpoint. Use it to inspect
         emulator state, verify test resources, and handle small local admin tasks without opening
         the database by hand.
       </p>
-      <div class="alert mt-6 max-w-3xl border border-warning/50 bg-warning/15 text-base-content shadow-sm">
+      <div class="alert mt-5 max-w-3xl border border-warning/50 bg-warning/15 py-3 text-sm text-base-content">
         <span class="badge badge-warning font-bold text-warning-content">Local only</span>
         <span>
           This admin UI is not SigV4 protected. Bind it only to a trusted interface.
         </span>
       </div>
-      <div class="mt-8 flex flex-wrap gap-3">
+      <div class="mt-6 flex flex-wrap gap-3">
         <a class="btn btn-primary" href="/sqs">Open SQS dashboard</a>
       </div>
     </div>
 
-    <div class="grid gap-4 sm:grid-cols-2">
-      <a class="card border border-primary/40 bg-base-100 shadow-xl transition hover:-translate-y-0.5 hover:border-primary" href="/sqs">
+    <div class="grid gap-3 sm:grid-cols-2">
+      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/sqs">
         <div class="card-body">
           <div class="flex items-center justify-between">
             <span class="badge badge-primary badge-outline">Available</span>
             <span class="text-2xl font-black text-primary">SQS</span>
           </div>
-          <h2 class="card-title mt-5">SQS queues</h2>
+          <h2 class="card-title mt-3">SQS queues</h2>
           <p class="text-base-content/70">View queues, message counts, attributes, tags, and stored message bodies.</p>
         </div>
       </a>
-      <div class="card border border-base-300 bg-base-100/70 shadow-sm">
+      <div class="card border border-base-300 bg-base-100/70">
         <div class="card-body">
           <div class="flex items-center justify-between">
             <span class="badge badge-ghost">Planned</span>
             <span class="text-2xl font-black text-base-content/40">IAM</span>
           </div>
-          <h2 class="card-title mt-5">IAM data</h2>
+          <h2 class="card-title mt-3">IAM data</h2>
           <p class="text-base-content/60">Planned views for principals, access keys, and policy checks.</p>
         </div>
       </div>
-      <div class="card border border-base-300 bg-base-100/70 shadow-sm">
+      <div class="card border border-base-300 bg-base-100/70">
         <div class="card-body">
           <div class="flex items-center justify-between">
             <span class="badge badge-ghost">Planned</span>
             <span class="text-2xl font-black text-base-content/40">S3</span>
           </div>
-          <h2 class="card-title mt-5">S3 data</h2>
+          <h2 class="card-title mt-3">S3 data</h2>
           <p class="text-base-content/60">Placeholder for bucket and object state if S3 support is added.</p>
         </div>
       </div>
-      <div class="card border border-base-300 bg-base-100/70 shadow-sm">
+      <div class="card border border-base-300 bg-base-100/70">
         <div class="card-body">
           <div class="flex items-center justify-between">
             <span class="badge badge-ghost">Planned</span>
             <span class="text-2xl font-black text-base-content/40">SNS</span>
           </div>
-          <h2 class="card-title mt-5">SNS data</h2>
+          <h2 class="card-title mt-3">SNS data</h2>
           <p class="text-base-content/60">Placeholder for topics, subscriptions, and delivery state.</p>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="mt-10 grid gap-4 lg:grid-cols-3">
+  <div class="mt-8 grid gap-3 lg:grid-cols-3">
     <div class="card border border-base-300 bg-base-100/80">
       <div class="card-body">
         <h2 class="card-title">Separate port</h2>

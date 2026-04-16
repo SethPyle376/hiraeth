@@ -1,0 +1,145 @@
+<section id="queue-message-list"
+         class="card border border-base-300 bg-base-100"
+         hx-get="/sqs/fragments/queues/{{ queue_id }}/messages"
+         hx-trigger="every 3s"
+         hx-include="#message-limit-form"
+         hx-swap="outerHTML">
+  <div class="card-body">
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <h2 class="card-title text-xl">Recent messages</h2>
+        <p class="text-sm text-base-content/60">
+          Showing up to {{ message_limit }} stored messages, newest first. Receiving through the AWS API may hide messages with a visibility timeout.
+        </p>
+      </div>
+      <form id="message-limit-form" class="join self-start lg:self-auto" method="get" action="/sqs/queues/{{ queue_id }}">
+        <input class="input join-item input-bordered w-28" type="number" min="1" max="500" name="message_limit" value="{{ message_limit }}">
+        <button class="btn join-item btn-outline" type="submit">Reload</button>
+      </form>
+    </div>
+
+    {% if has_messages %}
+    <div class="mt-4 grid gap-3">
+      {% for message in messages %}
+      <article class="rounded border border-base-300 bg-base-200/50 p-3">
+        <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_17rem_auto] xl:items-start">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="badge {{ message.status_badge_class }}">{{ message.status }}</span>
+              <span class="font-mono text-xs text-base-content/50">{{ message.message_id }}</span>
+            </div>
+            <details id="message-details-{{ message.message_id }}"
+                     class="collapse collapse-arrow mt-2 rounded border border-base-300 bg-base-100/80"
+                     hx-preserve>
+              <summary class="collapse-title min-h-0 py-2.5 font-mono text-sm font-bold">
+                {{ message.body_preview }}
+              </summary>
+              <div class="collapse-content space-y-3 text-sm">
+                <div>
+                  <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">Body</div>
+                  <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded bg-base-300 p-3 text-xs">{{ message.body }}</pre>
+                </div>
+                {% if message.has_message_attributes %}
+                <div>
+                  <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">Message attributes</div>
+                  <div class="overflow-x-auto rounded border border-base-300 bg-base-300/60">
+                    <table class="table table-xs">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>DataType</th>
+                          <th>Kind</th>
+                          <th>Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for attribute in message.message_attributes %}
+                        <tr>
+                          <td class="font-mono font-bold">{{ attribute.name }}</td>
+                          <td class="font-mono">{{ attribute.data_type }}</td>
+                          <td class="font-mono text-base-content/60">{{ attribute.value_kind }}</td>
+                          <td class="break-all font-mono">{{ attribute.value }}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                {% else if message.has_unparsed_message_attributes %}
+                <div>
+                  <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">Message attributes</div>
+                  <pre class="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-base-300 p-3 text-xs">{{ message.raw_message_attributes }}</pre>
+                </div>
+                {% endif %}
+                {% if message.aws_trace_header != "" %}
+                <div>
+                  <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">AWSTraceHeader</div>
+                  <pre class="overflow-auto whitespace-pre-wrap rounded bg-base-300 p-3 text-xs">{{ message.aws_trace_header }}</pre>
+                </div>
+                {% endif %}
+                {% if message.has_receipt_handle %}
+                <div>
+                  <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">Receipt handle</div>
+                  <pre class="overflow-auto whitespace-pre-wrap rounded bg-base-300 p-3 text-xs">{{ message.receipt_handle }}</pre>
+                </div>
+                {% endif %}
+                {% if message.message_group_id != "" || message.message_deduplication_id != "" %}
+                <div class="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">MessageGroupId</div>
+                    <pre class="overflow-auto whitespace-pre-wrap rounded bg-base-300 p-3 text-xs">{{ message.message_group_id }}</pre>
+                  </div>
+                  <div>
+                    <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">MessageDeduplicationId</div>
+                    <pre class="overflow-auto whitespace-pre-wrap rounded bg-base-300 p-3 text-xs">{{ message.message_deduplication_id }}</pre>
+                  </div>
+                </div>
+                {% endif %}
+              </div>
+            </details>
+          </div>
+
+          <div class="rounded bg-base-100/70 p-3 text-sm">
+            <div class="grid gap-2">
+              <div>
+                <div class="text-xs text-base-content/50">Sent</div>
+                <div class="font-mono">{{ message.sent_at }}</div>
+              </div>
+              <div>
+                <div class="text-xs text-base-content/50">Visible</div>
+                <div class="font-mono">{{ message.visible_at }}</div>
+              </div>
+              <div>
+                <div class="text-xs text-base-content/50">Expires</div>
+                <div class="font-mono">{{ message.expires_at }}</div>
+              </div>
+              {% if message.first_received_at != "" %}
+              <div>
+                <div class="text-xs text-base-content/50">First received</div>
+                <div class="font-mono">{{ message.first_received_at }}</div>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-3 xl:block xl:text-right">
+            <div>
+              <div class="text-xs text-base-content/50">Receives</div>
+              <div class="text-2xl font-black">{{ message.receive_count }}</div>
+            </div>
+            <form class="xl:mt-4" method="post" action="/sqs/queues/{{ queue_id }}/messages/{{ message.message_id }}/delete" onsubmit="return confirm('Delete this message?')">
+              <button class="btn btn-sm btn-error" type="submit">Delete</button>
+            </form>
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="mt-5 rounded border border-dashed border-base-300 bg-base-200/50 p-10 text-center">
+      <h3 class="text-xl font-bold">No messages in this queue</h3>
+      <p class="mt-2 text-base-content/60">Send a message through the emulator, then refresh this page to inspect the stored payload and metadata.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
