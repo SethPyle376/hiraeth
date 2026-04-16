@@ -69,5 +69,15 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
+          load: true
           push: false
           tags: hiraeth:ci
+
+      - name: Report image size
+        run: |
+          bytes="$(docker image inspect hiraeth:ci --format='{{.Size}}')"
+          mib="$(awk "BEGIN { printf \"%.2f\", ${bytes} / 1024 / 1024 }")"
+          echo "Docker image size: ${mib} MiB (${bytes} bytes)"
+          echo "### Docker image size" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`hiraeth:ci\`: ${mib} MiB (${bytes} bytes)" >> "$GITHUB_STEP_SUMMARY"
