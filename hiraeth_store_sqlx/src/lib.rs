@@ -63,8 +63,3 @@ pub async fn run_migrations(pool: &sqlx::SqlitePool) -> Result<(), sqlx::migrate
     static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
     MIGRATOR.run(pool).await
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-}
