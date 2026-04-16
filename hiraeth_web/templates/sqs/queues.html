@@ -15,36 +15,51 @@
     <a class="btn btn-ghost" href="/sqs">Back to SQS</a>
   </div>
 
+  {% if has_feedback %}
+  <div class="alert {{ feedback_class }} mb-5 flex items-center justify-between gap-3 py-3 text-sm">
+    <span>{{ feedback_message }}</span>
+    <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind'])">&times;</button>
+  </div>
+  {% endif %}
+
   <div class="mb-5 grid gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
     <form class="card border border-primary/30 bg-base-100"
           action="/sqs/queues/create"
-          method="post">
+          method="post"
+          onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
       <div class="card-body">
+        <input type="hidden" name="return_to" value="{{ return_to }}">
         <div>
           <h2 class="card-title text-xl">Create queue</h2>
           <p class="text-sm text-base-content/60">Creates a queue with default Hiraeth SQS attributes.</p>
         </div>
+        {% if has_create_error %}
+        <div class="alert alert-error flex items-center justify-between gap-3 py-2 text-sm">
+          <span>{{ create_error }}</span>
+          <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['create_error', 'create_queue_name', 'create_queue_type', 'create_region', 'create_account_id'])">&times;</button>
+        </div>
+        {% endif %}
         <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_8rem]">
           <label class="form-control">
             <div class="label py-1"><span class="label-text">Queue name</span></div>
-            <input class="input input-bordered" name="queue_name" placeholder="orders" required>
+            <input class="input input-bordered" name="queue_name" value="{{ create_queue_name }}" placeholder="orders" required>
           </label>
           <label class="form-control">
             <div class="label py-1"><span class="label-text">Type</span></div>
             <select class="select select-bordered" name="queue_type">
-              <option value="standard">standard</option>
-              <option value="fifo">fifo</option>
+              <option value="standard"{% if create_queue_type == "standard" %} selected{% endif %}>standard</option>
+              <option value="fifo"{% if create_queue_type == "fifo" %} selected{% endif %}>fifo</option>
             </select>
           </label>
         </div>
         <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
           <label class="form-control">
             <div class="label py-1"><span class="label-text">Region</span></div>
-            <input class="input input-bordered" name="region" value="{{ region }}" required>
+            <input class="input input-bordered" name="region" value="{{ create_region }}" required>
           </label>
           <label class="form-control">
             <div class="label py-1"><span class="label-text">Account ID</span></div>
-            <input class="input input-bordered font-mono" name="account_id" value="{{ account_id }}" required>
+            <input class="input input-bordered font-mono" name="account_id" value="{{ create_account_id }}" required>
           </label>
           <button class="btn btn-primary" type="submit">Create</button>
         </div>

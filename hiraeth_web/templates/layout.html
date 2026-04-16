@@ -8,6 +8,74 @@
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script>
+      function hiraethDisableSubmit(form, label) {
+        const button = form.querySelector('button[type="submit"]');
+        if (button) {
+          button.disabled = true;
+          if (label) {
+            button.textContent = label;
+          }
+        }
+        return true;
+      }
+
+      function hiraethConfirmSubmit(form, message, label) {
+        if (!confirm(message)) {
+          return false;
+        }
+        return hiraethDisableSubmit(form, label);
+      }
+
+      function hiraethDismissBanner(button, paramsToClear) {
+        const banner = button.closest('.alert');
+        if (banner) {
+          banner.remove();
+        }
+
+        if (!window.history.replaceState || !paramsToClear) {
+          return;
+        }
+
+        const url = new URL(window.location.href);
+        paramsToClear.forEach((param) => url.searchParams.delete(param));
+        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+        window.history.replaceState({}, '', nextUrl);
+      }
+
+      async function hiraethCopyText(button) {
+        const value = button.dataset.copyValue;
+        if (!value) {
+          return;
+        }
+
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(value);
+          } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = value;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            textarea.remove();
+          }
+
+          const original = button.dataset.originalLabel || button.textContent;
+          button.dataset.originalLabel = original;
+          button.textContent = 'Copied';
+          window.setTimeout(() => {
+            button.textContent = button.dataset.originalLabel;
+          }, 1200);
+        } catch (error) {
+          console.error('Failed to copy text', error);
+          button.textContent = 'Copy failed';
+        }
+      }
+    </script>
     <style>
       [data-theme="gruvbox"] {
         color-scheme: dark;

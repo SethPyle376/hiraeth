@@ -13,4 +13,5 @@ hiraeth_store_sqlx = { path = "../hiraeth_store_sqlx" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["net"] }
+urlencoding = "2.1"
 uuid = { version = "1.18", features = ["v4"] }

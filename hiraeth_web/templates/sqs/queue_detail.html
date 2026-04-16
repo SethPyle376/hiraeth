@@ -15,7 +15,11 @@
         <span class="text-base-content/40">/</span>
         <span class="badge badge-outline">{{ queue.queue_type }}</span>
       </p>
-      <p class="mt-2 break-all font-mono text-xs text-base-content/50">{{ queue_arn }}</p>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <p class="min-w-0 break-all font-mono text-xs text-base-content/50">{{ queue_arn }}</p>
+        <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_arn }}" onclick="hiraethCopyText(this)">Copy ARN</button>
+        <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_url }}" onclick="hiraethCopyText(this)">Copy URL</button>
+      </div>
     </div>
 
     <div class="card border border-base-300 bg-base-100/90">
@@ -24,10 +28,10 @@
         <div class="grid gap-2 sm:grid-cols-4">
           <a class="btn btn-ghost" href="/sqs/queues?region={{ queue.region }}&account_id={{ queue.account_id }}">Back</a>
           <a class="btn btn-outline" href="/sqs/queues/{{ queue.id }}?message_limit={{ message_limit }}">Reload</a>
-          <form method="post" action="/sqs/queues/{{ queue.id }}/purge" onsubmit="return confirm('Purge every message in this queue?')">
+          <form method="post" action="/sqs/queues/{{ queue.id }}/purge?message_limit={{ message_limit }}" onsubmit="return hiraethConfirmSubmit(this, 'Purge every message in this queue?', 'Purging...')">
             <button class="btn btn-warning w-full" type="submit">Purge</button>
           </form>
-          <form method="post" action="/sqs/queues/{{ queue.id }}/delete" onsubmit="return confirm('Delete this queue and all messages?')">
+          <form method="post" action="/sqs/queues/{{ queue.id }}/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete this queue and all messages?', 'Deleting...')">
             <button class="btn btn-error w-full" type="submit">Delete</button>
           </form>
         </div>
@@ -35,13 +39,20 @@
     </div>
   </div>
 
+  {% if has_feedback %}
+  <div class="alert {{ feedback_class }} mb-5 flex items-center justify-between gap-3 py-3 text-sm">
+    <span>{{ feedback_message }}</span>
+    <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind', 'tags_open'])">&times;</button>
+  </div>
+  {% endif %}
+
   {% include "sqs/fragments/queue_detail_stats.html" %}
 
   <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_27rem]">
     {% include "sqs/fragments/message_list.html" %}
 
     <aside class="space-y-3">
-      <details class="collapse collapse-arrow border border-primary/30 bg-base-100">
+      <details class="collapse collapse-arrow border border-primary/30 bg-base-100"{% if has_send_error %} open{% endif %}>
         <summary class="collapse-title min-h-0 px-4 py-3">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -52,7 +63,14 @@
           </div>
         </summary>
         <div class="collapse-content px-4 pb-4">
-          <form class="grid gap-3 pt-1" method="post" action="/sqs/queues/{{ queue.id }}/messages">
+          {% if has_send_error %}
+          <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+            <span>{{ send_error }}</span>
+            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['send_error'])">&times;</button>
+          </div>
+          {% endif %}
+          <form class="grid gap-3 pt-1" method="post" action="/sqs/queues/{{ queue.id }}/messages" onsubmit="return hiraethDisableSubmit(this, 'Sending...')">
+            <input type="hidden" name="message_limit" value="{{ message_limit }}">
             <label class="form-control">
               <div class="label py-1"><span class="label-text">Message body</span></div>
               <textarea class="textarea textarea-bordered font-mono text-sm" name="message_body" placeholder='{"hello":"world"}' required></textarea>
@@ -102,7 +120,17 @@
           <div class="space-y-3 text-sm">
             <div>
               <div class="text-base-content/50">ARN</div>
-              <div class="break-all font-mono">{{ queue_arn }}</div>
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <div class="break-all font-mono">{{ queue_arn }}</div>
+                <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_arn }}" onclick="hiraethCopyText(this)">Copy</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-base-content/50">Queue URL</div>
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <div class="break-all font-mono">{{ queue_url }}</div>
+                <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_url }}" onclick="hiraethCopyText(this)">Copy</button>
+              </div>
             </div>
             <div>
               <div class="text-base-content/50">Database ID</div>
@@ -120,7 +148,7 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100">
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100"{% if open_tags_panel %} open{% endif %}>
         <summary class="collapse-title min-h-0 px-4 py-3">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -131,6 +159,29 @@
           </div>
         </summary>
         <div class="collapse-content px-4 pb-4">
+          {% if has_tag_error %}
+          <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+            <span>{{ tag_error }}</span>
+            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['tag_error', 'tag_key', 'tag_value', 'tags_open'])">&times;</button>
+          </div>
+          {% endif %}
+          <form class="mb-4 grid gap-3" method="post" action="/sqs/queues/{{ queue.id }}/tags" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
+            <input type="hidden" name="message_limit" value="{{ message_limit }}">
+            <div class="grid gap-3 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text">Tag key</span></div>
+                <input class="input input-bordered font-mono" name="tag_key" value="{{ tag_key }}" maxlength="128" placeholder="environment" required>
+              </label>
+              <label class="form-control">
+                <div class="label py-1">
+                  <span class="label-text">Tag value</span>
+                  <span class="label-text-alt">optional</span>
+                </div>
+                <input class="input input-bordered font-mono" name="tag_value" value="{{ tag_value }}" maxlength="256" placeholder="local">
+              </label>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Add or update tag</button>
+          </form>
           {% if has_tags %}
           <div class="max-h-80 overflow-auto">
             <table class="table table-xs">
@@ -139,6 +190,13 @@
                 <tr>
                   <th class="align-top text-base-content/60">{{ tag.key }}</th>
                   <td class="break-all font-mono">{{ tag.value }}</td>
+                  <td class="text-right">
+                    <form method="post" action="/sqs/queues/{{ queue.id }}/tags/delete" onsubmit="return hiraethConfirmSubmit(this, 'Remove this tag?', 'Removing...')">
+                      <input type="hidden" name="message_limit" value="{{ message_limit }}">
+                      <input type="hidden" name="tag_key" value="{{ tag.key }}">
+                      <button class="btn btn-xs btn-error" type="submit">Remove</button>
+                    </form>
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>

@@ -56,6 +56,10 @@ impl WebError {
             message: message.into(),
         }
     }
+
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 impl IntoResponse for WebError {

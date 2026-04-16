@@ -127,7 +127,7 @@
               <div class="text-xs text-base-content/50">Receives</div>
               <div class="text-2xl font-black">{{ message.receive_count }}</div>
             </div>
-            <form class="xl:mt-4" method="post" action="/sqs/queues/{{ queue_id }}/messages/{{ message.message_id }}/delete" onsubmit="return confirm('Delete this message?')">
+            <form class="xl:mt-4" method="post" action="/sqs/queues/{{ queue_id }}/messages/{{ message.message_id }}/delete?message_limit={{ message_limit }}" onsubmit="return hiraethConfirmSubmit(this, 'Delete this message?', 'Deleting...')">
               <button class="btn btn-sm btn-error" type="submit">Delete</button>
             </form>
           </div>
