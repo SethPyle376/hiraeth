@@ -74,7 +74,7 @@ where
             )),
         };
 
-        result.map(|op_result| render_result(op_result))
+        result.map(render_result)
     }
 }
 

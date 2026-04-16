@@ -17,7 +17,7 @@ pub(crate) async fn authenticate_request<S: AccessKeyStore>(
     let access_key = store
         .get_secret_key(&sig_v4_params.access_key)
         .await
-        .map_err(|err| AuthError::KeyStoreError(err))?
+        .map_err(AuthError::KeyStoreError)?
         .ok_or(AuthError::SecretKeyNotFound)?;
 
     let provided_signature = sig_v4_params.signature.clone();
@@ -306,8 +306,7 @@ fn derive_signing_key(secret_key: &str, date: &str, region: &str, service: &str)
     let k_date = hmac_bytes(format!("AWS4{}", secret_key).as_bytes(), date.as_bytes());
     let k_region = hmac_bytes(&k_date, region.as_bytes());
     let k_service = hmac_bytes(&k_region, service.as_bytes());
-    let k_signing = hmac_bytes(&k_service, b"aws4_request");
-    k_signing
+    hmac_bytes(&k_service, b"aws4_request")
 }
 
 #[cfg(test)]

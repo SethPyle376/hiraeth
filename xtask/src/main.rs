@@ -4,6 +4,7 @@ async fn main() -> anyhow::Result<()> {
 
     match task.as_str() {
         "prepare-db" => {
+            std::fs::create_dir_all(".local")?;
             let db_url = "sqlite://.local/db.sqlite";
             let pool = hiraeth_store_sqlx::get_store_pool(db_url).await?;
             hiraeth_store_sqlx::run_migrations(&pool).await?;

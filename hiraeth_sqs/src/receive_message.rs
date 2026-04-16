@@ -62,11 +62,11 @@ pub(crate) async fn receive_message<S: SqsStore>(
 
     let visibility_timeout_seconds = receive_request
         .visibility_timeout
-        .unwrap_or_else(|| queue.visibility_timeout_seconds as u32);
+        .unwrap_or(queue.visibility_timeout_seconds as u32);
 
     let wait_time_seconds = receive_request
         .wait_time_seconds
-        .unwrap_or_else(|| queue.receive_message_wait_time_seconds as u32);
+        .unwrap_or(queue.receive_message_wait_time_seconds as u32);
 
     let deadline = Utc::now() + chrono::Duration::seconds(wait_time_seconds as i64);
 
@@ -186,38 +186,38 @@ fn select_system_attributes(
         );
     }
 
-    if should_include_system_attribute("ApproximateFirstReceiveTimestamp", request) {
-        if let Some(first_received_at) = message.first_received_at {
-            attributes.insert(
-                "ApproximateFirstReceiveTimestamp".to_string(),
-                epoch_millis(first_received_at),
-            );
-        }
+    if should_include_system_attribute("ApproximateFirstReceiveTimestamp", request)
+        && let Some(first_received_at) = message.first_received_at
+    {
+        attributes.insert(
+            "ApproximateFirstReceiveTimestamp".to_string(),
+            epoch_millis(first_received_at),
+        );
     }
 
     if should_include_system_attribute("SentTimestamp", request) {
         attributes.insert("SentTimestamp".to_string(), epoch_millis(message.sent_at));
     }
 
-    if should_include_system_attribute("AWSTraceHeader", request) {
-        if let Some(aws_trace_header) = &message.aws_trace_header {
-            attributes.insert("AWSTraceHeader".to_string(), aws_trace_header.clone());
-        }
+    if should_include_system_attribute("AWSTraceHeader", request)
+        && let Some(aws_trace_header) = &message.aws_trace_header
+    {
+        attributes.insert("AWSTraceHeader".to_string(), aws_trace_header.clone());
     }
 
-    if should_include_system_attribute("MessageDeduplicationId", request) {
-        if let Some(message_deduplication_id) = &message.message_deduplication_id {
-            attributes.insert(
-                "MessageDeduplicationId".to_string(),
-                message_deduplication_id.clone(),
-            );
-        }
+    if should_include_system_attribute("MessageDeduplicationId", request)
+        && let Some(message_deduplication_id) = &message.message_deduplication_id
+    {
+        attributes.insert(
+            "MessageDeduplicationId".to_string(),
+            message_deduplication_id.clone(),
+        );
     }
 
-    if should_include_system_attribute("MessageGroupId", request) {
-        if let Some(message_group_id) = &message.message_group_id {
-            attributes.insert("MessageGroupId".to_string(), message_group_id.clone());
-        }
+    if should_include_system_attribute("MessageGroupId", request)
+        && let Some(message_group_id) = &message.message_group_id
+    {
+        attributes.insert("MessageGroupId".to_string(), message_group_id.clone());
     }
 
     attributes

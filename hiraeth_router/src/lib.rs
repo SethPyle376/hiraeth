@@ -20,16 +20,9 @@ impl From<ServiceRouterError> for ApiError {
     }
 }
 
+#[derive(Default)]
 pub struct ServiceRouter {
     services: Vec<Box<dyn Service + Send + Sync>>,
-}
-
-impl Default for ServiceRouter {
-    fn default() -> Self {
-        Self {
-            services: Vec::new(),
-        }
-    }
 }
 
 impl ServiceRouter {

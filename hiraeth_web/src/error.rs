@@ -48,7 +48,7 @@ impl IntoResponse for WebError {
             message: &self.message,
         }
         .render()
-        .unwrap_or_else(|_| self.message);
+        .unwrap_or(self.message);
 
         (self.status, Html(body)).into_response()
     }

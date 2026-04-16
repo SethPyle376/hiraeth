@@ -60,7 +60,7 @@ pub(crate) async fn load_queue_from_url<S: SqsStore>(
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await
         .map_err(|e| SqsError::InternalError(e.to_string()))?
-        .ok_or_else(|| SqsError::QueueNotFound)
+        .ok_or(SqsError::QueueNotFound)
 }
 
 pub(crate) fn queue_url(host: &str, account_id: &str, queue_name: &str) -> String {

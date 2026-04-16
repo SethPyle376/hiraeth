@@ -15,10 +15,10 @@ impl SqliteAccessKeyStore {
 }
 
 fn map_sqlx_error(err: sqlx::Error) -> StoreError {
-    if let sqlx::Error::Database(database_error) = &err {
-        if database_error.is_unique_violation() {
-            return StoreError::Conflict(database_error.message().to_string());
-        }
+    if let sqlx::Error::Database(database_error) = &err
+        && database_error.is_unique_violation()
+    {
+        return StoreError::Conflict(database_error.message().to_string());
     }
 
     StoreError::StorageFailure(err.to_string())

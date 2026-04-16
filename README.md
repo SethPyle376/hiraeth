@@ -53,6 +53,17 @@ aws --endpoint-url http://localhost:4566 sqs receive-message \
 
 Compose stores SQLite data in the named volume `hiraeth-data`.
 
+## Container Image
+
+CI publishes a multi-architecture image for `linux/amd64` and `linux/arm64` to
+GitHub Container Registry:
+
+```sh
+docker pull ghcr.io/sethpyle376/hiraeth:v0.1.0
+```
+
+Images are published only when a release tag matching `v*.*.*` is pushed.
+
 ## Running From Source
 
 ```sh

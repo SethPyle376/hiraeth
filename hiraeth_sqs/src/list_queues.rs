@@ -27,12 +27,12 @@ pub(crate) async fn list_queues<S: SqsStore>(
 ) -> Result<ServiceResponse, SqsError> {
     let request_body = util::parse_request_body::<ListQueuesRequest>(request)?;
 
-    if let Some(max_results) = request_body.max_results {
-        if !(1..=1000).contains(&max_results) {
-            return Err(SqsError::BadRequest(
-                "MaxResults must be between 1 and 1000".to_string(),
-            ));
-        }
+    if let Some(max_results) = request_body.max_results
+        && !(1..=1000).contains(&max_results)
+    {
+        return Err(SqsError::BadRequest(
+            "MaxResults must be between 1 and 1000".to_string(),
+        ));
     }
 
     let region = &request.region;

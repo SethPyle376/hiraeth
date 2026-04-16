@@ -211,8 +211,7 @@ mod tests {
 
         let error = delete_message(&request, &store)
             .await
-            .err()
-            .expect("missing queue should error");
+            .expect_err("missing queue should error");
 
         assert_eq!(error, SqsError::QueueNotFound);
     }
