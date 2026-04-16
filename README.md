@@ -130,6 +130,21 @@ Status labels:
   deduplication windows, or throughput behavior.
 - The web UI is a local admin preview and is not authenticated.
 
+## AI Usage
+
+AI tools are used as part of this project's development workflow for code
+generation, refactoring, test writing, documentation drafts, and design
+discussion.
+
+Most runtime code has been written by hand, most test code has been generated.
+Regardless, all changes are reviewed, edited, and accepted by a human maintainer,
+and the project relies on normal engineering checks such as tests, SQLx query
+checking, and manual review rather than treating AI output as authoritative.
+
+## License
+
+Hiraeth is licensed under the [MIT License](LICENSE).
+
 ## Development
 
 Format and test:
