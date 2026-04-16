@@ -96,7 +96,7 @@ pub(crate) fn calculate_message_attributes_md5<'a>(
 ) -> Result<String, SqsError> {
     let mut buffer = Vec::new();
     let mut message_attributes = message_attributes.into_iter().collect::<Vec<_>>();
-    message_attributes.sort_by(|(left_name, _), (right_name, _)| left_name.cmp(right_name));
+    message_attributes.sort_by_key(|(name, _)| *name);
 
     for (name, value) in message_attributes {
         append_length_prefixed_bytes(&mut buffer, name.as_bytes());
