@@ -3687,6 +3687,9 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-sqs",
  "hiraeth_store_sqlx",
  "tokio",
 ]

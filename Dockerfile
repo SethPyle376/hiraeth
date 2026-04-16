@@ -12,14 +12,18 @@ RUN apt-get update \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+WORKDIR /workspace
+
+# Install the musl target on the pinned workspace toolchain, not the base
+# image's default toolchain.
+COPY rust-toolchain.toml ./
+
 RUN case "$TARGETARCH" in \
         amd64) echo "x86_64-unknown-linux-musl" > /tmp/rust-target ;; \
         arm64) echo "aarch64-unknown-linux-musl" > /tmp/rust-target ;; \
         *) echo "unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac \
     && rustup target add "$(cat /tmp/rust-target)"
-
-WORKDIR /workspace
 
 # SQLx macros should use the checked-in offline query metadata during image builds.
 ENV SQLX_OFFLINE=true \
