@@ -55,14 +55,22 @@ Compose stores SQLite data in the named volume `hiraeth-data`.
 
 ## Container Image
 
-CI publishes a multi-architecture image for `linux/amd64` and `linux/arm64` to
-GitHub Container Registry:
+Release images are published to GitHub Container Registry:
 
 ```sh
 docker pull ghcr.io/sethpyle376/hiraeth:v0.1.0
 ```
 
-Images are published only when a release tag matching `v*.*.*` is pushed.
+Release maintainers can publish a multi-architecture image for `linux/amd64`
+and `linux/arm64` from a local Docker Buildx environment:
+
+```sh
+docker login ghcr.io
+scripts/publish-image.sh v0.1.0
+```
+
+The publish script pushes `ghcr.io/sethpyle376/hiraeth:<tag>`. Tags must match
+the release format `v*.*.*`.
 
 ## Running From Source
 

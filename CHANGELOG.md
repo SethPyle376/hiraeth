@@ -36,7 +36,8 @@ Initial preview release focused on local SQS emulation for integration tests.
 - Request tracing and structured logging.
 - Web admin UI for inspecting SQS queues, messages, attributes, tags, receipt handles, and timing metadata.
 - Dockerfile and Docker Compose support.
-- GitHub Actions CI for formatting, clippy, tests, SQLx offline metadata checks, and tagged multi-architecture GHCR image publishing.
+- GitHub Actions CI for formatting, clippy, tests, and SQLx offline metadata checks.
+- Local release script for publishing multi-architecture GHCR images.
 - README quickstart, API support matrix, known gaps, AI usage statement, and MIT license.
 
 ### Known Gaps
