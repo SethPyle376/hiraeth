@@ -1,0 +1,35 @@
+<div id="dashboard-stats"
+     class="mb-5 grid gap-3 md:grid-cols-4"
+     hx-get="/sqs/fragments/dashboard-stats"
+     hx-trigger="every 3s"
+     hx-include="#dashboard-queue-filter"
+     hx-swap="outerHTML">
+  <div class="stats border border-base-300 bg-base-100">
+    <div class="stat">
+      <div class="stat-title">Queues</div>
+      <div class="stat-value text-primary">{{ total_queues }}</div>
+      <div class="stat-desc">{{ account_id }} / {{ region }}</div>
+    </div>
+  </div>
+  <div class="stats border border-base-300 bg-base-100">
+    <div class="stat">
+      <div class="stat-title">Messages</div>
+      <div class="stat-value text-secondary">{{ total_messages }}</div>
+      <div class="stat-desc">retained and not expired</div>
+    </div>
+  </div>
+  <div class="stats border border-base-300 bg-base-100">
+    <div class="stat">
+      <div class="stat-title">Visible</div>
+      <div class="stat-value text-success">{{ visible_messages }}</div>
+      <div class="stat-desc">available to consumers</div>
+    </div>
+  </div>
+  <div class="stats border border-base-300 bg-base-100">
+    <div class="stat">
+      <div class="stat-title">Delayed</div>
+      <div class="stat-value text-info">{{ delayed_messages }}</div>
+      <div class="stat-desc">waiting for delay</div>
+    </div>
+  </div>
+</div>

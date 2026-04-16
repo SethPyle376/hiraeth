@@ -17,6 +17,7 @@ async fn main() -> anyhow::Result<()> {
     let store = SqlxStore::new(&config.database_url).await?;
     let app = std::sync::Arc::new(App::new(store.clone()));
     let aws_addr = (IpAddr::from_str(&config.host)?, config.port).into();
+    let aws_endpoint_url = aws_endpoint_url(&config);
 
     if config.web_enabled {
         let web_addr = (IpAddr::from_str(&config.web_host)?, config.web_port).into();
@@ -28,6 +29,7 @@ async fn main() -> anyhow::Result<()> {
             hiraeth_web::serve(
                 web_addr,
                 hiraeth_web::WebState::new(store.sqs_store.clone())
+                    .with_aws_endpoint_url(aws_endpoint_url)
             )
         )?;
     } else {
@@ -36,6 +38,20 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn aws_endpoint_url(config: &hiraeth_core::Config) -> String {
+    let host = match config.host.as_str() {
+        "0.0.0.0" | "::" => "localhost",
+        host => host,
+    };
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+
+    format!("http://{host}:{}", config.port)
 }
 
 fn init_tracing() {

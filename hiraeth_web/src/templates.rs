@@ -20,6 +20,16 @@ pub(crate) struct SqsDashboardTemplate<'a> {
     pub(crate) region: &'a str,
     pub(crate) account_id: &'a str,
     pub(crate) prefix: &'a str,
+    pub(crate) return_to: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) create_error: &'a str,
+    pub(crate) has_create_error: bool,
+    pub(crate) create_queue_name: &'a str,
+    pub(crate) create_queue_type: &'a str,
+    pub(crate) create_region: &'a str,
+    pub(crate) create_account_id: &'a str,
     pub(crate) queues: &'a [QueueSummary],
     pub(crate) has_queues: bool,
     pub(crate) total_queues: usize,
@@ -34,6 +44,16 @@ pub(crate) struct SqsQueuesTemplate<'a> {
     pub(crate) region: &'a str,
     pub(crate) account_id: &'a str,
     pub(crate) prefix: &'a str,
+    pub(crate) return_to: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) create_error: &'a str,
+    pub(crate) has_create_error: bool,
+    pub(crate) create_queue_name: &'a str,
+    pub(crate) create_queue_type: &'a str,
+    pub(crate) create_region: &'a str,
+    pub(crate) create_account_id: &'a str,
     pub(crate) queues: &'a [QueueSummary],
     pub(crate) has_queues: bool,
 }
@@ -41,8 +61,20 @@ pub(crate) struct SqsQueuesTemplate<'a> {
 #[derive(Template)]
 #[template(path = "sqs/queue_detail.html")]
 pub(crate) struct SqsQueueDetailTemplate<'a> {
+    pub(crate) queue_id: i64,
     pub(crate) queue: &'a hiraeth_store::sqs::SqsQueue,
     pub(crate) queue_arn: &'a str,
+    pub(crate) queue_url: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) send_error: &'a str,
+    pub(crate) has_send_error: bool,
+    pub(crate) tag_error: &'a str,
+    pub(crate) has_tag_error: bool,
+    pub(crate) tag_key: &'a str,
+    pub(crate) tag_value: &'a str,
+    pub(crate) open_tags_panel: bool,
     pub(crate) summary: &'a QueueSummary,
     pub(crate) attributes: &'a [QueueAttribute],
     pub(crate) tags: &'a [QueueTag],
@@ -54,10 +86,37 @@ pub(crate) struct SqsQueueDetailTemplate<'a> {
 }
 
 #[derive(Template)]
+#[template(path = "sqs/fragments/dashboard_stats.html")]
+pub(crate) struct SqsDashboardStatsTemplate<'a> {
+    pub(crate) region: &'a str,
+    pub(crate) account_id: &'a str,
+    pub(crate) total_queues: usize,
+    pub(crate) total_messages: i64,
+    pub(crate) visible_messages: i64,
+    pub(crate) delayed_messages: i64,
+}
+
+#[derive(Template)]
 #[template(path = "sqs/fragments/queue_list.html")]
 pub(crate) struct QueueListTemplate<'a> {
     pub(crate) queues: &'a [QueueSummary],
     pub(crate) has_queues: bool,
+}
+
+#[derive(Template)]
+#[template(path = "sqs/fragments/queue_detail_stats.html")]
+pub(crate) struct QueueDetailStatsTemplate<'a> {
+    pub(crate) queue_id: i64,
+    pub(crate) summary: &'a QueueSummary,
+}
+
+#[derive(Template)]
+#[template(path = "sqs/fragments/message_list.html")]
+pub(crate) struct QueueMessageListTemplate<'a> {
+    pub(crate) queue_id: i64,
+    pub(crate) messages: &'a [MessageSummary],
+    pub(crate) has_messages: bool,
+    pub(crate) message_limit: i64,
 }
 
 #[cfg(test)]

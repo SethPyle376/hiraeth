@@ -4,30 +4,34 @@
 
 {% block content %}
 <section class="mx-auto max-w-[110rem]">
-  <div class="mb-8 grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+  <div class="mb-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
     <div class="min-w-0">
-      <p class="text-sm font-semibold uppercase tracking-[0.35em] text-primary">SQS Queue</p>
-      <h1 class="mt-2 break-words text-4xl font-black tracking-tight md:text-6xl">{{ queue.name }}</h1>
-      <p class="mt-4 flex flex-wrap items-center gap-2 text-base-content/70">
+      <p class="text-xs font-semibold uppercase tracking-[0.35em] text-primary">SQS Queue</p>
+      <h1 class="mt-2 break-words text-4xl font-black tracking-tight md:text-5xl">{{ queue.name }}</h1>
+      <p class="mt-3 flex flex-wrap items-center gap-2 text-sm text-base-content/70">
         <span class="font-mono">{{ queue.account_id }}</span>
         <span class="text-base-content/40">/</span>
         <span class="font-mono">{{ queue.region }}</span>
         <span class="text-base-content/40">/</span>
         <span class="badge badge-outline">{{ queue.queue_type }}</span>
       </p>
-      <p class="mt-3 break-all font-mono text-sm text-base-content/50">{{ queue_arn }}</p>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <p class="min-w-0 break-all font-mono text-xs text-base-content/50">{{ queue_arn }}</p>
+        <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_arn }}" onclick="hiraethCopyText(this)">Copy ARN</button>
+        <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_url }}" onclick="hiraethCopyText(this)">Copy URL</button>
+      </div>
     </div>
 
-    <div class="card border border-base-300 bg-base-100/90 shadow-sm">
+    <div class="card border border-base-300 bg-base-100/90">
       <div class="card-body p-4">
-        <div class="mb-3 text-sm font-semibold uppercase tracking-wider text-base-content/50">Queue actions</div>
+        <div class="mb-2 text-xs font-semibold uppercase tracking-wider text-base-content/50">Queue actions</div>
         <div class="grid gap-2 sm:grid-cols-4">
           <a class="btn btn-ghost" href="/sqs/queues?region={{ queue.region }}&account_id={{ queue.account_id }}">Back</a>
           <a class="btn btn-outline" href="/sqs/queues/{{ queue.id }}?message_limit={{ message_limit }}">Reload</a>
-          <form method="post" action="/sqs/queues/{{ queue.id }}/purge" onsubmit="return confirm('Purge every message in this queue?')">
+          <form method="post" action="/sqs/queues/{{ queue.id }}/purge?message_limit={{ message_limit }}" onsubmit="return hiraethConfirmSubmit(this, 'Purge every message in this queue?', 'Purging...')">
             <button class="btn btn-warning w-full" type="submit">Purge</button>
           </form>
-          <form method="post" action="/sqs/queues/{{ queue.id }}/delete" onsubmit="return confirm('Delete this queue and all messages?')">
+          <form method="post" action="/sqs/queues/{{ queue.id }}/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete this queue and all messages?', 'Deleting...')">
             <button class="btn btn-error w-full" type="submit">Delete</button>
           </form>
         </div>
@@ -35,178 +39,98 @@
     </div>
   </div>
 
-  <div class="mb-8 grid gap-4 md:grid-cols-3">
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Messages</div>
-        <div class="text-4xl font-black text-primary">{{ summary.message_count }}</div>
-        <div class="text-sm text-base-content/50">stored and not expired</div>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Visible</div>
-        <div class="text-4xl font-black text-success">{{ summary.visible_message_count }}</div>
-        <div class="text-sm text-base-content/50">available to consumers</div>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Delayed</div>
-        <div class="text-4xl font-black text-info">{{ summary.delayed_message_count }}</div>
-        <div class="text-sm text-base-content/50">waiting for delay to expire</div>
-      </div>
-    </div>
+  {% if has_feedback %}
+  <div class="alert {{ feedback_class }} mb-5 flex items-center justify-between gap-3 py-3 text-sm">
+    <span>{{ feedback_message }}</span>
+    <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind', 'tags_open'])">&times;</button>
   </div>
+  {% endif %}
 
-  <div class="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_28rem]">
-    <section class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body p-4 sm:p-6">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 class="card-title text-2xl">Recent messages</h2>
-            <p class="text-sm text-base-content/60">
-              Showing up to {{ message_limit }} stored messages, newest first. Receiving through the AWS API may hide messages with a visibility timeout.
-            </p>
+  {% include "sqs/fragments/queue_detail_stats.html" %}
+
+  <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_27rem]">
+    {% include "sqs/fragments/message_list.html" %}
+
+    <aside class="space-y-3">
+      <details class="collapse collapse-arrow border border-primary/30 bg-base-100"{% if has_send_error %} open{% endif %}>
+        <summary class="collapse-title min-h-0 px-4 py-3">
+          <div class="flex items-center justify-between gap-3 pr-6">
+            <div>
+              <h2 class="text-base font-black">Send message</h2>
+              <p class="text-xs text-base-content/60">Body, delay, attributes, trace header, and FIFO fields.</p>
+            </div>
+            <span class="badge badge-primary badge-outline">Action</span>
           </div>
-          <form class="join self-start lg:self-auto" method="get" action="/sqs/queues/{{ queue.id }}">
-            <input class="input join-item input-bordered w-28" type="number" min="1" max="500" name="message_limit" value="{{ message_limit }}">
-            <button class="btn join-item btn-outline" type="submit">Reload</button>
+        </summary>
+        <div class="collapse-content px-4 pb-4">
+          {% if has_send_error %}
+          <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+            <span>{{ send_error }}</span>
+            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['send_error'])">&times;</button>
+          </div>
+          {% endif %}
+          <form class="grid gap-3 pt-1" method="post" action="/sqs/queues/{{ queue.id }}/messages" onsubmit="return hiraethDisableSubmit(this, 'Sending...')">
+            <input type="hidden" name="message_limit" value="{{ message_limit }}">
+            <label class="form-control">
+              <div class="label py-1"><span class="label-text">Message body</span></div>
+              <textarea class="textarea textarea-bordered font-mono text-sm" name="message_body" placeholder='{"hello":"world"}' required></textarea>
+            </label>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text">Delay seconds</span></div>
+                <input class="input input-bordered" name="delay_seconds" type="number" min="0" max="900" placeholder="{{ queue.delay_seconds }}">
+              </label>
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text">Trace header</span></div>
+                <input class="input input-bordered font-mono" name="aws_trace_header" placeholder="Root=1-...">
+              </label>
+            </div>
+            <label class="form-control">
+              <div class="label py-1">
+                <span class="label-text">Message attributes JSON</span>
+                <span class="label-text-alt">optional</span>
+              </div>
+              <textarea class="textarea textarea-bordered font-mono text-xs" name="message_attributes_json" placeholder='{"trace_id":{"DataType":"String","StringValue":"abc123","BinaryValue":null}}'></textarea>
+            </label>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text">MessageGroupId</span></div>
+                <input class="input input-bordered font-mono" name="message_group_id" placeholder="fifo only">
+              </label>
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text">DeduplicationId</span></div>
+                <input class="input input-bordered font-mono" name="message_deduplication_id" placeholder="fifo only">
+              </label>
+            </div>
+            <button class="btn btn-primary" type="submit">Send message</button>
           </form>
         </div>
+      </details>
 
-        {% if has_messages %}
-        <div class="mt-5 grid gap-4">
-          {% for message in messages %}
-          <article class="rounded-box border border-base-300 bg-base-200/50 p-4">
-            <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_18rem_auto] xl:items-start">
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="badge {{ message.status_badge_class }}">{{ message.status }}</span>
-                  <span class="font-mono text-xs text-base-content/50">{{ message.message_id }}</span>
-                </div>
-                <details class="collapse collapse-arrow mt-3 rounded-box border border-base-300 bg-base-100/80">
-                  <summary class="collapse-title min-h-0 py-3 font-mono text-sm font-bold">
-                    {{ message.body_preview }}
-                  </summary>
-                  <div class="collapse-content space-y-4 text-sm">
-                    <div>
-                      <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">Body</div>
-                      <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-box bg-base-300 p-3 text-xs">{{ message.body }}</pre>
-                    </div>
-                    {% if message.has_message_attributes %}
-                    <div>
-                      <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">Message attributes</div>
-                      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-300/60">
-                        <table class="table table-xs">
-                          <thead>
-                            <tr>
-                              <th>Name</th>
-                              <th>DataType</th>
-                              <th>Kind</th>
-                              <th>Value</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {% for attribute in message.message_attributes %}
-                            <tr>
-                              <td class="font-mono font-bold">{{ attribute.name }}</td>
-                              <td class="font-mono">{{ attribute.data_type }}</td>
-                              <td class="font-mono text-base-content/60">{{ attribute.value_kind }}</td>
-                              <td class="break-all font-mono">{{ attribute.value }}</td>
-                            </tr>
-                            {% endfor %}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                    {% else if message.has_unparsed_message_attributes %}
-                    <div>
-                      <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">Message attributes</div>
-                      <pre class="max-h-48 overflow-auto whitespace-pre-wrap rounded-box bg-base-300 p-3 text-xs">{{ message.raw_message_attributes }}</pre>
-                    </div>
-                    {% endif %}
-                    {% if message.aws_trace_header != "" %}
-                    <div>
-                      <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">AWSTraceHeader</div>
-                      <pre class="overflow-auto whitespace-pre-wrap rounded-box bg-base-300 p-3 text-xs">{{ message.aws_trace_header }}</pre>
-                    </div>
-                    {% endif %}
-                    {% if message.has_receipt_handle %}
-                    <div>
-                      <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">Receipt handle</div>
-                      <pre class="overflow-auto whitespace-pre-wrap rounded-box bg-base-300 p-3 text-xs">{{ message.receipt_handle }}</pre>
-                    </div>
-                    {% endif %}
-                    {% if message.message_group_id != "" || message.message_deduplication_id != "" %}
-                    <div class="grid gap-3 md:grid-cols-2">
-                      <div>
-                        <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">MessageGroupId</div>
-                        <pre class="overflow-auto whitespace-pre-wrap rounded-box bg-base-300 p-3 text-xs">{{ message.message_group_id }}</pre>
-                      </div>
-                      <div>
-                        <div class="mb-1 text-xs font-bold uppercase tracking-wider text-base-content/50">MessageDeduplicationId</div>
-                        <pre class="overflow-auto whitespace-pre-wrap rounded-box bg-base-300 p-3 text-xs">{{ message.message_deduplication_id }}</pre>
-                      </div>
-                    </div>
-                    {% endif %}
-                  </div>
-                </details>
-              </div>
-
-              <div class="rounded-box bg-base-100/70 p-3 text-sm">
-                <div class="grid gap-2">
-                  <div>
-                    <div class="text-xs text-base-content/50">Sent</div>
-                    <div class="font-mono">{{ message.sent_at }}</div>
-                  </div>
-                  <div>
-                    <div class="text-xs text-base-content/50">Visible</div>
-                    <div class="font-mono">{{ message.visible_at }}</div>
-                  </div>
-                  <div>
-                    <div class="text-xs text-base-content/50">Expires</div>
-                    <div class="font-mono">{{ message.expires_at }}</div>
-                  </div>
-                  {% if message.first_received_at != "" %}
-                  <div>
-                    <div class="text-xs text-base-content/50">First received</div>
-                    <div class="font-mono">{{ message.first_received_at }}</div>
-                  </div>
-                  {% endif %}
-                </div>
-              </div>
-
-              <div class="flex items-center justify-between gap-3 xl:block xl:text-right">
-                <div>
-                  <div class="text-xs text-base-content/50">Receives</div>
-                  <div class="text-2xl font-black">{{ message.receive_count }}</div>
-                </div>
-                <form class="xl:mt-4" method="post" action="/sqs/queues/{{ queue.id }}/messages/{{ message.message_id }}/delete" onsubmit="return confirm('Delete this message?')">
-                  <button class="btn btn-sm btn-error" type="submit">Delete</button>
-                </form>
-              </div>
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100">
+        <summary class="collapse-title min-h-0 px-4 py-3">
+          <div class="flex items-center justify-between gap-3 pr-6">
+            <div>
+              <h2 class="text-base font-black">Queue metadata</h2>
+              <p class="break-all font-mono text-xs text-base-content/50">id {{ queue.id }}</p>
             </div>
-          </article>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="mt-6 rounded-box border border-dashed border-base-300 bg-base-200/50 p-12 text-center">
-          <h3 class="text-xl font-bold">No messages in this queue</h3>
-          <p class="mt-2 text-base-content/60">Send a message through the emulator, then refresh this page to inspect the stored payload and metadata.</p>
-        </div>
-        {% endif %}
-      </div>
-    </section>
-
-    <aside class="space-y-6">
-      <section class="card border border-base-300 bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title">Queue metadata</h2>
+          </div>
+        </summary>
+        <div class="collapse-content px-4 pb-4">
           <div class="space-y-3 text-sm">
             <div>
               <div class="text-base-content/50">ARN</div>
-              <div class="break-all font-mono">{{ queue_arn }}</div>
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <div class="break-all font-mono">{{ queue_arn }}</div>
+                <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_arn }}" onclick="hiraethCopyText(this)">Copy</button>
+              </div>
+            </div>
+            <div>
+              <div class="text-base-content/50">Queue URL</div>
+              <div class="mt-1 flex flex-wrap items-center gap-2">
+                <div class="break-all font-mono">{{ queue_url }}</div>
+                <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_url }}" onclick="hiraethCopyText(this)">Copy</button>
+              </div>
             </div>
             <div>
               <div class="text-base-content/50">Database ID</div>
@@ -222,14 +146,42 @@
             </div>
           </div>
         </div>
-      </section>
+      </details>
 
-      <section class="card border border-base-300 bg-base-100 shadow-sm">
-        <div class="card-body">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="card-title">Tags</h2>
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100"{% if open_tags_panel %} open{% endif %}>
+        <summary class="collapse-title min-h-0 px-4 py-3">
+          <div class="flex items-center justify-between gap-3 pr-6">
+            <div>
+              <h2 class="text-base font-black">Tags</h2>
+              <p class="text-xs text-base-content/60">Queue-level key/value metadata.</p>
+            </div>
             <span class="badge badge-outline">{{ tag_count }}</span>
           </div>
+        </summary>
+        <div class="collapse-content px-4 pb-4">
+          {% if has_tag_error %}
+          <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+            <span>{{ tag_error }}</span>
+            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['tag_error', 'tag_key', 'tag_value', 'tags_open'])">&times;</button>
+          </div>
+          {% endif %}
+          <form class="mb-4 grid gap-3" method="post" action="/sqs/queues/{{ queue.id }}/tags" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
+            <input type="hidden" name="message_limit" value="{{ message_limit }}">
+            <div class="grid gap-3 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text">Tag key</span></div>
+                <input class="input input-bordered font-mono" name="tag_key" value="{{ tag_key }}" maxlength="128" placeholder="environment" required>
+              </label>
+              <label class="form-control">
+                <div class="label py-1">
+                  <span class="label-text">Tag value</span>
+                  <span class="label-text-alt">optional</span>
+                </div>
+                <input class="input input-bordered font-mono" name="tag_value" value="{{ tag_value }}" maxlength="256" placeholder="local">
+              </label>
+            </div>
+            <button class="btn btn-primary btn-sm" type="submit">Add or update tag</button>
+          </form>
           {% if has_tags %}
           <div class="max-h-80 overflow-auto">
             <table class="table table-xs">
@@ -238,6 +190,13 @@
                 <tr>
                   <th class="align-top text-base-content/60">{{ tag.key }}</th>
                   <td class="break-all font-mono">{{ tag.value }}</td>
+                  <td class="text-right">
+                    <form method="post" action="/sqs/queues/{{ queue.id }}/tags/delete" onsubmit="return hiraethConfirmSubmit(this, 'Remove this tag?', 'Removing...')">
+                      <input type="hidden" name="message_limit" value="{{ message_limit }}">
+                      <input type="hidden" name="tag_key" value="{{ tag.key }}">
+                      <button class="btn btn-xs btn-error" type="submit">Remove</button>
+                    </form>
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -247,11 +206,18 @@
           <p class="text-sm text-base-content/60">No tags are stored for this queue.</p>
           {% endif %}
         </div>
-      </section>
+      </details>
 
-      <section class="card border border-base-300 bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title">Attributes</h2>
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100">
+        <summary class="collapse-title min-h-0 px-4 py-3">
+          <div class="flex items-center justify-between gap-3 pr-6">
+            <div>
+              <h2 class="text-base font-black">Attributes</h2>
+              <p class="text-xs text-base-content/60">Retention, visibility, redrive, FIFO, and policy values.</p>
+            </div>
+          </div>
+        </summary>
+        <div class="collapse-content px-4 pb-4">
           <div class="max-h-[46rem] overflow-auto">
             <table class="table table-xs">
               <tbody>
@@ -265,7 +231,7 @@
             </table>
           </div>
         </div>
-      </section>
+      </details>
     </aside>
   </div>
 </section>

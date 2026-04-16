@@ -14,11 +14,20 @@ use crate::{error::WebError, templates::HomeTemplate};
 #[derive(Clone)]
 pub struct WebState {
     pub sqs_store: SqliteSqsStore,
+    pub aws_endpoint_url: String,
 }
 
 impl WebState {
     pub fn new(sqs_store: SqliteSqsStore) -> Self {
-        Self { sqs_store }
+        Self {
+            sqs_store,
+            aws_endpoint_url: "http://localhost:4566".to_string(),
+        }
+    }
+
+    pub fn with_aws_endpoint_url(mut self, aws_endpoint_url: impl Into<String>) -> Self {
+        self.aws_endpoint_url = aws_endpoint_url.into().trim_end_matches('/').to_string();
+        self
     }
 }
 

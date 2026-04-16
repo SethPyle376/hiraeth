@@ -40,6 +40,28 @@ impl From<askama::Error> for WebError {
     }
 }
 
+impl WebError {
+    pub(crate) fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            title: "Bad request",
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn internal(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            title: "Internal error",
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+}
+
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
         let body = ErrorTemplate {
