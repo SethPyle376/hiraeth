@@ -179,6 +179,16 @@ Prepare the local database used by SQLx query checking:
 cargo run -p xtask -- prepare-db
 ```
 
+Seed SQS queues and messages into a running Hiraeth endpoint:
+
+```sh
+cargo run -p xtask -- seed
+```
+
+By default this targets `http://localhost:4566` with the local `test`/`test`
+credential. Use `cargo run -p xtask -- seed --help` to see endpoint, region,
+credential, prefix, and reset options.
+
 Refresh SQLx offline metadata:
 
 ```sh
