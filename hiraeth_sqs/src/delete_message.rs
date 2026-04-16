@@ -78,10 +78,15 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
     let mut failed = Vec::new();
 
     for entry in delete_request.entries {
-        store
-            .delete_message(queue.id, &entry.receipt_handle)
-            .await
-            .inspect_err(|e| {
+        let result = store.delete_message(queue.id, &entry.receipt_handle).await;
+
+        match result {
+            Ok(()) => {
+                successful.push(DeleteMessageBatchSuccessEntry {
+                    id: entry.id.clone(),
+                });
+            }
+            Err(e) => {
                 let error = map_receipt_handle_store_error(e.clone());
                 let (code, sender_fault) = batch_error_details(&error);
                 failed.push(DeleteMessageBatchFailedEntry {
@@ -89,13 +94,9 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
                     code: code.to_string(),
                     message: error.to_string(),
                     sender_fault,
-                })
-            })
-            .inspect(|_| {
-                successful.push(DeleteMessageBatchSuccessEntry {
-                    id: entry.id.clone(),
-                })
-            });
+                });
+            }
+        }
     }
 
     let response = DeleteMessageBatchResponse { successful, failed };
