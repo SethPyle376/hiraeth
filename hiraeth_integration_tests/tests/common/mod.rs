@@ -15,7 +15,6 @@ pub const TEST_SECRET_ACCESS_KEY: &str = "test";
 
 pub struct TestServer {
     endpoint_url: String,
-    addr: SocketAddr,
     _temp_dir: TempDir,
     task: JoinHandle<()>,
 }
@@ -25,16 +24,8 @@ impl TestServer {
         &self.endpoint_url
     }
 
-    pub fn addr(&self) -> SocketAddr {
-        self.addr
-    }
-
     pub async fn sdk_config(&self) -> SdkConfig {
         sdk_config(self.endpoint_url(), DEFAULT_REGION).await
-    }
-
-    pub async fn sdk_config_for_region(&self, region: &str) -> SdkConfig {
-        sdk_config(self.endpoint_url(), region).await
     }
 }
 
@@ -55,7 +46,6 @@ pub async fn start_test_server() -> anyhow::Result<TestServer> {
 
     Ok(TestServer {
         endpoint_url,
-        addr,
         _temp_dir: temp_dir,
         task,
     })
