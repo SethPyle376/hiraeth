@@ -2,7 +2,48 @@
 
 All notable changes to Hiraeth will be documented in this file.
 
-## 0.1.0 - Unreleased
+## 0.1.1 - 2026-04-16
+
+Maintenance release focused on the web admin UI, local demo data, and release
+workflow polish.
+
+### Added
+
+- `cargo run -p xtask -- seed` for seeding a running Hiraeth endpoint through
+  the AWS Rust SDK.
+- Seed data for standard queues, a FIFO queue, a dead-letter queue, queue tags,
+  message attributes, `AWSTraceHeader`, delayed messages, and an in-flight
+  message.
+- Web UI forms for creating standard and FIFO queues from the SQS dashboard and
+  queue browser.
+- Web UI queue actions for sending messages, purging queues, deleting queues,
+  deleting stored messages, and managing queue tags.
+- Auto-refreshing HTMX fragments for dashboard stats, queue lists, queue detail
+  stats, and message lists.
+- Dismissible success/error banners and inline validation feedback for web UI
+  actions.
+- Copy buttons for queue ARN and queue URL in the queue detail page.
+- `rust-toolchain.toml` pinning the workspace toolchain to Rust 1.95.0.
+- `scripts/publish-image.sh` for local multi-architecture GHCR image publishing.
+
+### Changed
+
+- Refined the web UI layout, landing copy, queue detail layout, message
+  attribute rendering, collapsible panels, and README screenshot.
+- Runtime now passes the configured AWS endpoint URL into the web UI so queue URL
+  rendering follows the running emulator configuration.
+- CI now uses the pinned Rust toolchain and runs an amd64 Docker build with image
+  size reporting instead of publishing images from GitHub Actions.
+- Docker builds now install musl targets through the pinned workspace toolchain,
+  which fixes target installation for static multi-architecture builds.
+- Docker Compose no longer declares the old named SQLite volume by default.
+- README container publishing instructions now describe local release publishing.
+
+### Fixed
+
+- Reworked message attribute sorting to satisfy the pinned clippy configuration.
+
+## 0.1.0 - 2026-04-15
 
 Initial preview release focused on local SQS emulation for integration tests.
 
@@ -36,9 +77,7 @@ Initial preview release focused on local SQS emulation for integration tests.
 - Request tracing and structured logging.
 - Web admin UI for inspecting SQS queues, messages, attributes, tags, receipt handles, and timing metadata.
 - Dockerfile and Docker Compose support.
-- `xtask` command for seeding local SQS queues and messages through the AWS SDK.
-- GitHub Actions CI for formatting, clippy, tests, and SQLx offline metadata checks.
-- Local release script for publishing multi-architecture GHCR images.
+- GitHub Actions CI for formatting, clippy, tests, SQLx offline metadata checks, and tagged multi-architecture GHCR image publishing.
 - README quickstart, API support matrix, known gaps, AI usage statement, and MIT license.
 
 ### Known Gaps
