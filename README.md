@@ -51,14 +51,16 @@ aws --endpoint-url http://localhost:4566 sqs receive-message \
   --message-attribute-names All
 ```
 
-Compose stores SQLite data in the named volume `hiraeth-data`.
+Compose writes SQLite data to `/data/db.sqlite` inside the container. Mount your
+own volume or bind mount at `/data` if you want data to survive container
+recreation.
 
 ## Container Image
 
 Release images are published to GitHub Container Registry:
 
 ```sh
-docker pull ghcr.io/sethpyle376/hiraeth:v0.1.0
+docker pull ghcr.io/sethpyle376/hiraeth:v0.1.1
 ```
 
 Release maintainers can publish a multi-architecture image for `linux/amd64`
@@ -66,7 +68,7 @@ and `linux/arm64` from a local Docker Buildx environment:
 
 ```sh
 docker login ghcr.io
-scripts/publish-image.sh v0.1.0
+scripts/publish-image.sh v0.1.1
 ```
 
 The publish script pushes `ghcr.io/sethpyle376/hiraeth:<tag>`. Tags must match
@@ -159,6 +161,12 @@ Most runtime code has been written by hand, most test code has been generated.
 Regardless, all changes are reviewed, edited, and accepted by a human maintainer,
 and the project relies on normal engineering checks such as tests, SQLx query
 checking, and manual review rather than treating AI output as authoritative.
+
+## Contributing
+
+Compatibility reports, focused bug fixes, docs improvements, and small SQS
+parity improvements are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+development workflow, suggested issue labels, and starter contribution ideas.
 
 ## License
 

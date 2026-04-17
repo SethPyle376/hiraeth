@@ -1,0 +1,35 @@
+- name: good first issue
+  color: "7057ff"
+  description: Small, well-scoped work for new contributors.
+
+- name: aws-parity
+  color: "d4c5f9"
+  description: Behavior differs from AWS or needs compatibility validation.
+
+- name: sqs
+  color: "f9d0c4"
+  description: SQS API, storage, validation, or response behavior.
+
+- name: iam
+  color: "c5def5"
+  description: Authorization, principal, policy, and identity work.
+
+- name: web-ui
+  color: "bfdadc"
+  description: Admin/debug UI work.
+
+- name: tests
+  color: "0e8a16"
+  description: Unit or integration test coverage.
+
+- name: docs
+  color: "0075ca"
+  description: README, examples, release notes, or contributor documentation.
+
+- name: bug
+  color: "d73a4a"
+  description: Incorrect behavior or client-visible failure.
+
+- name: enhancement
+  color: "a2eeef"
+  description: Additive functionality or ergonomics improvement.
