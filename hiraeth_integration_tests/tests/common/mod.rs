@@ -9,6 +9,9 @@ use tempfile::TempDir;
 use tokio::{net::TcpListener, task::JoinHandle};
 use uuid::Uuid;
 
+mod sqs;
+pub use sqs::*;
+
 pub const DEFAULT_REGION: &str = "us-east-1";
 pub const TEST_ACCESS_KEY_ID: &str = "test";
 pub const TEST_SECRET_ACCESS_KEY: &str = "test";
