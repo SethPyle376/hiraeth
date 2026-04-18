@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use aws_sdk_sqs::{
     Client,
     types::{
@@ -8,7 +9,6 @@ use aws_sdk_sqs::{
 
 use crate::common::{TestServer, start_test_server, unique_name};
 
-#[allow(dead_code)]
 pub struct SqsTestServer {
     pub server: TestServer,
     pub client: Client,
