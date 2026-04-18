@@ -1,11 +1,5 @@
 use anyhow::Context;
-use aws_sdk_sqs::{
-    Client,
-    types::{
-        MessageAttributeValue, QueueAttributeName, SendMessageBatchRequestEntry,
-        builders::SendMessageBatchRequestEntryBuilder,
-    },
-};
+use aws_sdk_sqs::types::QueueAttributeName;
 
 mod common;
 

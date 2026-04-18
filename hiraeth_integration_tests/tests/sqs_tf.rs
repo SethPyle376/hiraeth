@@ -1,4 +1,4 @@
-use aws_sdk_sqs::{Client, types::QueueAttributeName};
+use aws_sdk_sqs::types::QueueAttributeName;
 use serde_json::json;
 use terraform_wrapper::{
     Terraform, TerraformCommand,
