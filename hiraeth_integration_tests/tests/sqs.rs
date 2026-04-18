@@ -9,38 +9,9 @@ use aws_sdk_sqs::{
 
 mod common;
 
-struct SqsTestServer {
-    _server: common::TestServer,
-    client: Client,
-}
+use common::{queue_name, sqs_test_server, string_attribute};
 
-async fn sqs_test_server() -> anyhow::Result<SqsTestServer> {
-    let server = common::start_test_server().await?;
-    let sdk_config = server.sdk_config().await;
-
-    Ok(SqsTestServer {
-        client: Client::new(&sdk_config),
-        _server: server,
-    })
-}
-
-fn queue_name(prefix: &str) -> String {
-    common::unique_name(prefix)
-}
-
-fn string_attribute(value: &str) -> MessageAttributeValue {
-    MessageAttributeValue::builder()
-        .data_type("String")
-        .string_value(value)
-        .build()
-        .expect("message attribute value should build")
-}
-
-fn batch_entry(id: &str, body: &str) -> SendMessageBatchRequestEntryBuilder {
-    SendMessageBatchRequestEntry::builder()
-        .id(id)
-        .message_body(body)
-}
+use crate::common::batch_entry;
 
 #[tokio::test]
 async fn create_queue_then_get_queue_url() -> anyhow::Result<()> {
