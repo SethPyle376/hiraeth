@@ -7,3 +7,9 @@ edition = "2024"
 async-trait = "0.1"
 hiraeth_auth = { path = "../hiraeth_auth" }
 hiraeth_core = { path = "../hiraeth_core" }
+
+[dev-dependencies]
+chrono = "0.4"
+hiraeth_http = { path = "../hiraeth_http" }
+hiraeth_store = { path = "../hiraeth_store" }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }

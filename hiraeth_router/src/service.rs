@@ -8,7 +8,7 @@ use crate::ServiceResponse;
 pub trait Service {
     fn can_handle(&self, request: &ResolvedRequest) -> bool;
     async fn handle_request(&self, request: ResolvedRequest) -> Result<ServiceResponse, ApiError>;
-    async fn auth_request(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
     ) -> Result<AuthorizationCheck, ServiceResponse>;

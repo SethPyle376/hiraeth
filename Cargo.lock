@@ -1333,8 +1333,12 @@ name = "hiraeth_router"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "hiraeth_auth",
  "hiraeth_core",
+ "hiraeth_http",
+ "hiraeth_store",
+ "tokio",
 ]
 
 [[package]]

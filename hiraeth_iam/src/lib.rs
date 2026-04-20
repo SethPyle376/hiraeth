@@ -41,11 +41,10 @@ where
         todo!()
     }
 
-    async fn auth_request(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         todo!()
     }
 }
-

@@ -79,7 +79,7 @@ where
         result.map(render_result)
     }
 
-    async fn auth_request(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auth_request_returns_action_and_resource_for_queue_action() {
+    async fn resolve_authorization_returns_action_and_resource_for_queue_action() {
         let service = SqsService::new(SqsTestStore::with_queue(SqsQueue {
             id: 1,
             name: "existing-queue".to_string(),
@@ -320,7 +320,7 @@ mod tests {
         );
 
         let check = service
-            .auth_request(&request)
+            .resolve_authorization(&request)
             .await
             .expect("auth check should resolve queue context");
 
@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auth_request_renders_sqs_error_response_for_queue_lookup_failure() {
+    async fn resolve_authorization_renders_sqs_error_response_for_queue_lookup_failure() {
         let service = SqsService::new(SqsTestStore::default());
         let request = resolved_request(
             Some("AmazonSQS.SendMessage"),
@@ -344,7 +344,7 @@ mod tests {
         );
 
         let response = service
-            .auth_request(&request)
+            .resolve_authorization(&request)
             .await
             .expect_err("queue lookup failures should render as SQS responses");
 
