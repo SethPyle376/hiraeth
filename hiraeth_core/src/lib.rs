@@ -1,6 +1,8 @@
+mod auth;
 mod config;
 mod protocol;
 
+pub use auth::Policy;
 pub use config::Config;
 pub use protocol::{
     AwsErrorFault, AwsServiceError, RequestBodyParseError, ResponseSerializationError,
