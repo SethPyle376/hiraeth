@@ -10,6 +10,15 @@ pub struct Policy {
     statement: Vec<PolicyStatement>,
 }
 
+impl Default for Policy {
+    fn default() -> Self {
+        Self {
+            version: "2012-10-17".to_string(),
+            statement: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 struct PolicyStatement {

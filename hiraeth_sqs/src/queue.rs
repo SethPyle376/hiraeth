@@ -149,9 +149,9 @@ pub(crate) async fn delete_queue<S: SqsStore>(
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct GetQueueUrlRequest {
-    queue_name: String,
-    queue_owner_aws_account_id: Option<String>,
+pub(crate) struct GetQueueUrlRequest {
+    pub queue_name: String,
+    pub queue_owner_aws_account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

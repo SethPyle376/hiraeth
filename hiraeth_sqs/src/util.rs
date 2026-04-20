@@ -181,6 +181,13 @@ fn append_length_prefixed_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) {
     buffer.extend_from_slice(bytes);
 }
 
+pub(crate) fn get_queue_arn(queue: &SqsQueue) -> String {
+    format!(
+        "arn:aws:sqs:{}:{}:{}",
+        queue.region, queue.account_id, queue.name
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, HashMap};

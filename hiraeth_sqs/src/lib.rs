@@ -5,10 +5,11 @@ use crate::{
 };
 use async_trait::async_trait;
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_core::{ApiError, ServiceResponse, render_result};
+use hiraeth_core::{ApiError, AuthorizationCheck, Policy, ServiceResponse, render_result};
 use hiraeth_router::Service;
 use hiraeth_store::sqs::SqsStore;
 
+mod auth;
 mod change_message_visibility;
 mod delete_message;
 mod error;
@@ -73,8 +74,34 @@ where
                 "Missing x-amz-target header".to_string(),
             )),
         };
-
         result.map(render_result)
+    }
+
+    async fn auth_request(
+        &self,
+        request: &ResolvedRequest,
+    ) -> Result<AuthorizationCheck, ServiceResponse> {
+        let action = auth::get_action_for_request(request).map_err(ServiceResponse::from)?;
+        let relevant_queue = auth::get_relevant_queue_for_action(&action, request, &self.store)
+            .await
+            .map_err(ServiceResponse::from)?;
+
+        let resource = relevant_queue
+            .as_ref()
+            .map(util::get_queue_arn)
+            .unwrap_or_else(|| "*".to_string());
+
+        let policy = relevant_queue
+            .map(|queue| queue.policy.clone())
+            .map(|policy| {
+                serde_json::from_str::<Policy>(&policy).unwrap_or_else(|_| Policy::default())
+            });
+
+        Ok(AuthorizationCheck {
+            action,
+            resource,
+            resource_policy: policy,
+        })
     }
 }
 
@@ -271,6 +298,67 @@ mod tests {
             parse_json_body(&response)["QueueUrl"],
             "http://sqs.us-east-1.amazonaws.com/123456789012/existing-queue"
         );
+    }
+
+    #[tokio::test]
+    async fn auth_request_returns_action_and_resource_for_queue_action() {
+        let service = SqsService::new(SqsTestStore::with_queue(SqsQueue {
+            id: 1,
+            name: "existing-queue".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "123456789012".to_string(),
+            ..Default::default()
+        }));
+        let request = resolved_request(
+            Some("AmazonSQS.SendMessage"),
+            r#"{
+                "QueueUrl":"http://sqs.us-east-1.amazonaws.com/123456789012/existing-queue",
+                "MessageBody":"hello"
+            }"#,
+        );
+
+        let check = service
+            .auth_request(&request)
+            .await
+            .expect("auth check should resolve queue context");
+
+        assert_eq!(check.action, "sqs:SendMessage");
+        assert_eq!(
+            check.resource,
+            "arn:aws:sqs:us-east-1:123456789012:existing-queue"
+        );
+        assert!(check.resource_policy.is_some());
+    }
+
+    #[tokio::test]
+    async fn auth_request_renders_sqs_error_response_for_queue_lookup_failure() {
+        let service = SqsService::new(SqsTestStore::default());
+        let request = resolved_request(
+            Some("AmazonSQS.SendMessage"),
+            r#"{
+                "QueueUrl":"http://sqs.us-east-1.amazonaws.com/123456789012/missing-queue",
+                "MessageBody":"hello"
+            }"#,
+        );
+
+        let response = service
+            .auth_request(&request)
+            .await
+            .expect_err("queue lookup failures should render as SQS responses");
+
+        assert_eq!(response.status_code, 400);
+        assert_eq!(
+            response
+                .headers
+                .iter()
+                .find(|(name, _)| name == "x-amzn-query-error")
+                .map(|(_, value)| value.as_str()),
+            Some("AWS.SimpleQueueService.NonExistentQueue;Sender")
+        );
+
+        let body = parse_json_body(&response);
+        assert_eq!(body["__type"], "com.amazonaws.sqs#QueueDoesNotExist");
+        assert_eq!(body["message"], "The specified queue does not exist.");
     }
 
     #[tokio::test]

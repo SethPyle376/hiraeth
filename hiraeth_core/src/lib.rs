@@ -2,6 +2,7 @@ mod auth;
 mod config;
 mod protocol;
 
+pub use auth::AuthorizationCheck;
 pub use auth::Policy;
 pub use config::Config;
 pub use protocol::{
