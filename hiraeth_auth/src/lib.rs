@@ -6,11 +6,7 @@ use hiraeth_store::{
     principal::{Principal, PrincipalStore},
 };
 
-mod authorizer;
 mod sig_v4;
-
-pub use authorizer::AuthorizationResult;
-pub use authorizer::Authorizer;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthError {

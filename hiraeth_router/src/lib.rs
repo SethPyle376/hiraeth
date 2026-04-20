@@ -1,6 +1,8 @@
+mod authorizer;
 mod service;
 
-use hiraeth_auth::{AuthorizationResult, Authorizer, ResolvedRequest};
+pub use authorizer::{AuthorizationResult, Authorizer};
+use hiraeth_auth::ResolvedRequest;
 use hiraeth_core::ApiError;
 pub use hiraeth_core::ServiceResponse;
 pub use service::Service;
@@ -47,11 +49,7 @@ impl ServiceRouter {
             Err(response) => return Ok(response),
         };
 
-        let Some(principal) = self.authorizer.get_principal(&request).await else {
-            return Ok(self.authorizer.unauthorized_response());
-        };
-
-        let auth_result = self.authorizer.authorize_request(&check, &principal).await;
+        let auth_result = self.authorizer.authorize(&request, &check).await;
 
         match auth_result {
             AuthorizationResult::Allow => service.handle_request(request).await,
@@ -70,15 +68,12 @@ mod tests {
 
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, AuthorizationResult, Authorizer, ResolvedRequest};
-    use hiraeth_core::{
-        ApiError, ServiceResponse,
-        auth::{AuthorizationCheck, PolicyPrincipal},
-    };
+    use hiraeth_auth::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{ApiError, ServiceResponse, auth::AuthorizationCheck};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::principal::Principal;
 
-    use super::{Service, ServiceRouter};
+    use super::{AuthorizationResult, Authorizer, Service, ServiceRouter};
 
     fn resolved_request() -> ResolvedRequest {
         ResolvedRequest {
@@ -167,20 +162,18 @@ mod tests {
         }
     }
 
-    struct MissingPrincipalAuthorizer;
+    struct TestAuthorizer {
+        result: AuthorizationResult,
+    }
 
     #[async_trait]
-    impl Authorizer for MissingPrincipalAuthorizer {
-        async fn get_principal(&self, _request: &ResolvedRequest) -> Option<PolicyPrincipal> {
-            None
-        }
-
-        async fn authorize_request(
+    impl Authorizer for TestAuthorizer {
+        async fn authorize(
             &self,
+            _request: &ResolvedRequest,
             _check: &AuthorizationCheck,
-            _principal: &PolicyPrincipal,
         ) -> AuthorizationResult {
-            panic!("authorization should not run without a principal");
+            self.result
         }
 
         fn unauthorized_response(&self) -> ServiceResponse {
@@ -194,7 +187,9 @@ mod tests {
 
     #[tokio::test]
     async fn route_returns_service_response_when_authorization_resolution_fails() {
-        let mut router = ServiceRouter::new(Box::new(MissingPrincipalAuthorizer));
+        let mut router = ServiceRouter::new(Box::new(TestAuthorizer {
+            result: AuthorizationResult::Deny,
+        }));
         router.register_service(Box::new(AuthorizationErrorService));
 
         let response = router
@@ -206,8 +201,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn route_returns_unauthorized_response_when_principal_cannot_be_resolved() {
-        let mut router = ServiceRouter::new(Box::new(MissingPrincipalAuthorizer));
+    async fn route_returns_unauthorized_response_when_authorization_denies() {
+        let mut router = ServiceRouter::new(Box::new(TestAuthorizer {
+            result: AuthorizationResult::Deny,
+        }));
         router.register_service(Box::new(AuthorizedService));
 
         let response = router
@@ -216,5 +213,20 @@ mod tests {
             .expect("router should return unauthorized response");
 
         assert_eq!(response.status_code, 403);
+    }
+
+    #[tokio::test]
+    async fn route_executes_service_when_authorization_allows() {
+        let mut router = ServiceRouter::new(Box::new(TestAuthorizer {
+            result: AuthorizationResult::Allow,
+        }));
+        router.register_service(Box::new(AuthorizedService));
+
+        let response = router
+            .route(resolved_request())
+            .await
+            .expect("router should execute authorized service");
+
+        assert_eq!(response.status_code, 200);
     }
 }
