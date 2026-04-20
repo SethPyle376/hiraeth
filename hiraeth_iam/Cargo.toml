@@ -1,0 +1,13 @@
+[package]
+name = "hiraeth_iam"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1"
+hiraeth_auth = { path = "../hiraeth_auth" }
+hiraeth_core = { path = "../hiraeth_core" }
+hiraeth_router = { path = "../hiraeth_router" }
+hiraeth_store = { path = "../hiraeth_store" }
+tracing = "0.1"
+

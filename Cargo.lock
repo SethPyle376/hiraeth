@@ -1268,6 +1268,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 name = "hiraeth_auth"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "hex 0.3.2",
  "hiraeth_core",
@@ -1283,6 +1284,7 @@ dependencies = [
 name = "hiraeth_core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "serde",
  "serde_json",
 ]
@@ -1294,6 +1296,18 @@ dependencies = [
  "http 1.4.0",
  "http-body-util",
  "hyper 1.8.1",
+]
+
+[[package]]
+name = "hiraeth_iam"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hiraeth_auth",
+ "hiraeth_core",
+ "hiraeth_router",
+ "hiraeth_store",
+ "tracing",
 ]
 
 [[package]]
@@ -1332,6 +1346,7 @@ dependencies = [
  "hiraeth_auth",
  "hiraeth_core",
  "hiraeth_http",
+ "hiraeth_iam",
  "hiraeth_router",
  "hiraeth_sqs",
  "hiraeth_store",

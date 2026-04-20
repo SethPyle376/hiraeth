@@ -3,7 +3,7 @@ use serde::{Deserialize, Deserializer, Serialize, de::Error};
 use crate::auth::util::OneOrMany;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum PolicyPrincipal {
+pub enum PolicyPrincipal {
     Any,
     Account(String),
     User {

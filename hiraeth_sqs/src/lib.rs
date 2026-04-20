@@ -5,7 +5,9 @@ use crate::{
 };
 use async_trait::async_trait;
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_core::{ApiError, AuthorizationCheck, Policy, ServiceResponse, render_result};
+use hiraeth_core::{
+    ApiError, ServiceResponse, auth::AuthorizationCheck, auth::Policy, render_result,
+};
 use hiraeth_router::Service;
 use hiraeth_store::sqs::SqsStore;
 

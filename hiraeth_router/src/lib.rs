@@ -1,6 +1,6 @@
 mod service;
 
-use hiraeth_auth::ResolvedRequest;
+use hiraeth_auth::{AuthorizationResult, Authorizer, ResolvedRequest};
 use hiraeth_core::ApiError;
 pub use hiraeth_core::ServiceResponse;
 pub use service::Service;
@@ -20,9 +20,18 @@ impl From<ServiceRouterError> for ApiError {
     }
 }
 
-#[derive(Default)]
 pub struct ServiceRouter {
+    authorizer: Box<dyn Authorizer + Send + Sync>,
     services: Vec<Box<dyn Service + Send + Sync>>,
+}
+
+impl ServiceRouter {
+    pub fn new(authorizer: Box<dyn Authorizer + Send + Sync>) -> Self {
+        Self {
+            authorizer,
+            services: Vec::new(),
+        }
+    }
 }
 
 impl ServiceRouter {
@@ -33,7 +42,19 @@ impl ServiceRouter {
             .find(|s| s.can_handle(&request))
             .ok_or(ApiError::from(ServiceRouterError::NoServiceFound))?;
 
-        service.handle_request(request).await
+        let auth_check = service.auth_request(&request).await;
+        if auth_check.is_err() {
+            return Ok(auth_check.err().unwrap());
+        }
+
+        let check = auth_check.unwrap();
+        let principal = self.authorizer.get_principal(&request).await.unwrap();
+        let auth_result = self.authorizer.authorize_request(&check, &principal).await;
+
+        match auth_result {
+            AuthorizationResult::Allow => service.handle_request(request).await,
+            AuthorizationResult::Deny => Ok(self.authorizer.unauthorized_response()),
+        }
     }
 
     pub fn register_service(&mut self, service: Box<dyn Service + Send + Sync>) {

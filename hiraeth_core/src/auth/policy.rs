@@ -6,8 +6,8 @@ use crate::auth::util::deserialize_one_or_many;
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub struct Policy {
-    version: String,
-    statement: Vec<PolicyStatement>,
+    pub version: String,
+    pub statement: Vec<PolicyStatement>,
 }
 
 impl Default for Policy {
@@ -21,14 +21,14 @@ impl Default for Policy {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
-struct PolicyStatement {
-    effect: String,
+pub struct PolicyStatement {
+    pub effect: String,
     #[serde(deserialize_with = "deserialize_one_or_many")]
-    action: Vec<String>,
+    pub action: Vec<String>,
     #[serde(deserialize_with = "deserialize_one_or_many")]
-    resource: Vec<String>,
+    pub resource: Vec<String>,
     #[serde(deserialize_with = "deserialize_principals")]
-    principal: Vec<PolicyPrincipal>,
+    pub principal: Vec<PolicyPrincipal>,
 }
 
 #[cfg(test)]
