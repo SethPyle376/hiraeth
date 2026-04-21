@@ -3,12 +3,14 @@ use hiraeth_store::IamStore;
 
 #[derive(Clone)]
 pub struct SqliteIamStore {
-    pool: sqlx::SqlitePool,
+    _pool: sqlx::SqlitePool,
 }
 
 impl SqliteIamStore {
     pub fn new(pool: &sqlx::SqlitePool) -> Self {
-        Self { pool: pool.clone() }
+        Self {
+            _pool: pool.clone(),
+        }
     }
 }
 

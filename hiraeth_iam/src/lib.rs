@@ -16,12 +16,15 @@ pub enum AuthorizationMode {
 #[derive(Debug, Clone)]
 pub struct IamService<S: IamStore> {
     mode: AuthorizationMode,
-    store: S,
+    _store: S,
 }
 
 impl<S: IamStore> IamService<S> {
     pub fn new(mode: AuthorizationMode, store: S) -> Self {
-        Self { mode, store }
+        Self {
+            mode,
+            _store: store,
+        }
     }
 }
 
@@ -40,20 +43,20 @@ impl<S> Service for IamService<S>
 where
     S: IamStore + Send + Sync,
 {
-    fn can_handle(&self, request: &ResolvedRequest) -> bool {
+    fn can_handle(&self, _request: &ResolvedRequest) -> bool {
         false
     }
 
     async fn handle_request(
         &self,
-        request: ResolvedRequest,
+        _request: ResolvedRequest,
     ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
         todo!()
     }
 
     async fn resolve_authorization(
         &self,
-        request: &ResolvedRequest,
+        _request: &ResolvedRequest,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         todo!()
     }
