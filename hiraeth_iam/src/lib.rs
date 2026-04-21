@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use hiraeth_auth::ResolvedRequest;
-use hiraeth_core::{ServiceResponse, auth::AuthorizationCheck};
+use hiraeth_core::{AuthMode, ServiceResponse, auth::AuthorizationCheck};
 use hiraeth_router::Service;
 use hiraeth_store::IamStore;
 
@@ -22,6 +22,16 @@ pub struct IamService<S: IamStore> {
 impl<S: IamStore> IamService<S> {
     pub fn new(mode: AuthorizationMode, store: S) -> Self {
         Self { mode, store }
+    }
+}
+
+impl From<AuthMode> for AuthorizationMode {
+    fn from(value: AuthMode) -> Self {
+        match value {
+            AuthMode::Enforce => AuthorizationMode::Enforce,
+            AuthMode::Audit => AuthorizationMode::Audit,
+            AuthMode::Off => AuthorizationMode::Off,
+        }
     }
 }
 

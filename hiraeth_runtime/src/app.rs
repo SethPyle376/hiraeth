@@ -13,7 +13,11 @@ pub struct App {
 
 impl App {
     pub fn new(store: SqlxStore) -> Self {
-        let iam = IamService::new(AuthorizationMode::Audit, store.iam_store.clone());
+        Self::with_auth_mode(store, AuthorizationMode::Audit)
+    }
+
+    pub fn with_auth_mode(store: SqlxStore, auth_mode: AuthorizationMode) -> Self {
+        let iam = IamService::new(auth_mode, store.iam_store.clone());
         let mut router = ServiceRouter::new(Box::new(iam.clone()));
         router.register_service(Box::new(iam));
         router.register_service(Box::new(SqsService::new(store.sqs_store.clone())));
