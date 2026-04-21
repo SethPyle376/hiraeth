@@ -1,7 +1,8 @@
+pub mod auth;
 mod config;
 mod protocol;
 
-pub use config::Config;
+pub use config::{AuthMode, Config};
 pub use protocol::{
     AwsErrorFault, AwsServiceError, RequestBodyParseError, ResponseSerializationError,
     ServiceResponse, aws_batch_error_details, empty_response, json_body, json_response,

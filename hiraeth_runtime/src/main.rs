@@ -1,5 +1,6 @@
 use std::{net::IpAddr, str::FromStr};
 
+use hiraeth_iam::AuthorizationMode;
 use hiraeth_runtime::{app::App, serve};
 use hiraeth_store_sqlx::SqlxStore;
 use tracing_subscriber::{EnvFilter, fmt};
@@ -15,7 +16,10 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(config = ?config, "starting Hiraeth");
 
     let store = SqlxStore::new(&config.database_url).await?;
-    let app = std::sync::Arc::new(App::new(store.clone()));
+    let app = std::sync::Arc::new(App::with_auth_mode(
+        store.clone(),
+        AuthorizationMode::from(config.auth_mode.clone()),
+    ));
     let aws_addr = (IpAddr::from_str(&config.host)?, config.port).into();
     let aws_endpoint_url = aws_endpoint_url(&config);
 
@@ -55,8 +59,9 @@ fn aws_endpoint_url(config: &hiraeth_core::Config) -> String {
 }
 
 fn init_tracing() {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("hiraeth_runtime=info,hiraeth_web=info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("hiraeth_runtime=info,hiraeth_web=info,hiraeth_iam=info")
+    });
 
     fmt().with_env_filter(env_filter).init();
 }

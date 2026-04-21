@@ -3,6 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use anyhow::Context;
 use aws_config::{BehaviorVersion, Region, SdkConfig};
 use aws_credential_types::Credentials;
+use hiraeth_iam::AuthorizationMode;
 use hiraeth_runtime::{app::App, serve};
 use hiraeth_store_sqlx::SqlxStore;
 use tempfile::TempDir;
@@ -18,6 +19,7 @@ pub const TEST_SECRET_ACCESS_KEY: &str = "test";
 
 pub struct TestServer {
     endpoint_url: String,
+    _db_url: String,
     _temp_dir: TempDir,
     task: JoinHandle<()>,
 }
@@ -25,6 +27,11 @@ pub struct TestServer {
 impl TestServer {
     pub fn endpoint_url(&self) -> &str {
         &self.endpoint_url
+    }
+
+    #[allow(dead_code)]
+    pub fn db_url(&self) -> &str {
+        &self._db_url
     }
 
     pub async fn sdk_config(&self) -> SdkConfig {
@@ -39,9 +46,16 @@ impl Drop for TestServer {
 }
 
 pub async fn start_test_server() -> anyhow::Result<TestServer> {
+    start_test_server_with_auth_mode(AuthorizationMode::Audit).await
+}
+
+pub async fn start_test_server_with_auth_mode(
+    auth_mode: AuthorizationMode,
+) -> anyhow::Result<TestServer> {
     let temp_dir = TempDir::new().context("temp dir should be created")?;
+    let db_url = sqlite_url(&temp_dir);
     let store = create_store(&temp_dir).await?;
-    let app = create_app(store);
+    let app = create_app(store, auth_mode);
     let listener = bind_listener().await?;
     let addr = listener.local_addr().context("listener should have addr")?;
     let endpoint_url = endpoint_url(addr);
@@ -49,6 +63,7 @@ pub async fn start_test_server() -> anyhow::Result<TestServer> {
 
     Ok(TestServer {
         endpoint_url,
+        _db_url: db_url,
         _temp_dir: temp_dir,
         task,
     })
@@ -61,8 +76,8 @@ pub async fn create_store(temp_dir: &TempDir) -> anyhow::Result<SqlxStore> {
         .context("store should initialize")
 }
 
-pub fn create_app(store: SqlxStore) -> Arc<App> {
-    Arc::new(App::new(store))
+pub fn create_app(store: SqlxStore, auth_mode: AuthorizationMode) -> Arc<App> {
+    Arc::new(App::with_auth_mode(store, auth_mode))
 }
 
 pub async fn bind_listener() -> anyhow::Result<TcpListener> {

@@ -1,10 +1,14 @@
 use std::fmt::Display;
 
+mod iam;
+
 pub mod access_key_store;
 pub mod principal;
 pub mod sqs;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
+
+pub use iam::IamStore;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {

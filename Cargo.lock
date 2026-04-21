@@ -1283,8 +1283,10 @@ dependencies = [
 name = "hiraeth_core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "serde",
  "serde_json",
+ "wildmatch",
 ]
 
 [[package]]
@@ -1297,6 +1299,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "hiraeth_iam"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "hiraeth_auth",
+ "hiraeth_core",
+ "hiraeth_http",
+ "hiraeth_router",
+ "hiraeth_store",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "hiraeth_integration_tests"
 version = "0.1.0"
 dependencies = [
@@ -1304,7 +1322,9 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-sqs",
+ "hiraeth_iam",
  "hiraeth_runtime",
+ "hiraeth_store",
  "hiraeth_store_sqlx",
  "serde",
  "serde_json",
@@ -1319,8 +1339,12 @@ name = "hiraeth_router"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "hiraeth_auth",
  "hiraeth_core",
+ "hiraeth_http",
+ "hiraeth_store",
+ "tokio",
 ]
 
 [[package]]
@@ -1332,6 +1356,7 @@ dependencies = [
  "hiraeth_auth",
  "hiraeth_core",
  "hiraeth_http",
+ "hiraeth_iam",
  "hiraeth_router",
  "hiraeth_sqs",
  "hiraeth_store",
@@ -3467,6 +3492,12 @@ dependencies = [
  "libredox",
  "wasite",
 ]
+
+[[package]]
+name = "wildmatch"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29333c3ea1ba8b17211763463ff24ee84e41c78224c16b001cd907e663a38c68"
 
 [[package]]
 name = "windows-core"

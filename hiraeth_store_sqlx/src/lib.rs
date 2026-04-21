@@ -1,10 +1,12 @@
 use std::str::FromStr;
 
 mod access_key_store;
+mod iam;
 mod principal;
 mod sqs;
 
 pub use access_key_store::SqliteAccessKeyStore;
+pub use iam::SqliteIamStore;
 pub use sqs::SqliteSqsStore;
 
 use crate::principal::SqlitePrincipalStore;
@@ -31,6 +33,7 @@ pub struct SqlxStore {
     pub access_key_store: SqliteAccessKeyStore,
     pub principal_store: SqlitePrincipalStore,
     pub sqs_store: SqliteSqsStore,
+    pub iam_store: SqliteIamStore,
 }
 
 impl SqlxStore {
@@ -45,6 +48,7 @@ impl SqlxStore {
             access_key_store: SqliteAccessKeyStore::new(&pool),
             principal_store: SqlitePrincipalStore::new(&pool),
             sqs_store: SqliteSqsStore::new(&pool),
+            iam_store: SqliteIamStore::new(&pool),
         })
     }
 }

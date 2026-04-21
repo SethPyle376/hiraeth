@@ -2,6 +2,32 @@
 
 All notable changes to Hiraeth will be documented in this file.
 
+## 0.1.2 - 2026-04-20
+
+Resource-policy authorization slice for local SQS testing.
+
+### Added
+
+- Configurable authorization modes through `HIRAETH_AUTH_MODE`, defaulting to
+  `audit`.
+- Queue resource policy evaluation for SQS requests with wildcard support for
+  actions, resources, and principals.
+- Integration coverage for `enforce` mode using the AWS Rust SDK client against
+  a running Hiraeth endpoint.
+
+### Changed
+
+- README documentation now covers authorization modes, queue policy examples,
+  and the current limits of `enforce` mode.
+- SQS queue policies are no longer just persisted metadata; they are now used
+  during queue-scoped authorization checks.
+
+### Known Gaps
+
+- This slice is queue resource policy authorization, not full IAM parity.
+  Identity policies, conditions, and cross-policy evaluation are still future
+  work.
+
 ## 0.1.1 - 2026-04-16
 
 Maintenance release focused on the web admin UI, local demo data, and release
