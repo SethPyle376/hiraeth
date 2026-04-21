@@ -1,4 +1,5 @@
 use crate::auth::{Policy, policy::PolicyStatement, principal::PolicyPrincipal};
+use wildmatch::WildMatch;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PolicyEvalResult {
@@ -35,10 +36,18 @@ fn evaluate_statement(
     action: &str,
     statement: &PolicyStatement,
 ) -> PolicyEvalResult {
-    // TODO: implement support for wildcards and other matching patterns
-    let principal_matches = statement.principal.iter().any(|p| p == principal);
-    let action_matches = statement.action.iter().any(|a| a == action);
-    let resource_matches = statement.resource.iter().any(|r| r == resource);
+    let principal_matches = statement
+        .principal
+        .iter()
+        .any(|pattern| principal_matches_pattern(pattern, principal));
+    let action_matches = statement
+        .action
+        .iter()
+        .any(|pattern| wildcard_match(pattern, action));
+    let resource_matches = statement
+        .resource
+        .iter()
+        .any(|pattern| wildcard_match(pattern, resource));
 
     if principal_matches && action_matches && resource_matches {
         match statement.effect.as_str() {
@@ -49,6 +58,75 @@ fn evaluate_statement(
     } else {
         PolicyEvalResult::NotApplicable
     }
+}
+
+fn principal_matches_pattern(pattern: &PolicyPrincipal, principal: &PolicyPrincipal) -> bool {
+    match pattern {
+        PolicyPrincipal::Any => true,
+        PolicyPrincipal::Account(account_pattern) => principal_account_id(principal)
+            .is_some_and(|account_id| wildcard_match(account_pattern, account_id)),
+        PolicyPrincipal::User {
+            account_id,
+            user_name,
+        } => match principal {
+            PolicyPrincipal::User {
+                account_id: principal_account_id,
+                user_name: principal_user_name,
+            } => {
+                wildcard_match(account_id, principal_account_id)
+                    && wildcard_match(user_name, principal_user_name)
+            }
+            _ => false,
+        },
+        PolicyPrincipal::Role {
+            account_id,
+            role_name,
+        } => match principal {
+            PolicyPrincipal::Role {
+                account_id: principal_account_id,
+                role_name: principal_role_name,
+            } => {
+                wildcard_match(account_id, principal_account_id)
+                    && wildcard_match(role_name, principal_role_name)
+            }
+            _ => false,
+        },
+        PolicyPrincipal::AssumedRole {
+            account_id,
+            role_name,
+            session_name,
+        } => match principal {
+            PolicyPrincipal::AssumedRole {
+                account_id: principal_account_id,
+                role_name: principal_role_name,
+                session_name: principal_session_name,
+            } => {
+                wildcard_match(account_id, principal_account_id)
+                    && wildcard_match(role_name, principal_role_name)
+                    && wildcard_match(session_name, principal_session_name)
+            }
+            _ => false,
+        },
+        PolicyPrincipal::Service(service_pattern) => match principal {
+            PolicyPrincipal::Service(service_name) => wildcard_match(service_pattern, service_name),
+            _ => false,
+        },
+    }
+}
+
+fn principal_account_id(principal: &PolicyPrincipal) -> Option<&str> {
+    match principal {
+        PolicyPrincipal::Any => None,
+        PolicyPrincipal::Account(account_id)
+        | PolicyPrincipal::User { account_id, .. }
+        | PolicyPrincipal::Role { account_id, .. }
+        | PolicyPrincipal::AssumedRole { account_id, .. } => Some(account_id),
+        PolicyPrincipal::Service(_) => None,
+    }
+}
+
+fn wildcard_match(pattern: &str, value: &str) -> bool {
+    WildMatch::new(pattern).matches(value)
 }
 
 #[cfg(test)]
@@ -157,5 +235,313 @@ mod tests {
         );
 
         assert_eq!(result, PolicyEvalResult::NotApplicable);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_wildcard_action_pattern() {
+        let policy = policy(vec![statement(
+            "Allow",
+            "sqs:*",
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+        )]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:DeleteMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_single_character_action_pattern() {
+        let policy = policy(vec![statement(
+            "Allow",
+            "sqs:SendMessag?",
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+        )]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_multiple_wildcards_in_action_pattern() {
+        let policy = policy(vec![statement(
+            "Allow",
+            "sqs:*Mess*ge*",
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+        )]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_wildcard_resource_pattern() {
+        let policy = policy(vec![statement(
+            "Allow",
+            "sqs:SendMessage",
+            "arn:aws:sqs:us-east-1:123456789012:*",
+        )]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_single_character_resource_pattern() {
+        let policy = policy(vec![statement(
+            "Allow",
+            "sqs:SendMessage",
+            "arn:aws:sqs:us-east-1:123456789012:order?",
+        )]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_multiple_wildcards_in_resource_pattern() {
+        let policy = policy(vec![statement(
+            "Allow",
+            "sqs:SendMessage",
+            "arn:aws:sqs:*:1234*9012:*ord*",
+        )]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_wildcard_user_principal_pattern() {
+        let policy = policy(vec![PolicyStatement {
+            effect: "Allow".to_string(),
+            principal: vec![PolicyPrincipal::User {
+                account_id: "123456789012".to_string(),
+                user_name: "*".to_string(),
+            }],
+            action: vec!["sqs:SendMessage".to_string()],
+            resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
+        }]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_single_character_user_principal_pattern() {
+        let policy = policy(vec![PolicyStatement {
+            effect: "Allow".to_string(),
+            principal: vec![PolicyPrincipal::User {
+                account_id: "123456789012".to_string(),
+                user_name: "alic?".to_string(),
+            }],
+            action: vec!["sqs:SendMessage".to_string()],
+            resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
+        }]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_multiple_wildcards_in_user_principal_pattern() {
+        let policy = policy(vec![PolicyStatement {
+            effect: "Allow".to_string(),
+            principal: vec![PolicyPrincipal::User {
+                account_id: "1234*9012".to_string(),
+                user_name: "a*i?e".to_string(),
+            }],
+            action: vec!["sqs:SendMessage".to_string()],
+            resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
+        }]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_account_principal_against_user_in_same_account() {
+        let policy = policy(vec![PolicyStatement {
+            effect: "Allow".to_string(),
+            principal: vec![PolicyPrincipal::Account("123456789012".to_string())],
+            action: vec!["sqs:SendMessage".to_string()],
+            resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
+        }]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_single_character_account_principal_pattern() {
+        let policy = policy(vec![PolicyStatement {
+            effect: "Allow".to_string(),
+            principal: vec![PolicyPrincipal::Account("12345678901?".to_string())],
+            action: vec!["sqs:SendMessage".to_string()],
+            resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
+        }]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_any_principal_and_global_wildcards() {
+        let policy = policy(vec![PolicyStatement {
+            effect: "Allow".to_string(),
+            principal: vec![PolicyPrincipal::Any],
+            action: vec!["*".to_string()],
+            resource: vec!["*".to_string()],
+        }]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_service_principal_with_multiple_wildcards() {
+        let policy = policy(vec![PolicyStatement {
+            effect: "Allow".to_string(),
+            principal: vec![PolicyPrincipal::Service("s*.*amazonaws.com".to_string())],
+            action: vec!["sqs:SendMessage".to_string()],
+            resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
+        }]);
+
+        let result = evaluate_policy(
+            &PolicyPrincipal::Service("sns.amazonaws.com".to_string()),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_policy_denies_when_wildcard_deny_overrides_wildcard_allow() {
+        let policy = policy(vec![
+            PolicyStatement {
+                effect: "Allow".to_string(),
+                principal: vec![PolicyPrincipal::User {
+                    account_id: "123456789012".to_string(),
+                    user_name: "a*".to_string(),
+                }],
+                action: vec!["sqs:*".to_string()],
+                resource: vec!["arn:aws:sqs:us-east-1:123456789012:*".to_string()],
+            },
+            PolicyStatement {
+                effect: "Deny".to_string(),
+                principal: vec![PolicyPrincipal::User {
+                    account_id: "123456789012".to_string(),
+                    user_name: "*".to_string(),
+                }],
+                action: vec!["sqs:*Delete*".to_string()],
+                resource: vec!["arn:aws:sqs:*:123456789012:order*".to_string()],
+            },
+        ]);
+
+        let result = evaluate_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:DeleteMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Denied);
+    }
+
+    #[test]
+    fn evaluate_policy_matches_wildcard_pattern_across_slashes() {
+        let policy = policy(vec![PolicyStatement {
+            effect: "Allow".to_string(),
+            principal: vec![PolicyPrincipal::Role {
+                account_id: "123456789012".to_string(),
+                role_name: "service/*".to_string(),
+            }],
+            action: vec!["sqs:SendMessage".to_string()],
+            resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
+        }]);
+
+        let result = evaluate_policy(
+            &PolicyPrincipal::Role {
+                account_id: "123456789012".to_string(),
+                role_name: "service/team/app-worker".to_string(),
+            },
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
     }
 }

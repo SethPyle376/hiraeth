@@ -78,7 +78,7 @@ fn parse_principal(value: &str) -> Result<PolicyPrincipal, String> {
         return Ok(PolicyPrincipal::Any);
     }
 
-    if is_account_id(value) {
+    if is_account_id_pattern(value) {
         return Ok(PolicyPrincipal::Account(value.to_string()));
     }
 
@@ -87,7 +87,7 @@ fn parse_principal(value: &str) -> Result<PolicyPrincipal, String> {
     if parts.len() == 6 && parts[0] == "arn" {
         let (service, account_id, resource) = (parts[2], parts[4], parts[5]);
 
-        if !is_account_id(account_id) {
+        if !is_account_id_pattern(account_id) {
             return Err(format!("invalid account id in principal ARN: '{}'", value));
         }
 
@@ -144,8 +144,11 @@ fn parse_sts_principal(account_id: &str, resource: &str) -> Result<PolicyPrincip
     }
 }
 
-fn is_account_id(value: &str) -> bool {
-    value.len() == 12 && value.bytes().all(|byte| byte.is_ascii_digit())
+fn is_account_id_pattern(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'*' || byte == b'?')
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -280,6 +283,97 @@ mod tests {
         assert_eq!(
             principals,
             vec![PolicyPrincipal::Service("s3.amazonaws.com".to_string())]
+        );
+    }
+
+    #[test]
+    fn deserializes_wildcard_iam_user_principal() {
+        let principals = deserialize_principal(r#"{"AWS":"arn:aws:iam::*:user/*"}"#)
+            .expect("principal should deserialize");
+
+        assert_eq!(
+            principals,
+            vec![PolicyPrincipal::User {
+                account_id: "*".to_string(),
+                user_name: "*".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn deserializes_single_character_wildcard_iam_user_principal() {
+        let principals = deserialize_principal(r#"{"AWS":"arn:aws:iam::12345678901?:user/alic?"}"#)
+            .expect("principal should deserialize");
+
+        assert_eq!(
+            principals,
+            vec![PolicyPrincipal::User {
+                account_id: "12345678901?".to_string(),
+                user_name: "alic?".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn deserializes_wildcard_role_principal() {
+        let principals =
+            deserialize_principal(r#"{"AWS":"arn:aws:iam::123456789012:role/team-*"}"#)
+                .expect("principal should deserialize");
+
+        assert_eq!(
+            principals,
+            vec![PolicyPrincipal::Role {
+                account_id: "123456789012".to_string(),
+                role_name: "team-*".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn deserializes_single_character_wildcard_role_principal() {
+        let principals =
+            deserialize_principal(r#"{"AWS":"arn:aws:iam::12345678901?:role/team-?"}"#)
+                .expect("principal should deserialize");
+
+        assert_eq!(
+            principals,
+            vec![PolicyPrincipal::Role {
+                account_id: "12345678901?".to_string(),
+                role_name: "team-?".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn deserializes_wildcard_assumed_role_principal() {
+        let principals =
+            deserialize_principal(r#"{"AWS":"arn:aws:sts::123456789012:assumed-role/app/*"}"#)
+                .expect("principal should deserialize");
+
+        assert_eq!(
+            principals,
+            vec![PolicyPrincipal::AssumedRole {
+                account_id: "123456789012".to_string(),
+                role_name: "app".to_string(),
+                session_name: "*".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn deserializes_single_character_wildcard_assumed_role_principal() {
+        let principals = deserialize_principal(
+            r#"{"AWS":"arn:aws:sts::12345678901?:assumed-role/app?/session-?"}"#,
+        )
+        .expect("principal should deserialize");
+
+        assert_eq!(
+            principals,
+            vec![PolicyPrincipal::AssumedRole {
+                account_id: "12345678901?".to_string(),
+                role_name: "app?".to_string(),
+                session_name: "session-?".to_string(),
+            }]
         );
     }
 
