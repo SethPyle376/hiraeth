@@ -13,11 +13,18 @@ environments, not as a production AWS replacement.
 ## Current Scope
 
 - AWS SigV4 header authentication with a seeded local test credential.
+- SQS queue resource policy authorization with `audit`, `enforce`, and `off`
+  modes.
 - SQLite-backed principals, access keys, queues, messages, attributes, and tags.
 - SQS-compatible endpoint for common queue and message operations.
 - Web admin UI on a separate port for inspecting local emulator state.
 - Docker and Docker Compose support.
 - SQLx offline query metadata for checked SQL builds.
+
+## Documentation
+
+- [Service docs](docs/README.md)
+- [SQS](docs/sqs/README.md)
 
 ## Quickstart
 
@@ -38,18 +45,8 @@ export AWS_SECRET_ACCESS_KEY=test
 export AWS_DEFAULT_REGION=us-east-1
 ```
 
-Create and inspect a queue with the AWS CLI:
-
-```sh
-aws --endpoint-url http://localhost:4566 sqs create-queue --queue-name local-orders
-aws --endpoint-url http://localhost:4566 sqs list-queues
-aws --endpoint-url http://localhost:4566 sqs send-message \
-  --queue-url http://localhost:4566/000000000000/local-orders \
-  --message-body "hello from hiraeth"
-aws --endpoint-url http://localhost:4566 sqs receive-message \
-  --queue-url http://localhost:4566/000000000000/local-orders \
-  --message-attribute-names All
-```
+For SQS examples, queue policy docs, API support, and service-specific gaps, see
+[docs/sqs](docs/sqs/README.md).
 
 Compose writes SQLite data to `/data/db.sqlite` inside the container. Mount your
 own volume or bind mount at `/data` if you want data to survive container
@@ -88,6 +85,7 @@ Defaults:
 | AWS emulator host | `HIRAETH_HOST` | `0.0.0.0` |
 | AWS emulator port | `HIRAETH_PORT` | `4566` |
 | SQLite URL | `HIRAETH_DATABASE_URL` | `sqlite://data/db.sqlite` |
+| Authorization mode | `HIRAETH_AUTH_MODE` | `audit` |
 | Web UI enabled | `HIRAETH_WEB_ENABLED` | `true` |
 | Web UI host | `HIRAETH_WEB_HOST` | `127.0.0.1` |
 | Web UI port | `HIRAETH_WEB_PORT` | `4567` |
@@ -97,59 +95,14 @@ When running from source, prefer setting `HIRAETH_DATABASE_URL` to a path under
 
 ## Web UI
 
-The web UI is an admin/debug surface for local emulator state. It currently
-supports SQS queue browsing, queue details, message inspection, attributes, tags,
-purge, delete queue, and delete message.
+The web UI is an admin/debug surface for local emulator state. Current
+service-specific UI coverage is documented under [docs/sqs](docs/sqs/README.md).
 
 The web UI does not use SigV4 authentication. Keep `HIRAETH_WEB_HOST` bound to a
 trusted interface unless you intentionally want to expose local test state.
 
 The current UI uses CDN-hosted Tailwind, DaisyUI, and htmx assets. A fully
 self-contained/offline UI asset pipeline is still future work.
-
-## SQS API Support
-
-Status labels:
-
-- `Supported`: implemented and covered by unit and/or AWS SDK integration tests.
-- `Partial`: implemented, but known AWS edge behavior is incomplete.
-- `Not implemented`: requests currently return `UnsupportedOperation`.
-
-| API | Status | Notes |
-| --- | --- | --- |
-| `ChangeMessageVisibility` | Supported | Updates visibility timeout for a receipt handle. |
-| `ChangeMessageVisibilityBatch` | Supported | Returns per-entry success/failure records. |
-| `CreateQueue` | Partial | Supports attributes and tags. Queue validation exists, but AWS parity is not exhaustive. |
-| `DeleteMessage` | Supported | Deletes by queue URL and receipt handle. |
-| `DeleteMessageBatch` | Supported | Returns per-entry success/failure records. |
-| `DeleteQueue` | Supported | Deletes queue and cascades stored messages/tags. |
-| `GetQueueAttributes` | Supported | Supports the queue attributes modeled by Hiraeth. |
-| `GetQueueUrl` | Supported | Supports owner account override. |
-| `ListQueues` | Supported | Supports prefix, max results, and next token. |
-| `ListQueueTags` | Supported | Returns stored queue tags. |
-| `PurgeQueue` | Supported | Deletes stored messages for the queue. |
-| `ReceiveMessage` | Partial | Supports max messages, visibility timeout, wait time polling, message attributes, and `AWSTraceHeader`. FIFO ordering semantics are not complete. |
-| `SendMessage` | Partial | Supports body, delay, message attributes, system attributes, and FIFO metadata storage. Full FIFO deduplication semantics are not complete. |
-| `SendMessageBatch` | Partial | Supports per-entry success/failure shape and message attributes. Full FIFO semantics are not complete. |
-| `SetQueueAttributes` | Supported | Updates modeled queue attributes. Policy documents are stored, not enforced. |
-| `TagQueue` | Supported | Upserts queue tags and enforces basic tag limits. |
-| `UntagQueue` | Supported | Removes requested tag keys. |
-| `AddPermission` | Not implemented | Authorization/IAM work is planned. |
-| `CancelMessageMoveTask` | Not implemented | Redrive task APIs are out of scope for the first release. |
-| `ListDeadLetterSourceQueues` | Not implemented | Redrive behavior is not complete yet. |
-| `ListMessageMoveTasks` | Not implemented | Redrive task APIs are out of scope for the first release. |
-| `RemovePermission` | Not implemented | Authorization/IAM work is planned. |
-| `StartMessageMoveTask` | Not implemented | Redrive task APIs are out of scope for the first release. |
-
-## Known Gaps
-
-- IAM and queue policy enforcement are not implemented yet.
-- Error responses are SDK-compatible for common paths, but not exhaustively
-  identical to AWS.
-- Request validation is pragmatic and still needs a deeper AWS parity pass.
-- FIFO behavior stores FIFO fields, but does not yet fully model ordering,
-  deduplication windows, or throughput behavior.
-- The web UI is a local admin preview and is not authenticated.
 
 ## AI Usage
 

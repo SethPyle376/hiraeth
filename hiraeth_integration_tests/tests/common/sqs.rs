@@ -6,8 +6,9 @@ use aws_sdk_sqs::{
         builders::SendMessageBatchRequestEntryBuilder,
     },
 };
+use hiraeth_iam::AuthorizationMode;
 
-use crate::common::{TestServer, start_test_server, unique_name};
+use crate::common::{TestServer, start_test_server, start_test_server_with_auth_mode, unique_name};
 
 pub struct SqsTestServer {
     pub server: TestServer,
@@ -16,6 +17,18 @@ pub struct SqsTestServer {
 
 pub async fn sqs_test_server() -> anyhow::Result<SqsTestServer> {
     let server = start_test_server().await?;
+    let sdk_config = server.sdk_config().await;
+
+    Ok(SqsTestServer {
+        client: Client::new(&sdk_config),
+        server,
+    })
+}
+
+pub async fn sqs_test_server_with_auth_mode(
+    auth_mode: AuthorizationMode,
+) -> anyhow::Result<SqsTestServer> {
+    let server = start_test_server_with_auth_mode(auth_mode).await?;
     let sdk_config = server.sdk_config().await;
 
     Ok(SqsTestServer {
