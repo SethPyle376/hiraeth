@@ -19,7 +19,7 @@ pub const TEST_SECRET_ACCESS_KEY: &str = "test";
 
 pub struct TestServer {
     endpoint_url: String,
-    db_url: String,
+    _db_url: String,
     _temp_dir: TempDir,
     task: JoinHandle<()>,
 }
@@ -29,8 +29,9 @@ impl TestServer {
         &self.endpoint_url
     }
 
+    #[allow(dead_code)]
     pub fn db_url(&self) -> &str {
-        &self.db_url
+        &self._db_url
     }
 
     pub async fn sdk_config(&self) -> SdkConfig {
@@ -62,7 +63,7 @@ pub async fn start_test_server_with_auth_mode(
 
     Ok(TestServer {
         endpoint_url,
-        db_url,
+        _db_url: db_url,
         _temp_dir: temp_dir,
         task,
     })
