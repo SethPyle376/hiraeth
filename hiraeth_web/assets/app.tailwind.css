@@ -1,4 +1,9 @@
 @import "tailwindcss";
 
+@plugin "daisyui" {
+  themes: false;
+  include: svg, scrollbar, properties, rootscrolllock, rootscrollgutter, rootcolor, alert, badge, button, card, collapse, input, label, navbar, select, stat, table, textarea, join;
+}
+
 @source "../templates";
 @source "../src";

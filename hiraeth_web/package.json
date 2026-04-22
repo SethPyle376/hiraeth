@@ -2,10 +2,11 @@
   "name": "hiraeth-web-assets",
   "private": true,
   "scripts": {
-    "build:css": "tailwindcss -i ./assets/app.tailwind.css -o ./assets/app.css --minify",
+    "build:css": "tailwindcss -i ./assets/app.tailwind.css -o ./assets/app.generated.css --minify && cat ./assets/app.generated.css > ./assets/app.css && rm ./assets/app.generated.css",
     "watch:css": "tailwindcss -i ./assets/app.tailwind.css -o ./assets/app.css --watch"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "4.2.4"
+    "@tailwindcss/cli": "4.2.4",
+    "daisyui": "5.5.19"
   }
 }
