@@ -1,5 +1,5 @@
 CREATE TABLE iam_principal_inline_policies (
-  id INTEGER PRIMARY KEY,
+  id INTEGER PRIMARY KEY NOT NULL,
   principal_id INTEGER NOT NULL REFERENCES iam_principals(id) ON DELETE CASCADE,
   policy_name TEXT NOT NULL,
   policy_document TEXT NOT NULL,

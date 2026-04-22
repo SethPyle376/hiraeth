@@ -1,15 +1,22 @@
 mod access_key_store;
 mod principal;
+mod principal_inline_policy_store;
 
 pub use access_key_store::SqliteAccessKeyStore;
 pub use principal::SqlitePrincipalStore;
 
-use hiraeth_store::iam::{AccessKey, AccessKeyStore, Principal, PrincipalStore};
+use hiraeth_store::iam::{
+    AccessKey, AccessKeyStore, Principal, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
+    PrincipalStore,
+};
+
+use crate::iam::principal_inline_policy_store::SqlitePrincipalInlinePolicyStore;
 
 #[derive(Clone)]
 pub struct SqliteIamStore {
     pub access_key_store: SqliteAccessKeyStore,
     pub principal_store: SqlitePrincipalStore,
+    pub principal_inline_policy_store: SqlitePrincipalInlinePolicyStore,
     _pool: sqlx::SqlitePool,
 }
 
@@ -18,6 +25,7 @@ impl SqliteIamStore {
         Self {
             access_key_store: SqliteAccessKeyStore::new(pool),
             principal_store: SqlitePrincipalStore::new(pool),
+            principal_inline_policy_store: SqlitePrincipalInlinePolicyStore::new(pool),
             _pool: pool.clone(),
         }
     }
@@ -49,6 +57,17 @@ impl PrincipalStore for SqliteIamStore {
         principal_id: i64,
     ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
         self.principal_store.get_principal(principal_id).await
+    }
+}
+
+impl PrincipalInlinePolicyStore for SqliteIamStore {
+    async fn get_inline_policies_for_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<PrincipalInlinePolicy>, hiraeth_store::StoreError> {
+        self.principal_inline_policy_store
+            .get_inline_policies_for_principal(principal_id)
+            .await
     }
 }
 
