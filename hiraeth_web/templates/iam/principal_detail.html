@@ -37,7 +37,10 @@
         {% if has_inline_policies %}
         <div class="space-y-2">
           {% for policy in inline_policies %}
-          <details class="collapse collapse-arrow rounded border border-base-300 bg-base-200/35" {% if loop.first %}open{% endif %}>
+          <details class="collapse collapse-arrow rounded border border-base-300 bg-base-200/35"
+                   data-collapse-persist
+                   data-collapse-key="principal-{{ principal.id }}-inline-policy-{{ policy.policy_name }}"
+                   {% if loop.first %}open{% endif %}>
             <summary class="collapse-title min-h-0 px-4 py-3">
               <div class="min-w-0 pr-6">
                 <div class="truncate font-semibold text-base-content">{{ policy.policy_name }}</div>
@@ -66,7 +69,10 @@
     </section>
 
     <aside class="space-y-3">
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100" open>
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+               data-collapse-persist
+               data-collapse-key="principal-{{ principal.id }}-access-keys"
+               open>
         <summary class="collapse-title min-h-0 px-4 py-3">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -103,7 +109,9 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100">
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+               data-collapse-persist
+               data-collapse-key="principal-{{ principal.id }}-metadata">
         <summary class="collapse-title min-h-0 px-4 py-3">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>

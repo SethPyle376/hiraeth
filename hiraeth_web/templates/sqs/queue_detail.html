@@ -38,7 +38,10 @@
     {% include "sqs/fragments/message_list.html" %}
 
     <aside class="space-y-3">
-      <details class="collapse collapse-arrow border border-primary/30 bg-base-100"{% if has_send_error %} open{% endif %}>
+      <details class="collapse collapse-arrow border border-primary/30 bg-base-100"
+               data-collapse-persist
+               data-collapse-key="queue-{{ queue.id }}-send-message"
+               {% if has_send_error %}data-collapse-priority="server" open{% endif %}>
         <summary class="collapse-title min-h-0 px-4 py-3">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -93,7 +96,9 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100">
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+               data-collapse-persist
+               data-collapse-key="queue-{{ queue.id }}-metadata">
         <summary class="collapse-title min-h-0 px-4 py-3">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -125,7 +130,10 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100"{% if open_tags_panel %} open{% endif %}>
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+               data-collapse-persist
+               data-collapse-key="queue-{{ queue.id }}-tags"
+               {% if open_tags_panel %}data-collapse-priority="server" open{% endif %}>
         <summary class="collapse-title min-h-0 px-4 py-3">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -185,7 +193,9 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100">
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+               data-collapse-persist
+               data-collapse-key="queue-{{ queue.id }}-attributes">
         <summary class="collapse-title min-h-0 px-4 py-3">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>

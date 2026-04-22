@@ -82,3 +82,80 @@ function hiraethToggleSecret(button) {
   button.textContent = isVisible ? "Reveal" : "Hide";
   button.setAttribute("aria-pressed", isVisible ? "false" : "true");
 }
+
+function hiraethCollapseStorageKey(detail) {
+  const collapseKey = detail.dataset.collapseKey || detail.id;
+  if (!collapseKey) {
+    return null;
+  }
+
+  return `hiraeth:collapse:${window.location.pathname}:${collapseKey}`;
+}
+
+function hiraethReadStorage(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function hiraethWriteStorage(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (_error) {
+    // Ignore storage failures so the UI keeps working in private or restricted contexts.
+  }
+}
+
+function hiraethBindCollapsible(detail) {
+  if (detail.dataset.collapsePersistBound === "true") {
+    return;
+  }
+
+  const storageKey = hiraethCollapseStorageKey(detail);
+  if (!storageKey) {
+    return;
+  }
+
+  const priority = detail.dataset.collapsePriority || "saved";
+  const savedState = hiraethReadStorage(storageKey);
+
+  if (priority !== "server" && savedState !== null) {
+    detail.open = savedState === "open";
+  }
+
+  hiraethWriteStorage(storageKey, detail.open ? "open" : "closed");
+  detail.addEventListener("toggle", () => {
+    hiraethWriteStorage(storageKey, detail.open ? "open" : "closed");
+  });
+  detail.dataset.collapsePersistBound = "true";
+}
+
+function hiraethInitCollapsibles(root) {
+  if (!(root instanceof Element) && root !== document) {
+    return;
+  }
+
+  const details = [];
+  if (root instanceof Element && root.matches("details[data-collapse-persist]")) {
+    details.push(root);
+  }
+
+  details.push(...root.querySelectorAll("details[data-collapse-persist]"));
+  details.forEach(hiraethBindCollapsible);
+}
+
+function hiraethInitApp(root) {
+  hiraethInitCollapsibles(root);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => hiraethInitApp(document));
+} else {
+  hiraethInitApp(document);
+}
+
+document.addEventListener("htmx:afterSwap", (event) => {
+  hiraethInitApp(event.target);
+});
