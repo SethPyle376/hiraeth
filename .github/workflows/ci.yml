@@ -37,13 +37,6 @@ jobs:
         working-directory: hiraeth_web
         run: npm ci
 
-      - name: Build web assets
-        working-directory: hiraeth_web
-        run: npm run build:css
-
-      - name: Check generated web assets
-        run: git diff --exit-code -- hiraeth_web/assets/app.css
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:

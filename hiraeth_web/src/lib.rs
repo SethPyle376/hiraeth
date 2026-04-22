@@ -3,18 +3,18 @@ use std::net::SocketAddr;
 use askama::Template;
 use axum::{
     Router,
+    body::Body,
     extract::State,
-    http::header::{CACHE_CONTROL, HeaderValue},
-    response::Html,
-    routing::{get, get_service},
+    http::{
+        HeaderValue, Response,
+        header::{CACHE_CONTROL, CONTENT_TYPE},
+    },
+    response::{Html, IntoResponse},
+    routing::get,
 };
 use hiraeth_store_sqlx::{SqliteIamStore, SqliteSqsStore};
 use tokio::net::TcpListener;
-use tower_http::{
-    compression::CompressionLayer,
-    services::{ServeDir, ServeFile},
-    set_header::SetResponseHeaderLayer,
-};
+use tower_http::compression::CompressionLayer;
 
 mod components;
 mod error;
@@ -24,10 +24,14 @@ mod templates;
 
 use crate::{error::WebError, templates::HomeTemplate};
 
-const APP_JS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app.js");
-const APP_CSS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app.css");
-const FAVICON_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/favicon.svg");
-const VENDOR_ASSETS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/vendor");
+const APP_JS_BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app.js"));
+const APP_CSS_BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app.css"));
+const FAVICON_BYTES: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/favicon.svg"));
+const HTMX_BYTES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/vendor/htmx.min.js"
+));
 const APP_ASSET_CACHE_CONTROL: &str = "public, max-age=0, must-revalidate";
 const VENDOR_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
@@ -55,43 +59,11 @@ impl WebState {
 
 pub fn router(state: WebState) -> Router {
     let asset_router = Router::new()
-        .route_service(
-            "/assets/app.js",
-            get_service(ServeFile::new(APP_JS_PATH)).layer(SetResponseHeaderLayer::overriding(
-                CACHE_CONTROL,
-                HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
-            )),
-        )
-        .route_service(
-            "/assets/app.css",
-            get_service(ServeFile::new(APP_CSS_PATH)).layer(SetResponseHeaderLayer::overriding(
-                CACHE_CONTROL,
-                HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
-            )),
-        )
-        .route_service(
-            "/favicon.svg",
-            get_service(ServeFile::new(FAVICON_PATH)).layer(SetResponseHeaderLayer::overriding(
-                CACHE_CONTROL,
-                HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
-            )),
-        )
-        .route_service(
-            "/favicon.ico",
-            get_service(ServeFile::new(FAVICON_PATH)).layer(SetResponseHeaderLayer::overriding(
-                CACHE_CONTROL,
-                HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
-            )),
-        )
-        .nest_service(
-            "/assets/vendor",
-            get_service(ServeDir::new(VENDOR_ASSETS_DIR)).layer(
-                SetResponseHeaderLayer::overriding(
-                    CACHE_CONTROL,
-                    HeaderValue::from_static(VENDOR_ASSET_CACHE_CONTROL),
-                ),
-            ),
-        )
+        .route("/assets/app.js", get(app_js))
+        .route("/assets/app.css", get(app_css))
+        .route("/assets/vendor/htmx.min.js", get(htmx_js))
+        .route("/favicon.svg", get(favicon_svg))
+        .route("/favicon.ico", get(favicon_ico))
         .layer(CompressionLayer::new());
 
     Router::new()
@@ -110,4 +82,51 @@ pub async fn serve(addr: SocketAddr, state: WebState) -> anyhow::Result<()> {
 
 async fn home(State(_state): State<WebState>) -> Result<Html<String>, WebError> {
     Ok(Html(HomeTemplate.render()?))
+}
+
+async fn app_js() -> Response<Body> {
+    static_asset_response(
+        APP_JS_BYTES,
+        "application/javascript; charset=utf-8",
+        APP_ASSET_CACHE_CONTROL,
+    )
+}
+
+async fn app_css() -> Response<Body> {
+    static_asset_response(
+        APP_CSS_BYTES,
+        "text/css; charset=utf-8",
+        APP_ASSET_CACHE_CONTROL,
+    )
+}
+
+async fn htmx_js() -> Response<Body> {
+    static_asset_response(
+        HTMX_BYTES,
+        "application/javascript; charset=utf-8",
+        VENDOR_ASSET_CACHE_CONTROL,
+    )
+}
+
+async fn favicon_svg() -> Response<Body> {
+    static_asset_response(FAVICON_BYTES, "image/svg+xml", APP_ASSET_CACHE_CONTROL)
+}
+
+async fn favicon_ico() -> Response<Body> {
+    static_asset_response(FAVICON_BYTES, "image/svg+xml", APP_ASSET_CACHE_CONTROL)
+}
+
+fn static_asset_response(
+    bytes: &'static [u8],
+    content_type: &'static str,
+    cache_control: &'static str,
+) -> Response<Body> {
+    (
+        [
+            (CONTENT_TYPE, HeaderValue::from_static(content_type)),
+            (CACHE_CONTROL, HeaderValue::from_static(cache_control)),
+        ],
+        bytes,
+    )
+        .into_response()
 }
