@@ -19,6 +19,10 @@ target/
 # Misc logs
 *.log
 
+# Frontend dependencies
+node_modules/
+**/node_modules/
+
 .local/db.sqlite
 *.sqlite
 *.sqlite-shm

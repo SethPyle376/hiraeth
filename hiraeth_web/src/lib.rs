@@ -25,6 +25,7 @@ mod templates;
 use crate::{error::WebError, templates::HomeTemplate};
 
 const APP_JS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app.js");
+const APP_CSS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app.css");
 const VENDOR_ASSETS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/vendor");
 const APP_ASSET_CACHE_CONTROL: &str = "public, max-age=3600";
 const VENDOR_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
@@ -57,6 +58,13 @@ pub fn router(state: WebState) -> Router {
         .route_service(
             "/assets/app.js",
             get_service(ServeFile::new(APP_JS_PATH)).layer(SetResponseHeaderLayer::overriding(
+                CACHE_CONTROL,
+                HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
+            )),
+        )
+        .route_service(
+            "/assets/app.css",
+            get_service(ServeFile::new(APP_CSS_PATH)).layer(SetResponseHeaderLayer::overriding(
                 CACHE_CONTROL,
                 HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
             )),

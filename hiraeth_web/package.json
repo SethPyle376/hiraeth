@@ -1,0 +1,11 @@
+{
+  "name": "hiraeth-web-assets",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./assets/app.tailwind.css -o ./assets/app.css --minify",
+    "watch:css": "tailwindcss -i ./assets/app.tailwind.css -o ./assets/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.2.4"
+  }
+}
