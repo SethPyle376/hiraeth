@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use hiraeth_store::{
     StoreError,
     iam::{PrincipalInlinePolicy, PrincipalInlinePolicyStore},
@@ -14,6 +15,7 @@ impl SqlitePrincipalInlinePolicyStore {
     }
 }
 
+#[async_trait]
 impl PrincipalInlinePolicyStore for SqlitePrincipalInlinePolicyStore {
     async fn get_inline_policies_for_principal(
         &self,

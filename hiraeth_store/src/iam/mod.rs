@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 mod access_key_store;
 mod principal;
 mod principal_inline_policy_store;
@@ -65,6 +67,7 @@ impl PrincipalStore for InMemoryIamStore {
     }
 }
 
+#[async_trait]
 impl principal_inline_policy_store::PrincipalInlinePolicyStore for InMemoryIamStore {
     async fn get_inline_policies_for_principal(
         &self,

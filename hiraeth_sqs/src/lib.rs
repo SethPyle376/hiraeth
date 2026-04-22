@@ -91,7 +91,12 @@ where
         let resource = relevant_queue
             .as_ref()
             .map(util::get_queue_arn)
-            .unwrap_or_else(|| "*".to_string());
+            .unwrap_or_else(|| {
+                format!(
+                    "arn:aws:sqs:{}:{}:*",
+                    request.region, request.auth_context.principal.account_id
+                )
+            });
 
         let policy = relevant_queue
             .map(|queue| queue.policy.clone())
@@ -330,6 +335,24 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:existing-queue"
         );
         assert!(check.resource_policy.is_some());
+    }
+
+    #[tokio::test]
+    async fn resolve_authorization_returns_account_scoped_resource_for_create_queue() {
+        let service = SqsService::new(SqsTestStore::default());
+        let request = resolved_request(
+            Some("AmazonSQS.CreateQueue"),
+            r#"{"QueueName":"new-queue"}"#,
+        );
+
+        let check = service
+            .resolve_authorization(&request)
+            .await
+            .expect("auth check should resolve create queue context");
+
+        assert_eq!(check.action, "sqs:CreateQueue");
+        assert_eq!(check.resource, "arn:aws:sqs:us-east-1:123456789012:*");
+        assert!(check.resource_policy.is_none());
     }
 
     #[tokio::test]

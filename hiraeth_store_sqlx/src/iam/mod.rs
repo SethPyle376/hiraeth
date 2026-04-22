@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 mod access_key_store;
 mod principal;
 mod principal_inline_policy_store;
@@ -60,6 +62,7 @@ impl PrincipalStore for SqliteIamStore {
     }
 }
 
+#[async_trait]
 impl PrincipalInlinePolicyStore for SqliteIamStore {
     async fn get_inline_policies_for_principal(
         &self,

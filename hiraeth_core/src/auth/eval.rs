@@ -8,16 +8,54 @@ pub enum PolicyEvalResult {
     NotApplicable,
 }
 
-pub fn evaluate_policy(
+pub fn evaluate_resource_policy(
     principal: &PolicyPrincipal,
     resource: &str,
     action: &str,
     policy: &Policy,
 ) -> PolicyEvalResult {
+    evaluate_matching_statements(policy, |statement| {
+        let principal_matches = !statement.principal.is_empty()
+            && statement
+                .principal
+                .iter()
+                .any(|pattern| principal_matches_pattern(pattern, principal));
+        let action_matches = statement
+            .action
+            .iter()
+            .any(|pattern| wildcard_match(pattern, action));
+        let resource_matches = statement
+            .resource
+            .iter()
+            .any(|pattern| wildcard_match(pattern, resource));
+
+        principal_matches && action_matches && resource_matches
+    })
+}
+
+pub fn evaluate_identity_policy(resource: &str, action: &str, policy: &Policy) -> PolicyEvalResult {
+    evaluate_matching_statements(policy, |statement| {
+        let action_matches = statement
+            .action
+            .iter()
+            .any(|pattern| wildcard_match(pattern, action));
+        let resource_matches = statement
+            .resource
+            .iter()
+            .any(|pattern| wildcard_match(pattern, resource));
+
+        action_matches && resource_matches
+    })
+}
+
+fn evaluate_matching_statements(
+    policy: &Policy,
+    mut matches_statement: impl FnMut(&PolicyStatement) -> bool,
+) -> PolicyEvalResult {
     let statement_results = policy
         .statement
         .iter()
-        .map(|statement| evaluate_statement(principal, resource, action, statement));
+        .map(|statement| evaluate_statement(statement, &mut matches_statement));
 
     statement_results.fold(PolicyEvalResult::NotApplicable, |acc, result| {
         match (acc, result) {
@@ -31,25 +69,10 @@ pub fn evaluate_policy(
 }
 
 fn evaluate_statement(
-    principal: &PolicyPrincipal,
-    resource: &str,
-    action: &str,
     statement: &PolicyStatement,
+    matches_statement: &mut impl FnMut(&PolicyStatement) -> bool,
 ) -> PolicyEvalResult {
-    let principal_matches = statement
-        .principal
-        .iter()
-        .any(|pattern| principal_matches_pattern(pattern, principal));
-    let action_matches = statement
-        .action
-        .iter()
-        .any(|pattern| wildcard_match(pattern, action));
-    let resource_matches = statement
-        .resource
-        .iter()
-        .any(|pattern| wildcard_match(pattern, resource));
-
-    if principal_matches && action_matches && resource_matches {
+    if matches_statement(statement) {
         match statement.effect.as_str() {
             "Allow" => PolicyEvalResult::Allowed,
             "Deny" => PolicyEvalResult::Denied,
@@ -131,7 +154,10 @@ fn wildcard_match(pattern: &str, value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::auth::{Policy, PolicyEvalResult, PolicyPrincipal, evaluate_policy};
+    use crate::auth::{
+        Policy, PolicyEvalResult, PolicyPrincipal, evaluate_identity_policy,
+        evaluate_resource_policy,
+    };
 
     use super::PolicyStatement;
 
@@ -146,6 +172,15 @@ mod tests {
         PolicyStatement {
             effect: effect.to_string(),
             principal: vec![user_principal()],
+            action: vec![action.to_string()],
+            resource: vec![resource.to_string()],
+        }
+    }
+
+    fn identity_statement(effect: &str, action: &str, resource: &str) -> PolicyStatement {
+        PolicyStatement {
+            effect: effect.to_string(),
+            principal: Vec::new(),
             action: vec![action.to_string()],
             resource: vec![resource.to_string()],
         }
@@ -166,7 +201,7 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:orders",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -184,7 +219,7 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:orders",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -209,7 +244,7 @@ mod tests {
             ),
         ]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -227,7 +262,7 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:orders",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:ReceiveMessage",
@@ -245,7 +280,7 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:orders",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:DeleteMessage",
@@ -263,7 +298,7 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:orders",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -281,7 +316,7 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:orders",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -299,7 +334,7 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:*",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -317,7 +352,7 @@ mod tests {
             "arn:aws:sqs:us-east-1:123456789012:order?",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -335,7 +370,7 @@ mod tests {
             "arn:aws:sqs:*:1234*9012:*ord*",
         )]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -357,7 +392,7 @@ mod tests {
             resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
         }]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -379,7 +414,7 @@ mod tests {
             resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
         }]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -401,7 +436,7 @@ mod tests {
             resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
         }]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -420,7 +455,7 @@ mod tests {
             resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
         }]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -439,7 +474,7 @@ mod tests {
             resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
         }]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -458,7 +493,7 @@ mod tests {
             resource: vec!["*".to_string()],
         }]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -477,7 +512,7 @@ mod tests {
             resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
         }]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &PolicyPrincipal::Service("sns.amazonaws.com".to_string()),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:SendMessage",
@@ -510,7 +545,7 @@ mod tests {
             },
         ]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &user_principal(),
             "arn:aws:sqs:us-east-1:123456789012:orders",
             "sqs:DeleteMessage",
@@ -532,7 +567,7 @@ mod tests {
             resource: vec!["arn:aws:sqs:us-east-1:123456789012:orders".to_string()],
         }]);
 
-        let result = evaluate_policy(
+        let result = evaluate_resource_policy(
             &PolicyPrincipal::Role {
                 account_id: "123456789012".to_string(),
                 role_name: "service/team/app-worker".to_string(),
@@ -543,5 +578,77 @@ mod tests {
         );
 
         assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_identity_policy_allows_principalless_statement() {
+        let policy = policy(vec![identity_statement(
+            "Allow",
+            "sqs:SendMessage",
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+        )]);
+
+        let result = evaluate_identity_policy(
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Allowed);
+    }
+
+    #[test]
+    fn evaluate_resource_policy_ignores_principalless_statement() {
+        let policy = policy(vec![identity_statement(
+            "Allow",
+            "sqs:SendMessage",
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+        )]);
+
+        let result = evaluate_resource_policy(
+            &user_principal(),
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::NotApplicable);
+    }
+
+    #[test]
+    fn evaluate_identity_policy_ignores_statement_with_principal() {
+        let policy = policy(vec![statement(
+            "Allow",
+            "sqs:SendMessage",
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+        )]);
+
+        let result = evaluate_identity_policy(
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:SendMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::NotApplicable);
+    }
+
+    #[test]
+    fn evaluate_identity_policy_denies_when_matching_statement_denies() {
+        let policy = policy(vec![
+            identity_statement("Allow", "sqs:*", "arn:aws:sqs:us-east-1:123456789012:*"),
+            identity_statement(
+                "Deny",
+                "sqs:DeleteMessage",
+                "arn:aws:sqs:us-east-1:123456789012:orders",
+            ),
+        ]);
+
+        let result = evaluate_identity_policy(
+            "arn:aws:sqs:us-east-1:123456789012:orders",
+            "sqs:DeleteMessage",
+            &policy,
+        );
+
+        assert_eq!(result, PolicyEvalResult::Denied);
     }
 }

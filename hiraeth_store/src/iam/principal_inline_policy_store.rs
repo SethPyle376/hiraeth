@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::StoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,7 +12,7 @@ pub struct PrincipalInlinePolicy {
     pub updated_at: chrono::NaiveDateTime,
 }
 
-#[allow(async_fn_in_trait)]
+#[async_trait]
 pub trait PrincipalInlinePolicyStore {
     async fn get_inline_policies_for_principal(
         &self,
@@ -30,6 +32,7 @@ impl InMemoryPrincipalInlinePolicyStore {
     }
 }
 
+#[async_trait]
 impl PrincipalInlinePolicyStore for InMemoryPrincipalInlinePolicyStore {
     async fn get_inline_policies_for_principal(
         &self,

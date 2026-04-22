@@ -167,7 +167,7 @@ mod tests {
     async fn resolve_identity_hydrates_principal_into_resolved_request() {
         let iam = IamService::new(
             AuthorizationMode::Audit,
-            InMemoryIamStore::new([access_key(42)], [principal(42)]),
+            InMemoryIamStore::new([access_key(42)], [principal(42)], []),
         );
 
         let resolved = iam
@@ -190,7 +190,7 @@ mod tests {
     async fn resolve_identity_returns_not_found_when_principal_is_missing() {
         let iam = IamService::new(
             AuthorizationMode::Audit,
-            InMemoryIamStore::new([access_key(42)], []),
+            InMemoryIamStore::new([access_key(42)], [], []),
         );
 
         let error = iam

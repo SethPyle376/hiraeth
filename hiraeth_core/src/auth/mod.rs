@@ -4,7 +4,8 @@ mod principal;
 mod util;
 
 pub use eval::PolicyEvalResult;
-pub use eval::evaluate_policy;
+pub use eval::evaluate_identity_policy;
+pub use eval::evaluate_resource_policy;
 pub use policy::Policy;
 pub use principal::PolicyPrincipal;
 
