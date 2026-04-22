@@ -1,7 +1,7 @@
 use std::{cmp::min, collections::BTreeMap};
 
 use chrono::Utc;
-use hiraeth_auth::ResolvedRequest;
+use hiraeth_core::ResolvedRequest;
 use hiraeth_core::{ServiceResponse, json_response};
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
@@ -267,7 +267,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{

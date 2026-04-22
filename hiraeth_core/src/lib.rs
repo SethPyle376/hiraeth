@@ -1,6 +1,7 @@
 pub mod auth;
 mod config;
 mod protocol;
+mod request;
 
 pub use config::{AuthMode, Config};
 pub use protocol::{
@@ -8,6 +9,7 @@ pub use protocol::{
     ServiceResponse, aws_batch_error_details, empty_response, json_body, json_response,
     parse_json_body, render_aws_json_error, render_result,
 };
+pub use request::{AuthContext, ResolvedRequest};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {

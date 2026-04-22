@@ -2,9 +2,8 @@ mod authorizer;
 mod service;
 
 pub use authorizer::{AuthorizationResult, Authorizer};
-use hiraeth_auth::ResolvedRequest;
-use hiraeth_core::ApiError;
 pub use hiraeth_core::ServiceResponse;
+use hiraeth_core::{ApiError, ResolvedRequest};
 pub use service::Service;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,8 +67,9 @@ mod tests {
 
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, ResolvedRequest};
-    use hiraeth_core::{ApiError, ServiceResponse, auth::AuthorizationCheck};
+    use hiraeth_core::{
+        ApiError, AuthContext, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::principal::Principal;
 

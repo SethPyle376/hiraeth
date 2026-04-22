@@ -5,6 +5,9 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1"
+hiraeth_http = { path = "../hiraeth_http" }
+hiraeth_store = { path = "../hiraeth_store" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 wildmatch = "2.6.0"
+chrono = "0.4"

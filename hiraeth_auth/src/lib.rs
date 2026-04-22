@@ -1,6 +1,6 @@
 use hiraeth_core::ApiError;
 use hiraeth_http::IncomingRequest;
-use hiraeth_store::{IamStore, StoreError, iam::Principal};
+use hiraeth_store::{StoreError, iam::AccessKeyStore};
 
 mod sig_v4;
 
@@ -12,8 +12,6 @@ pub enum AuthError {
     InvalidSignature,
     SecretKeyNotFound,
     KeyStoreError(StoreError),
-    PrincipalStoreError(StoreError),
-    PrincipalNotFound,
 }
 
 impl From<AuthError> for ApiError {
@@ -37,17 +35,12 @@ impl From<AuthError> for ApiError {
             AuthError::KeyStoreError(e) => {
                 ApiError::InternalServerError(format!("Access key store error: {:?}", e))
             }
-            AuthError::PrincipalStoreError(principal_store_error) => ApiError::InternalServerError(
-                format!("Principal store error: {:?}", principal_store_error),
-            ),
-            AuthError::PrincipalNotFound => {
-                ApiError::NotAuthenticated("Principal not found for access key".to_string())
-            }
         }
     }
 }
 
-pub struct ResolvedRequest {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthenticatedRequest {
     pub request: IncomingRequest,
     pub service: String,
     pub region: String,
@@ -55,17 +48,18 @@ pub struct ResolvedRequest {
     pub date: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthContext {
     pub access_key: String,
-    pub principal: Principal,
+    pub principal_id: i64,
 }
 
-/// Authenticates an incoming request with SigV4 and attaches the resolved
-/// request context needed by downstream service handlers.
-pub async fn resolve_request<S: IamStore>(
+/// Authenticates an incoming request with SigV4 and attaches the authenticated
+/// request context needed by IAM identity resolution.
+pub async fn authenticate_request<S: AccessKeyStore>(
     request: IncomingRequest,
     store: &S,
-) -> Result<ResolvedRequest, AuthError> {
+) -> Result<AuthenticatedRequest, AuthError> {
     let (sig_v4_params, access_key) = sig_v4::authenticate_request(&request, store).await?;
     let request_timestamp = request
         .headers
@@ -75,18 +69,12 @@ pub async fn resolve_request<S: IamStore>(
         .map_err(|_| AuthError::InvalidAuthorizationHeader("Date format incorrect".to_string()))?
         .and_utc();
 
-    let principal = store
-        .get_principal(access_key.principal_id)
-        .await
-        .map_err(AuthError::PrincipalStoreError)?
-        .ok_or(AuthError::PrincipalNotFound)?;
-
     let auth_context = AuthContext {
         access_key: access_key.key_id.clone(),
-        principal,
+        principal_id: access_key.principal_id,
     };
 
-    Ok(ResolvedRequest {
+    Ok(AuthenticatedRequest {
         request,
         service: sig_v4_params.service,
         region: sig_v4_params.region,
@@ -100,37 +88,25 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
+    use hiraeth_store::iam::{AccessKey, InMemoryAccessKeyStore};
 
-    use super::resolve_request;
+    use super::authenticate_request;
     use hiraeth_http::IncomingRequest;
 
-    fn iam_store() -> InMemoryIamStore {
-        InMemoryIamStore::new(
-            [AccessKey {
-                key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
-                principal_id: 1,
-                secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
-                created_at: Utc
-                    .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
-                    .unwrap()
-                    .naive_utc(),
-            }],
-            [Principal {
-                id: 1,
-                account_id: "123456789012".to_string(),
-                kind: "user".to_string(),
-                name: "test-user".to_string(),
-                created_at: Utc
-                    .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
-                    .unwrap()
-                    .naive_utc(),
-            }],
-        )
+    fn access_key_store() -> InMemoryAccessKeyStore {
+        InMemoryAccessKeyStore::new([AccessKey {
+            key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            principal_id: 1,
+            secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+            created_at: Utc
+                .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+        }])
     }
 
     #[tokio::test]
-    async fn resolve_request_returns_authenticated_request_context() {
+    async fn authenticate_request_returns_authenticated_request_context() {
         let mut headers = HashMap::new();
         headers.insert("content-type".to_string(), "application/json".to_string());
         headers.insert(
@@ -152,22 +128,24 @@ mod tests {
             body: "hello world".to_string().into_bytes(),
         };
 
-        let iam_store = iam_store();
-        let resolved = resolve_request(request, &iam_store)
+        let access_key_store = access_key_store();
+        let authenticated = authenticate_request(request, &access_key_store)
             .await
-            .expect("request should resolve");
+            .expect("request should authenticate");
 
-        assert_eq!(resolved.service, "sqs");
-        assert_eq!(resolved.region, "us-east-1");
-        assert_eq!(resolved.auth_context.access_key, "AKIAIOSFODNN7EXAMPLE");
-        assert_eq!(resolved.auth_context.principal.id, 1);
-        assert_eq!(resolved.auth_context.principal.account_id, "123456789012");
+        assert_eq!(authenticated.service, "sqs");
+        assert_eq!(authenticated.region, "us-east-1");
         assert_eq!(
-            resolved.date,
+            authenticated.auth_context.access_key,
+            "AKIAIOSFODNN7EXAMPLE"
+        );
+        assert_eq!(authenticated.auth_context.principal_id, 1);
+        assert_eq!(
+            authenticated.date,
             Utc.with_ymd_and_hms(2026, 3, 30, 12, 0, 0).unwrap()
         );
-        assert_eq!(resolved.request.method, "POST");
-        assert_eq!(resolved.request.path, "/hello");
-        assert_eq!(resolved.request.query, Some("b=two&a=one".to_string()));
+        assert_eq!(authenticated.request.method, "POST");
+        assert_eq!(authenticated.request.path, "/hello");
+        assert_eq!(authenticated.request.query, Some("b=two&a=one".to_string()));
     }
 }

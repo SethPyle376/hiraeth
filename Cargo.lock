@@ -1284,6 +1284,9 @@ name = "hiraeth_core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
+ "hiraeth_http",
+ "hiraeth_store",
  "serde",
  "serde_json",
  "wildmatch",
@@ -1340,7 +1343,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
- "hiraeth_auth",
  "hiraeth_core",
  "hiraeth_http",
  "hiraeth_store",
@@ -1379,7 +1381,6 @@ dependencies = [
  "base64",
  "chrono",
  "futures",
- "hiraeth_auth",
  "hiraeth_core",
  "hiraeth_http",
  "hiraeth_router",

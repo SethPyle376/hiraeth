@@ -4,9 +4,9 @@ use crate::{
     set_queue_attributes::*, tags::*,
 };
 use async_trait::async_trait;
-use hiraeth_auth::ResolvedRequest;
 use hiraeth_core::{
-    ApiError, ServiceResponse, auth::AuthorizationCheck, auth::Policy, render_result,
+    ApiError, AuthContext, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
+    auth::Policy, render_result,
 };
 use hiraeth_router::Service;
 use hiraeth_store::sqs::SqsStore;
@@ -112,7 +112,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;

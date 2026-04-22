@@ -1,7 +1,6 @@
 use async_trait::async_trait;
-use hiraeth_auth::ResolvedRequest;
 use hiraeth_core::{
-    ServiceResponse,
+    AuthContext, ResolvedRequest, ServiceResponse,
     auth::{AuthorizationCheck, PolicyPrincipal},
 };
 use hiraeth_router::{AuthorizationResult, Authorizer};
@@ -74,8 +73,10 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, ResolvedRequest};
-    use hiraeth_core::auth::{AuthorizationCheck, Policy, PolicyPrincipal};
+    use hiraeth_core::{
+        AuthContext, ResolvedRequest,
+        auth::{AuthorizationCheck, Policy, PolicyPrincipal},
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::{AuthorizationResult, Authorizer};
     use hiraeth_store::iam::{AccessKey, AccessKeyStore, Principal, PrincipalStore};

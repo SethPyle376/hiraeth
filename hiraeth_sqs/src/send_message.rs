@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use futures::StreamExt;
-use hiraeth_auth::ResolvedRequest;
+use hiraeth_core::ResolvedRequest;
 use hiraeth_core::{ServiceResponse, json_response};
 use hiraeth_store::sqs::{SqsMessage, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -296,7 +296,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest};
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;

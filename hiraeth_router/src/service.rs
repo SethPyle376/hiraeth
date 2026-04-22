@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use hiraeth_auth::ResolvedRequest;
-use hiraeth_core::{ApiError, auth::AuthorizationCheck};
+use hiraeth_core::{ApiError, ResolvedRequest, auth::AuthorizationCheck};
 
 use crate::ServiceResponse;
 

@@ -1,4 +1,4 @@
-use hiraeth_auth::ResolvedRequest;
+use hiraeth_core::ResolvedRequest;
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 
 use crate::{error::SqsError, queue::GetQueueUrlRequest, util};
@@ -90,7 +90,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::principal::Principal;
 

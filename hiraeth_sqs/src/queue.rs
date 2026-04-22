@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use hiraeth_auth::ResolvedRequest;
+use hiraeth_core::ResolvedRequest;
 use hiraeth_core::{ServiceResponse, empty_response, json_response};
 use hiraeth_store::StoreError;
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
@@ -281,7 +281,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
 
