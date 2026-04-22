@@ -26,8 +26,9 @@ use crate::{error::WebError, templates::HomeTemplate};
 
 const APP_JS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app.js");
 const APP_CSS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/app.css");
+const FAVICON_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/favicon.svg");
 const VENDOR_ASSETS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/vendor");
-const APP_ASSET_CACHE_CONTROL: &str = "public, max-age=3600";
+const APP_ASSET_CACHE_CONTROL: &str = "public, max-age=0, must-revalidate";
 const VENDOR_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
 #[derive(Clone)]
@@ -53,8 +54,7 @@ impl WebState {
 }
 
 pub fn router(state: WebState) -> Router {
-    Router::new()
-        .route("/", get(home))
+    let asset_router = Router::new()
         .route_service(
             "/assets/app.js",
             get_service(ServeFile::new(APP_JS_PATH)).layer(SetResponseHeaderLayer::overriding(
@@ -69,6 +69,20 @@ pub fn router(state: WebState) -> Router {
                 HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
             )),
         )
+        .route_service(
+            "/favicon.svg",
+            get_service(ServeFile::new(FAVICON_PATH)).layer(SetResponseHeaderLayer::overriding(
+                CACHE_CONTROL,
+                HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
+            )),
+        )
+        .route_service(
+            "/favicon.ico",
+            get_service(ServeFile::new(FAVICON_PATH)).layer(SetResponseHeaderLayer::overriding(
+                CACHE_CONTROL,
+                HeaderValue::from_static(APP_ASSET_CACHE_CONTROL),
+            )),
+        )
         .nest_service(
             "/assets/vendor",
             get_service(ServeDir::new(VENDOR_ASSETS_DIR)).layer(
@@ -78,9 +92,13 @@ pub fn router(state: WebState) -> Router {
                 ),
             ),
         )
+        .layer(CompressionLayer::new());
+
+    Router::new()
+        .route("/", get(home))
+        .merge(asset_router)
         .nest("/iam", iam::router())
         .nest("/sqs", sqs::router())
-        .layer(CompressionLayer::new())
         .with_state(state)
 }
 

@@ -26,6 +26,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hiraeth_web/package-lock.json
+
+      - name: Install web asset dependencies
+        working-directory: hiraeth_web
+        run: npm ci
+
+      - name: Build web assets
+        working-directory: hiraeth_web
+        run: npm run build:css
+
+      - name: Check generated web assets
+        run: git diff --exit-code -- hiraeth_web/assets/app.css
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
