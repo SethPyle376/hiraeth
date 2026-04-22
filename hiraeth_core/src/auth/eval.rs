@@ -50,7 +50,7 @@ pub fn evaluate_identity_policy(resource: &str, action: &str, policy: &Policy) -
 
 fn evaluate_matching_statements(
     policy: &Policy,
-    mut matches_statement: impl FnMut(&PolicyStatement) -> bool,
+    mut matches_statement: impl Fn(&PolicyStatement) -> bool,
 ) -> PolicyEvalResult {
     let statement_results = policy
         .statement
@@ -70,7 +70,7 @@ fn evaluate_matching_statements(
 
 fn evaluate_statement(
     statement: &PolicyStatement,
-    matches_statement: &mut impl FnMut(&PolicyStatement) -> bool,
+    matches_statement: &mut impl Fn(&PolicyStatement) -> bool,
 ) -> PolicyEvalResult {
     if matches_statement(statement) {
         match statement.effect.as_str() {
