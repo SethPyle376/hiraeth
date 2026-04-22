@@ -78,7 +78,7 @@ mod tests {
     use hiraeth_core::auth::{AuthorizationCheck, Policy, PolicyPrincipal};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::{AuthorizationResult, Authorizer};
-    use hiraeth_store::{IamStore, principal::Principal};
+    use hiraeth_store::iam::{AccessKey, AccessKeyStore, Principal, PrincipalStore};
 
     use crate::{AuthorizationMode, IamService};
 
@@ -87,8 +87,32 @@ mod tests {
     #[derive(Clone)]
     struct TestIamStore;
 
-    #[async_trait::async_trait]
-    impl IamStore for TestIamStore {}
+    impl AccessKeyStore for TestIamStore {
+        async fn get_secret_key(
+            &self,
+            _access_key: &str,
+        ) -> Result<Option<AccessKey>, hiraeth_store::StoreError> {
+            Ok(None)
+        }
+
+        async fn insert_secret_key(
+            &mut self,
+            _access_key: &str,
+            _secret_key: &str,
+            _principal_id: i64,
+        ) -> Result<(), hiraeth_store::StoreError> {
+            Ok(())
+        }
+    }
+
+    impl PrincipalStore for TestIamStore {
+        async fn get_principal(
+            &self,
+            _principal_id: i64,
+        ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
+            Ok(None)
+        }
+    }
 
     fn service(mode: AuthorizationMode) -> IamService<TestIamStore> {
         IamService::new(mode, TestIamStore)

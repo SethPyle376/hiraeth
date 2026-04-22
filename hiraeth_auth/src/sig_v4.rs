@@ -1,5 +1,5 @@
 use hiraeth_http::IncomingRequest;
-use hiraeth_store::access_key_store::{AccessKey, AccessKeyStore};
+use hiraeth_store::iam::{AccessKey, AccessKeyStore};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
@@ -314,7 +314,7 @@ mod tests {
     use std::collections::HashMap;
 
     use hiraeth_http::IncomingRequest;
-    use hiraeth_store::access_key_store::{AccessKey, InMemoryAccessKeyStore};
+    use hiraeth_store::iam::{AccessKey, InMemoryAccessKeyStore};
 
     use crate::AuthError;
 

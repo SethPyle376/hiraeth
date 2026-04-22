@@ -16,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(config = ?config, "starting Hiraeth");
 
     let store = SqlxStore::new(&config.database_url).await?;
-    let app = std::sync::Arc::new(App::with_auth_mode(
+    let app = std::sync::Arc::new(App::new(
         store.clone(),
         AuthorizationMode::from(config.auth_mode.clone()),
     ));

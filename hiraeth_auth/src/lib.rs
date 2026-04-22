@@ -1,10 +1,6 @@
 use hiraeth_core::ApiError;
 use hiraeth_http::IncomingRequest;
-use hiraeth_store::{
-    StoreError,
-    access_key_store::AccessKeyStore,
-    principal::{Principal, PrincipalStore},
-};
+use hiraeth_store::{IamStore, StoreError, iam::Principal};
 
 mod sig_v4;
 
@@ -66,13 +62,11 @@ pub struct AuthContext {
 
 /// Authenticates an incoming request with SigV4 and attaches the resolved
 /// request context needed by downstream service handlers.
-pub async fn resolve_request<KS: AccessKeyStore, PS: PrincipalStore>(
+pub async fn resolve_request<S: IamStore>(
     request: IncomingRequest,
-    access_key_store: &KS,
-    principal_store: &PS,
+    store: &S,
 ) -> Result<ResolvedRequest, AuthError> {
-    let (sig_v4_params, access_key) =
-        sig_v4::authenticate_request(&request, access_key_store).await?;
+    let (sig_v4_params, access_key) = sig_v4::authenticate_request(&request, store).await?;
     let request_timestamp = request
         .headers
         .get("x-amz-date")
@@ -81,7 +75,7 @@ pub async fn resolve_request<KS: AccessKeyStore, PS: PrincipalStore>(
         .map_err(|_| AuthError::InvalidAuthorizationHeader("Date format incorrect".to_string()))?
         .and_utc();
 
-    let principal = principal_store
+    let principal = store
         .get_principal(access_key.principal_id)
         .await
         .map_err(AuthError::PrincipalStoreError)?
@@ -106,37 +100,33 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_store::{
-        access_key_store::{AccessKey, InMemoryAccessKeyStore},
-        principal::{InMemoryPrincipalStore, Principal},
-    };
+    use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
 
     use super::resolve_request;
     use hiraeth_http::IncomingRequest;
 
-    fn access_key_store() -> InMemoryAccessKeyStore {
-        InMemoryAccessKeyStore::new([AccessKey {
-            key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            principal_id: 1,
-            secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
-            created_at: Utc
-                .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
-                .unwrap()
-                .naive_utc(),
-        }])
-    }
-
-    fn principal_store() -> InMemoryPrincipalStore {
-        InMemoryPrincipalStore::new([Principal {
-            id: 1,
-            account_id: "123456789012".to_string(),
-            kind: "user".to_string(),
-            name: "test-user".to_string(),
-            created_at: Utc
-                .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
-                .unwrap()
-                .naive_utc(),
-        }])
+    fn iam_store() -> InMemoryIamStore {
+        InMemoryIamStore::new(
+            [AccessKey {
+                key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal_id: 1,
+                secret_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+                created_at: Utc
+                    .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
+                    .unwrap()
+                    .naive_utc(),
+            }],
+            [Principal {
+                id: 1,
+                account_id: "123456789012".to_string(),
+                kind: "user".to_string(),
+                name: "test-user".to_string(),
+                created_at: Utc
+                    .with_ymd_and_hms(2026, 3, 30, 12, 0, 0)
+                    .unwrap()
+                    .naive_utc(),
+            }],
+        )
     }
 
     #[tokio::test]
@@ -162,9 +152,8 @@ mod tests {
             body: "hello world".to_string().into_bytes(),
         };
 
-        let access_key_store = access_key_store();
-        let principal_store = principal_store();
-        let resolved = resolve_request(request, &access_key_store, &principal_store)
+        let iam_store = iam_store();
+        let resolved = resolve_request(request, &iam_store)
             .await
             .expect("request should resolve");
 

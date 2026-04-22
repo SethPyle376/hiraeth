@@ -1,6 +1,6 @@
 use hiraeth_store::{
     StoreError,
-    principal::{Principal, PrincipalStore},
+    iam::{Principal, PrincipalStore},
 };
 
 #[derive(Clone)]
@@ -33,7 +33,7 @@ mod tests {
 
     use super::SqlitePrincipalStore;
     use crate::{get_store_pool, run_migrations};
-    use hiraeth_store::principal::PrincipalStore;
+    use hiraeth_store::iam::PrincipalStore;
 
     async fn test_store() -> (TempDir, SqlitePrincipalStore) {
         let temp_dir = TempDir::new().expect("temp dir should be created");

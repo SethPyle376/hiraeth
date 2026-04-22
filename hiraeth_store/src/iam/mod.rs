@@ -1,4 +1,61 @@
-use async_trait::async_trait;
+mod access_key_store;
+mod principal;
 
-#[async_trait]
-pub trait IamStore {}
+pub use access_key_store::{AccessKey, AccessKeyStore, InMemoryAccessKeyStore};
+pub use principal::{InMemoryPrincipalStore, Principal, PrincipalStore};
+
+pub struct InMemoryIamStore {
+    pub access_key_store: InMemoryAccessKeyStore,
+    pub principal_store: InMemoryPrincipalStore,
+}
+
+impl InMemoryIamStore {
+    pub fn new(
+        access_keys: impl IntoIterator<Item = AccessKey>,
+        principals: impl IntoIterator<Item = Principal>,
+    ) -> Self {
+        Self {
+            access_key_store: InMemoryAccessKeyStore::new(access_keys),
+            principal_store: InMemoryPrincipalStore::new(principals),
+        }
+    }
+}
+
+impl Default for InMemoryIamStore {
+    fn default() -> Self {
+        Self::new([], [])
+    }
+}
+
+impl AccessKeyStore for InMemoryIamStore {
+    async fn get_secret_key(
+        &self,
+        access_key: &str,
+    ) -> Result<Option<AccessKey>, crate::StoreError> {
+        self.access_key_store.get_secret_key(access_key).await
+    }
+
+    async fn insert_secret_key(
+        &mut self,
+        access_key: &str,
+        secret_key: &str,
+        principal_id: i64,
+    ) -> Result<(), crate::StoreError> {
+        self.access_key_store
+            .insert_secret_key(access_key, secret_key, principal_id)
+            .await
+    }
+}
+
+impl PrincipalStore for InMemoryIamStore {
+    async fn get_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Option<Principal>, crate::StoreError> {
+        self.principal_store.get_principal(principal_id).await
+    }
+}
+
+pub trait IamStore: AccessKeyStore + PrincipalStore {}
+
+impl<T> IamStore for T where T: AccessKeyStore + PrincipalStore {}

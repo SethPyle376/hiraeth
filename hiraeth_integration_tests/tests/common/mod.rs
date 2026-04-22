@@ -77,7 +77,7 @@ pub async fn create_store(temp_dir: &TempDir) -> anyhow::Result<SqlxStore> {
 }
 
 pub fn create_app(store: SqlxStore, auth_mode: AuthorizationMode) -> Arc<App> {
-    Arc::new(App::with_auth_mode(store, auth_mode))
+    Arc::new(App::new(store, auth_mode))
 }
 
 pub async fn bind_listener() -> anyhow::Result<TcpListener> {

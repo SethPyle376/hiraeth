@@ -26,13 +26,9 @@ pub async fn resolve_and_route(
     router: &ServiceRouter,
 ) -> AppRequestOutcome {
     let auth_started_at = Instant::now();
-    let resolved_request = hiraeth_auth::resolve_request(
-        incoming_request,
-        &store.access_key_store,
-        &store.principal_store,
-    )
-    .await
-    .map_err(ApiError::from);
+    let resolved_request = hiraeth_auth::resolve_request(incoming_request, &store.iam_store)
+        .await
+        .map_err(ApiError::from);
 
     let auth_ms = auth_started_at.elapsed().as_millis();
 

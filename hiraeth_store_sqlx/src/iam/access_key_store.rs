@@ -1,6 +1,6 @@
 use hiraeth_store::{
     StoreError,
-    access_key_store::{AccessKey, AccessKeyStore},
+    iam::{AccessKey, AccessKeyStore},
 };
 
 #[derive(Clone)]
@@ -61,7 +61,7 @@ mod tests {
 
     use super::SqliteAccessKeyStore;
     use crate::{get_store_pool, run_migrations};
-    use hiraeth_store::{StoreError, access_key_store::AccessKeyStore};
+    use hiraeth_store::{StoreError, iam::AccessKeyStore};
 
     async fn test_store() -> (TempDir, SqliteAccessKeyStore) {
         let temp_dir = TempDir::new().expect("temp dir should be created");
