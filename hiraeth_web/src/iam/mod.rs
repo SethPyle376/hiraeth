@@ -204,10 +204,10 @@ fn dashboard_page_header() -> Result<String, askama::Error> {
     PageHeader {
         eyebrow: "Service Dashboard".to_string(),
         title: "IAM".to_string(),
-        description: "Inspect local principals, attached access keys, and inline identity policies backing the emulator.".to_string(),
+        description: "Review principals, access keys, and inline identity policies for the current environment.".to_string(),
         actions: vec![
             HeaderAction::link("Browse principals", "/iam/principals", "btn btn-primary"),
-            HeaderAction::disabled("Read-only", "btn btn-outline btn-disabled"),
+            HeaderAction::disabled("View mode", "btn btn-outline btn-disabled"),
         ],
     }
     .render()
@@ -221,25 +221,25 @@ fn dashboard_stats_html(stats: &IamDashboardStats) -> Result<String, askama::Err
                 title: "Principals".to_string(),
                 value: stats.principal_count.to_string(),
                 value_class: "text-primary",
-                description: "stored identities".to_string(),
+                description: "configured identities".to_string(),
             },
             StatBlock {
                 title: "Access keys".to_string(),
                 value: stats.access_key_count.to_string(),
                 value_class: "text-secondary",
-                description: "credential ids linked to principals".to_string(),
+                description: "credentials assigned to principals".to_string(),
             },
             StatBlock {
                 title: "Inline policies".to_string(),
                 value: stats.inline_policy_count.to_string(),
                 value_class: "text-accent",
-                description: "identity policy documents".to_string(),
+                description: "attached policy documents".to_string(),
             },
             StatBlock {
                 title: "Accounts".to_string(),
                 value: stats.account_count.to_string(),
                 value_class: "",
-                description: "distinct AWS-style account ids".to_string(),
+                description: "accounts represented".to_string(),
             },
         ],
     }
@@ -256,13 +256,13 @@ fn principal_summary_cards_html(
                 title: "Access keys".to_string(),
                 value: principal.access_key_count.to_string(),
                 value_class: "text-secondary",
-                description: "credential ids attached to this principal".to_string(),
+                description: "credentials assigned to this principal".to_string(),
             },
             SummaryCard {
                 title: "Inline policies".to_string(),
                 value: principal.inline_policy_count.to_string(),
                 value_class: "text-accent",
-                description: "identity policy documents".to_string(),
+                description: "policy documents".to_string(),
             },
             SummaryCard {
                 title: "Account scope".to_string(),

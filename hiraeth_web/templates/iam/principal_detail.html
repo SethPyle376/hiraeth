@@ -29,7 +29,7 @@
         <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 class="card-title text-xl">Inline policies</h2>
-            <p class="text-sm text-base-content/60">Formatted for inspection. Statements stay collapsed until needed.</p>
+            <p class="text-sm text-base-content/60">Review policy documents and expand details as needed.</p>
           </div>
           <div class="badge badge-outline">{{ principal.inline_policy_count }} total</div>
         </div>
@@ -57,7 +57,7 @@
           <div class="card-body items-center py-10 text-center">
             <h2 class="card-title">No inline policies</h2>
             <p class="max-w-md text-base-content/70">
-              This principal does not currently have any inline identity policies attached.
+              No inline policies are currently assigned to this principal.
             </p>
           </div>
         </div>
@@ -71,7 +71,7 @@
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Access keys</h2>
-              <p class="text-xs text-base-content/60">Key ids with masked secret values. Reveal only when needed.</p>
+              <p class="text-xs text-base-content/60">Access key identifiers are shown with masked secret values by default.</p>
             </div>
             <span class="badge badge-outline">{{ principal.access_key_count }}</span>
           </div>
@@ -118,7 +118,7 @@
       </details>
 
       <div class="alert border-warning/40 bg-warning/10 py-3 text-sm">
-        <span>Identity policies here are evaluated without a <span class="font-mono">Principal</span> field.</span>
+        <span>Inline identity policies apply directly to this principal and do not include a <span class="font-mono">Principal</span> element.</span>
       </div>
     </aside>
   </div>

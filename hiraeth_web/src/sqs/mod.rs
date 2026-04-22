@@ -874,7 +874,7 @@ fn dashboard_page_header(region: &str, account_id: &str) -> Result<String, askam
     PageHeader {
         eyebrow: "Service Dashboard".to_string(),
         title: "SQS".to_string(),
-        description: "Inspect queue state for one account and region. Use the AWS SDK or CLI to create resources; use this page to verify what the emulator stored.".to_string(),
+        description: "Review queue state for a specific account and region. Use this page to monitor resources and confirm recent changes.".to_string(),
         actions: vec![
             HeaderAction::link(
                 "Browse queues",
@@ -960,7 +960,7 @@ fn dashboard_stats_cards_html(
 fn queue_list_empty_state_html() -> Result<String, askama::Error> {
     EmptyState {
         title: "No queues found".to_string(),
-        message: "Create a queue through the AWS emulator, or adjust the account, region, or prefix filter.".to_string(),
+        message: "Create a queue or adjust the account, region, or prefix filter.".to_string(),
     }
     .render()
 }

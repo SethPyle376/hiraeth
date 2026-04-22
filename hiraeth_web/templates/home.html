@@ -6,19 +6,19 @@
 <section class="mx-auto max-w-[94rem] py-8 lg:py-12">
   <div class="grid items-end gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
     <div>
-      <p class="mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-primary">Local Admin</p>
+      <p class="mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-primary">Administration</p>
       <h1 class="text-balance max-w-4xl text-5xl font-black tracking-tight text-base-content md:text-6xl">
-        Inspect the emulator while tests are running.
+        Review service state from one place.
       </h1>
       <p class="mt-5 max-w-2xl text-base leading-7 text-base-content/70">
-        This UI reads the same SQLite database as the AWS-compatible endpoint. Use it to inspect
-        emulator state, verify test resources, and handle small local admin tasks without opening
-        the database by hand.
+        Use this interface to review queues, identities, and related service data while working
+        locally or in development. It is designed for day-to-day administration, verification,
+        and a focused set of direct actions.
       </p>
       <div class="alert mt-5 max-w-3xl border border-warning/50 bg-warning/15 py-3 text-sm text-base-content">
-        <span class="badge badge-warning font-bold text-warning-content">Local only</span>
+        <span class="badge badge-warning font-bold text-warning-content">Restricted access</span>
         <span>
-          This admin UI is not SigV4 protected. Bind it only to a trusted interface.
+          This interface is intended for trusted internal use. Restrict access to known networks or hosts.
         </span>
       </div>
       <div class="mt-6 flex flex-wrap gap-3">
@@ -35,7 +35,7 @@
             <span class="text-2xl font-black text-primary">SQS</span>
           </div>
           <h2 class="card-title mt-3">SQS queues</h2>
-          <p class="text-base-content/70">View queues, message counts, attributes, tags, and stored message bodies.</p>
+          <p class="text-base-content/70">Review queues, message counts, attributes, tags, and recent message content.</p>
         </div>
       </a>
       <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/iam">
@@ -45,7 +45,7 @@
             <span class="text-2xl font-black text-primary">IAM</span>
           </div>
           <h2 class="card-title mt-3">IAM data</h2>
-          <p class="text-base-content/70">Inspect principals, attached access keys, and inline identity policies.</p>
+          <p class="text-base-content/70">Review principals, access keys, and inline identity policies.</p>
         </div>
       </a>
       <div class="card border border-base-300 bg-base-100/70">
@@ -55,7 +55,7 @@
             <span class="text-2xl font-black text-base-content/40">S3</span>
           </div>
           <h2 class="card-title mt-3">S3 data</h2>
-          <p class="text-base-content/60">Placeholder for bucket and object state if S3 support is added.</p>
+          <p class="text-base-content/60">Reserved for future support covering buckets and object data.</p>
         </div>
       </div>
       <div class="card border border-base-300 bg-base-100/70">
@@ -65,7 +65,7 @@
             <span class="text-2xl font-black text-base-content/40">SNS</span>
           </div>
           <h2 class="card-title mt-3">SNS data</h2>
-          <p class="text-base-content/60">Placeholder for topics, subscriptions, and delivery state.</p>
+          <p class="text-base-content/60">Reserved for future support covering topics, subscriptions, and delivery state.</p>
         </div>
       </div>
     </div>
@@ -74,20 +74,20 @@
   <div class="mt-8 grid gap-3 lg:grid-cols-3">
     <div class="card border border-base-300 bg-base-100/80">
       <div class="card-body">
-        <h2 class="card-title">Separate port</h2>
-        <p class="text-base-content/70">The admin UI runs on its own port and does not use the SigV4 request path.</p>
+        <h2 class="card-title">Separate interface</h2>
+        <p class="text-base-content/70">This interface runs on its own port with a dedicated set of administrative routes.</p>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100/80">
       <div class="card-body">
-        <h2 class="card-title">Same database</h2>
-        <p class="text-base-content/70">Views read from the same SQLite database used by the emulator.</p>
+        <h2 class="card-title">Shared state</h2>
+        <p class="text-base-content/70">Views reflect the same service state used by the AWS-compatible endpoints.</p>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100/80">
       <div class="card-body">
-        <h2 class="card-title">Read-first workflow</h2>
-        <p class="text-base-content/70">The first release focuses on inspection with a small set of explicit admin actions.</p>
+        <h2 class="card-title">Focused workflow</h2>
+        <p class="text-base-content/70">The current release emphasizes clear visibility with a small set of direct administrative actions.</p>
       </div>
     </div>
   </div>
