@@ -3,101 +3,124 @@
 {% block title %}{{ principal.name }} | IAM | Hiraeth{% endblock %}
 
 {% block content %}
-<section class="mx-auto max-w-[94rem] space-y-6">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <p class="text-xs font-semibold uppercase tracking-[0.45em] text-primary">IAM Principal</p>
-      <h1 class="mt-2 text-4xl font-black tracking-tight text-base-content md:text-5xl">{{ principal.name }}</h1>
-      <div class="mt-3 flex flex-wrap items-center gap-2 text-sm text-base-content/70">
-        <span class="badge badge-outline">{{ principal.kind }}</span>
+<section class="mx-auto max-w-[110rem]">
+  <div class="mb-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+    <div class="min-w-0">
+      <p class="text-xs font-semibold uppercase tracking-[0.35em] text-primary">IAM Principal</p>
+      <h1 class="mt-2 break-words text-4xl font-black tracking-tight md:text-5xl">{{ principal.name }}</h1>
+      <p class="mt-3 flex flex-wrap items-center gap-2 text-sm text-base-content/70">
         <span class="font-mono">{{ principal.account_id }}</span>
+        <span class="text-base-content/40">/</span>
+        <span class="badge badge-outline">{{ principal.kind }}</span>
+        <span class="text-base-content/40">/</span>
         <span class="font-mono">id {{ principal.id }}</span>
-      </div>
-      <p class="mt-3 text-sm text-base-content/65">Created {{ principal.created_at }}</p>
+      </p>
+      <p class="mt-2 text-xs text-base-content/50">Created {{ principal.created_at }}</p>
     </div>
-    <div class="flex flex-wrap gap-2">
-      <a class="btn btn-ghost" href="/iam">Back to IAM</a>
-    </div>
+
+    {{ action_card_html|safe }}
   </div>
 
-  <div class="stats stats-vertical border border-base-300 bg-base-100/80 shadow-sm lg:stats-horizontal">
-    <div class="stat">
-      <div class="stat-title">Access keys</div>
-      <div class="stat-value text-secondary">{{ principal.access_key_count }}</div>
-      <div class="stat-desc">key ids attached to this principal</div>
-    </div>
-    <div class="stat">
-      <div class="stat-title">Inline policies</div>
-      <div class="stat-value text-accent">{{ principal.inline_policy_count }}</div>
-      <div class="stat-desc">identity policy documents</div>
-    </div>
-  </div>
+  {{ summary_cards_html|safe }}
 
-  <div class="grid gap-6 xl:grid-cols-[minmax(18rem,0.7fr)_minmax(0,1.3fr)]">
-    <div class="card border border-base-300 bg-base-100/85">
+  <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+    <section class="card border border-base-300 bg-base-100">
       <div class="card-body">
-        <h2 class="card-title text-2xl">Access keys</h2>
-        <p class="text-sm text-base-content/65">
-          This view shows access key ids only. Secret values are intentionally not surfaced in the UI.
-        </p>
-
-        {% if has_access_keys %}
-        <div class="space-y-3">
-          {% for access_key in access_keys %}
-          <div class="rounded border border-base-300 bg-base-200/45 px-4 py-3">
-            <div class="font-mono text-sm font-semibold text-base-content">{{ access_key.key_id }}</div>
-            <div class="mt-1 text-xs uppercase tracking-[0.2em] text-base-content/45">
-              created {{ access_key.created_at }}
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="rounded border border-dashed border-base-300 px-4 py-6 text-sm text-base-content/65">
-          No access keys are attached to this principal.
-        </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="card border border-base-300 bg-base-100/85">
-      <div class="card-body">
-        <div class="flex flex-wrap items-end justify-between gap-3">
+        <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 class="card-title text-2xl">Inline policies</h2>
-            <p class="text-sm text-base-content/65">
-              Policy documents are formatted for inspection. This page is read-only for now.
-            </p>
+            <h2 class="card-title text-xl">Inline policies</h2>
+            <p class="text-sm text-base-content/60">Formatted for inspection. Statements stay collapsed until needed.</p>
           </div>
           <div class="badge badge-outline">{{ principal.inline_policy_count }} total</div>
         </div>
 
         {% if has_inline_policies %}
-        <div class="space-y-3">
+        <div class="space-y-2">
           {% for policy in inline_policies %}
-          <details class="group rounded border border-base-300 bg-base-200/35" {% if loop.first %}open{% endif %}>
-            <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-              <div>
-                <div class="font-semibold text-base-content">{{ policy.policy_name }}</div>
-                <div class="mt-1 text-xs uppercase tracking-[0.2em] text-base-content/45">
-                  created {{ policy.created_at }} · updated {{ policy.updated_at }}
+          <details class="collapse collapse-arrow rounded border border-base-300 bg-base-200/35" {% if loop.first %}open{% endif %}>
+            <summary class="collapse-title min-h-0 px-4 py-3">
+              <div class="min-w-0 pr-6">
+                <div class="truncate font-semibold text-base-content">{{ policy.policy_name }}</div>
+                <div class="mt-1 text-xs text-base-content/50">
+                  Created {{ policy.created_at }} · Updated {{ policy.updated_at }}
                 </div>
               </div>
-              <span class="text-xs font-semibold uppercase tracking-[0.2em] text-primary transition group-open:rotate-90">View</span>
             </summary>
-            <div class="border-t border-base-300 px-4 py-4">
+            <div class="collapse-content border-t border-base-300 px-4 pb-4 pt-4">
               <pre class="overflow-x-auto rounded bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
             </div>
           </details>
           {% endfor %}
         </div>
         {% else %}
-        <div class="rounded border border-dashed border-base-300 px-4 py-6 text-sm text-base-content/65">
-          No inline policies are attached to this principal.
+        <div class="card border border-dashed border-base-300 bg-base-100/70">
+          <div class="card-body items-center py-10 text-center">
+            <h2 class="card-title">No inline policies</h2>
+            <p class="max-w-md text-base-content/70">
+              This principal does not currently have any inline identity policies attached.
+            </p>
+          </div>
         </div>
         {% endif %}
       </div>
-    </div>
+    </section>
+
+    <aside class="space-y-3">
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100" open>
+        <summary class="collapse-title min-h-0 px-4 py-3">
+          <div class="flex items-center justify-between gap-3 pr-6">
+            <div>
+              <h2 class="text-base font-black">Access keys</h2>
+              <p class="text-xs text-base-content/60">Key ids with masked secret values. Reveal only when needed.</p>
+            </div>
+            <span class="badge badge-outline">{{ principal.access_key_count }}</span>
+          </div>
+        </summary>
+        <div class="collapse-content px-4 pb-4">
+          {% if has_access_keys %}
+          <div class="space-y-2">
+            {% for access_key in access_keys %}
+            <div class="rounded border border-base-300 bg-base-200/45 px-3 py-3">
+              <div class="break-all font-mono text-sm font-semibold text-base-content">{{ access_key.key_id }}</div>
+              <div class="mt-2 space-y-2">
+                <div>
+                  <div class="text-xs text-base-content/50">Secret key</div>
+                  <div class="mt-1 flex flex-wrap items-center gap-2">
+                    <div id="secret-key-{{ loop.index }}" class="break-all font-mono text-xs text-base-content/75" data-secret-visible="false" data-secret-masked="{{ access_key.masked_secret_key }}" data-secret-value="{{ access_key.secret_key }}">{{ access_key.masked_secret_key }}</div>
+                    <button class="btn btn-outline btn-xs" type="button" data-secret-target="secret-key-{{ loop.index }}" aria-pressed="false" onclick="hiraethToggleSecret(this)">Reveal</button>
+                  </div>
+                </div>
+                <div class="text-xs text-base-content/50">
+                  Created {{ access_key.created_at }}
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-sm text-base-content/60">No access keys are attached to this principal.</p>
+          {% endif %}
+        </div>
+      </details>
+
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100">
+        <summary class="collapse-title min-h-0 px-4 py-3">
+          <div class="flex items-center justify-between gap-3 pr-6">
+            <div>
+              <h2 class="text-base font-black">Principal metadata</h2>
+              <p class="text-xs text-base-content/60">{{ principal.kind }} in account {{ principal.account_id }}</p>
+            </div>
+          </div>
+        </summary>
+        <div class="collapse-content px-4 pb-4">
+          {{ metadata_list_html|safe }}
+        </div>
+      </details>
+
+      <div class="alert border-warning/40 bg-warning/10 py-3 text-sm">
+        <span>Identity policies here are evaluated without a <span class="font-mono">Principal</span> field.</span>
+      </div>
+    </aside>
   </div>
 </section>
 {% endblock %}

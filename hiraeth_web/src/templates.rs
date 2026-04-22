@@ -1,8 +1,8 @@
 use askama::Template;
 
 use crate::iam::{
-    IamDashboardStats, IamPrincipalAccessKeyView, IamPrincipalDetailView,
-    IamPrincipalInlinePolicyView, IamPrincipalSummary,
+    IamPrincipalAccessKeyView, IamPrincipalDetailView, IamPrincipalInlinePolicyView,
+    IamPrincipalSummary,
 };
 use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
 
@@ -21,7 +21,10 @@ pub(crate) struct ErrorTemplate<'a> {
 #[derive(Template)]
 #[template(path = "iam/dashboard.html")]
 pub(crate) struct IamDashboardTemplate<'a> {
-    pub(crate) stats: &'a IamDashboardStats,
+    pub(crate) page_header_html: &'a str,
+    pub(crate) stats_html: &'a str,
+    pub(crate) empty_state_html: &'a str,
+    pub(crate) principal_count: usize,
     pub(crate) principals: &'a [IamPrincipalSummary],
     pub(crate) has_principals: bool,
 }
@@ -29,6 +32,9 @@ pub(crate) struct IamDashboardTemplate<'a> {
 #[derive(Template)]
 #[template(path = "iam/principal_detail.html")]
 pub(crate) struct IamPrincipalDetailTemplate<'a> {
+    pub(crate) action_card_html: &'a str,
+    pub(crate) summary_cards_html: &'a str,
+    pub(crate) metadata_list_html: &'a str,
     pub(crate) principal: &'a IamPrincipalDetailView,
     pub(crate) access_keys: &'a [IamPrincipalAccessKeyView],
     pub(crate) inline_policies: &'a [IamPrincipalInlinePolicyView],
@@ -39,6 +45,9 @@ pub(crate) struct IamPrincipalDetailTemplate<'a> {
 #[derive(Template)]
 #[template(path = "sqs/dashboard.html")]
 pub(crate) struct SqsDashboardTemplate<'a> {
+    pub(crate) page_header_html: &'a str,
+    pub(crate) dashboard_stats_html: &'a str,
+    pub(crate) empty_state_html: &'a str,
     pub(crate) region: &'a str,
     pub(crate) account_id: &'a str,
     pub(crate) prefix: &'a str,
@@ -54,15 +63,12 @@ pub(crate) struct SqsDashboardTemplate<'a> {
     pub(crate) create_account_id: &'a str,
     pub(crate) queues: &'a [QueueSummary],
     pub(crate) has_queues: bool,
-    pub(crate) total_queues: usize,
-    pub(crate) total_messages: i64,
-    pub(crate) visible_messages: i64,
-    pub(crate) delayed_messages: i64,
 }
 
 #[derive(Template)]
 #[template(path = "sqs/queues.html")]
 pub(crate) struct SqsQueuesTemplate<'a> {
+    pub(crate) empty_state_html: &'a str,
     pub(crate) region: &'a str,
     pub(crate) account_id: &'a str,
     pub(crate) prefix: &'a str,
@@ -83,6 +89,8 @@ pub(crate) struct SqsQueuesTemplate<'a> {
 #[derive(Template)]
 #[template(path = "sqs/queue_detail.html")]
 pub(crate) struct SqsQueueDetailTemplate<'a> {
+    pub(crate) action_card_html: &'a str,
+    pub(crate) metadata_list_html: &'a str,
     pub(crate) queue_id: i64,
     pub(crate) queue: &'a hiraeth_store::sqs::SqsQueue,
     pub(crate) queue_arn: &'a str,
@@ -110,17 +118,13 @@ pub(crate) struct SqsQueueDetailTemplate<'a> {
 #[derive(Template)]
 #[template(path = "sqs/fragments/dashboard_stats.html")]
 pub(crate) struct SqsDashboardStatsTemplate<'a> {
-    pub(crate) region: &'a str,
-    pub(crate) account_id: &'a str,
-    pub(crate) total_queues: usize,
-    pub(crate) total_messages: i64,
-    pub(crate) visible_messages: i64,
-    pub(crate) delayed_messages: i64,
+    pub(crate) stats_cards_html: &'a str,
 }
 
 #[derive(Template)]
 #[template(path = "sqs/fragments/queue_list.html")]
 pub(crate) struct QueueListTemplate<'a> {
+    pub(crate) empty_state_html: &'a str,
     pub(crate) queues: &'a [QueueSummary],
     pub(crate) has_queues: bool,
 }
@@ -147,7 +151,8 @@ mod tests {
     use chrono::NaiveDate;
 
     use super::{IamDashboardTemplate, QueueListTemplate};
-    use crate::iam::{IamDashboardStats, IamPrincipalSummary};
+    use crate::components::EmptyState;
+    use crate::iam::IamPrincipalSummary;
     use crate::sqs::QueueSummary;
 
     #[test]
@@ -164,6 +169,7 @@ mod tests {
         }];
 
         let html = QueueListTemplate {
+            empty_state_html: "",
             queues: &queues,
             has_queues: true,
         }
@@ -191,15 +197,18 @@ mod tests {
             access_key_count: 1,
             inline_policy_count: 2,
         }];
-        let stats = IamDashboardStats {
-            principal_count: 1,
-            access_key_count: 1,
-            inline_policy_count: 2,
-            account_count: 1,
-        };
+        let empty_state = EmptyState {
+            title: "No principals".to_string(),
+            message: "Seed some IAM data.".to_string(),
+        }
+        .render()
+        .expect("empty state should render");
 
         let html = IamDashboardTemplate {
-            stats: &stats,
+            page_header_html: "",
+            stats_html: "",
+            empty_state_html: &empty_state,
+            principal_count: principals.len(),
             principals: &principals,
             has_principals: true,
         }

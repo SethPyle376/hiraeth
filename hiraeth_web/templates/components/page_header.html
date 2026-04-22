@@ -1,0 +1,21 @@
+<div class="mb-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+  <div>
+    <p class="text-xs font-semibold uppercase tracking-[0.45em] text-primary">{{ header.eyebrow }}</p>
+    <h1 class="mt-2 text-4xl font-black tracking-tight md:text-5xl">{{ header.title }}</h1>
+    <p class="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
+      {{ header.description }}
+    </p>
+  </div>
+  {% if !header.actions.is_empty() %}
+  <div class="flex flex-wrap gap-2 lg:justify-end">
+    {% for action in header.actions %}
+      {% match action.href %}
+        {% when Some with (href) %}
+        <a class="{{ action.button_class }}" href="{{ href }}">{{ action.label }}</a>
+        {% when None %}
+        <span class="{{ action.button_class }}">{{ action.label }}</span>
+      {% endmatch %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>

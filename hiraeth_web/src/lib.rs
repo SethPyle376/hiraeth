@@ -5,6 +5,7 @@ use axum::{Router, extract::State, response::Html, routing::get};
 use hiraeth_store_sqlx::{SqliteIamStore, SqliteSqsStore};
 use tokio::net::TcpListener;
 
+mod components;
 mod error;
 mod iam;
 mod sqs;

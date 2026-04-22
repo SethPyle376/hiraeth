@@ -1,0 +1,8 @@
+<div class="space-y-3 text-sm">
+  {% for entry in list.entries %}
+  <div>
+    <div class="text-base-content/50">{{ entry.label }}</div>
+    <div class="break-all {{ entry.value_class }}">{{ entry.value }}</div>
+  </div>
+  {% endfor %}
+</div>

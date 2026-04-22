@@ -14,6 +14,10 @@ use hiraeth_store::{
 
 use crate::{
     WebState,
+    components::{
+        ActionCard, ActionCardAction, EmptyState, HeaderAction, MetadataEntry, MetadataList,
+        PageHeader, StatBlock, StatBlockGrid, SummaryCard, SummaryCardGrid,
+    },
     error::WebError,
     templates::{IamDashboardTemplate, IamPrincipalDetailTemplate},
 };
@@ -47,6 +51,8 @@ pub(crate) struct IamPrincipalDetailView {
 
 pub(crate) struct IamPrincipalAccessKeyView {
     pub(crate) key_id: String,
+    pub(crate) secret_key: String,
+    pub(crate) masked_secret_key: String,
     pub(crate) created_at: String,
 }
 
@@ -67,8 +73,14 @@ pub fn router() -> Router<WebState> {
 async fn dashboard(State(state): State<WebState>) -> Result<Html<String>, WebError> {
     let principals = load_principal_summaries(&state).await?;
     let stats = dashboard_stats(&principals);
+    let page_header_html = dashboard_page_header()?;
+    let stats_html = dashboard_stats_html(&stats)?;
+    let empty_state_html = principal_empty_state_html()?;
     let template = IamDashboardTemplate {
-        stats: &stats,
+        page_header_html: &page_header_html,
+        stats_html: &stats_html,
+        empty_state_html: &empty_state_html,
+        principal_count: principals.len(),
         principals: &principals,
         has_principals: !principals.is_empty(),
     };
@@ -98,6 +110,8 @@ async fn principal_detail(
         .into_iter()
         .map(|access_key| IamPrincipalAccessKeyView {
             key_id: access_key.key_id,
+            masked_secret_key: mask_secret_key(&access_key.secret_key),
+            secret_key: access_key.secret_key,
             created_at: format_timestamp(access_key.created_at),
         })
         .collect::<Vec<_>>();
@@ -121,8 +135,14 @@ async fn principal_detail(
         access_key_count: access_key_views.len(),
         inline_policy_count: inline_policy_views.len(),
     };
+    let action_card_html = principal_action_card_html(principal_id)?;
+    let summary_cards_html = principal_summary_cards_html(&principal_view)?;
+    let metadata_list_html = principal_metadata_list_html(&principal_view)?;
 
     let template = IamPrincipalDetailTemplate {
+        action_card_html: &action_card_html,
+        summary_cards_html: &summary_cards_html,
+        metadata_list_html: &metadata_list_html,
         principal: &principal_view,
         access_keys: &access_key_views,
         inline_policies: &inline_policy_views,
@@ -180,6 +200,140 @@ fn dashboard_stats(principals: &[IamPrincipalSummary]) -> IamDashboardStats {
     }
 }
 
+fn dashboard_page_header() -> Result<String, askama::Error> {
+    PageHeader {
+        eyebrow: "Service Dashboard".to_string(),
+        title: "IAM".to_string(),
+        description: "Inspect local principals, attached access keys, and inline identity policies backing the emulator.".to_string(),
+        actions: vec![
+            HeaderAction::link("Browse principals", "/iam/principals", "btn btn-primary"),
+            HeaderAction::disabled("Read-only", "btn btn-outline btn-disabled"),
+        ],
+    }
+    .render()
+}
+
+fn dashboard_stats_html(stats: &IamDashboardStats) -> Result<String, askama::Error> {
+    StatBlockGrid {
+        grid_class: "grid gap-3 md:grid-cols-4",
+        blocks: vec![
+            StatBlock {
+                title: "Principals".to_string(),
+                value: stats.principal_count.to_string(),
+                value_class: "text-primary",
+                description: "stored identities".to_string(),
+            },
+            StatBlock {
+                title: "Access keys".to_string(),
+                value: stats.access_key_count.to_string(),
+                value_class: "text-secondary",
+                description: "credential ids linked to principals".to_string(),
+            },
+            StatBlock {
+                title: "Inline policies".to_string(),
+                value: stats.inline_policy_count.to_string(),
+                value_class: "text-accent",
+                description: "identity policy documents".to_string(),
+            },
+            StatBlock {
+                title: "Accounts".to_string(),
+                value: stats.account_count.to_string(),
+                value_class: "",
+                description: "distinct AWS-style account ids".to_string(),
+            },
+        ],
+    }
+    .render()
+}
+
+fn principal_summary_cards_html(
+    principal: &IamPrincipalDetailView,
+) -> Result<String, askama::Error> {
+    SummaryCardGrid {
+        grid_class: "mb-6 grid gap-3 md:grid-cols-3",
+        cards: vec![
+            SummaryCard {
+                title: "Access keys".to_string(),
+                value: principal.access_key_count.to_string(),
+                value_class: "text-secondary",
+                description: "credential ids attached to this principal".to_string(),
+            },
+            SummaryCard {
+                title: "Inline policies".to_string(),
+                value: principal.inline_policy_count.to_string(),
+                value_class: "text-accent",
+                description: "identity policy documents".to_string(),
+            },
+            SummaryCard {
+                title: "Account scope".to_string(),
+                value: principal.account_id.clone(),
+                value_class: "text-primary text-xl font-mono",
+                description: format!("{} principal", principal.kind),
+            },
+        ],
+    }
+    .render()
+}
+
+fn principal_action_card_html(principal_id: i64) -> Result<String, askama::Error> {
+    ActionCard {
+        title: "Principal actions".to_string(),
+        grid_class: "sm:grid-cols-2",
+        actions: vec![
+            ActionCardAction::link("Back", "/iam", "btn btn-ghost"),
+            ActionCardAction::link(
+                "Reload",
+                format!("/iam/principals/{principal_id}"),
+                "btn btn-outline",
+            ),
+        ],
+    }
+    .render()
+}
+
+fn principal_metadata_list_html(
+    principal: &IamPrincipalDetailView,
+) -> Result<String, askama::Error> {
+    MetadataList {
+        entries: vec![
+            MetadataEntry {
+                label: "Name".to_string(),
+                value: principal.name.clone(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Account ID".to_string(),
+                value: principal.account_id.clone(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Kind".to_string(),
+                value: principal.kind.clone(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Database ID".to_string(),
+                value: principal.id.to_string(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Created".to_string(),
+                value: principal.created_at.clone(),
+                value_class: "font-mono",
+            },
+        ],
+    }
+    .render()
+}
+
+fn principal_empty_state_html() -> Result<String, askama::Error> {
+    EmptyState {
+        title: "No principals found".to_string(),
+        message: "Once IAM identities are seeded or created, they will show up here.".to_string(),
+    }
+    .render()
+}
+
 fn format_timestamp(value: chrono::NaiveDateTime) -> String {
     value.format("%Y-%m-%d %H:%M:%S UTC").to_string()
 }
@@ -188,5 +342,37 @@ fn prettify_json(document: &str) -> String {
     match serde_json::from_str::<serde_json::Value>(document) {
         Ok(value) => serde_json::to_string_pretty(&value).unwrap_or_else(|_| document.to_string()),
         Err(_) => document.to_string(),
+    }
+}
+
+fn mask_secret_key(secret_key: &str) -> String {
+    let chars = secret_key.chars().collect::<Vec<_>>();
+    if chars.len() <= 8 {
+        return "*".repeat(chars.len().max(6));
+    }
+
+    let prefix = chars.iter().take(4).collect::<String>();
+    let suffix = chars.iter().skip(chars.len() - 4).collect::<String>();
+    let stars = "*".repeat((chars.len() - 8).max(8));
+
+    format!("{prefix}{stars}{suffix}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_secret_key;
+
+    #[test]
+    fn mask_secret_key_preserves_prefix_and_suffix_for_long_values() {
+        let masked = mask_secret_key("example-secret-value");
+
+        assert!(masked.starts_with("exam"));
+        assert!(masked.ends_with("alue"));
+        assert_eq!(masked.len(), "example-secret-value".len());
+    }
+
+    #[test]
+    fn mask_secret_key_fully_masks_short_values() {
+        assert_eq!(mask_secret_key("secret"), "******");
     }
 }

@@ -1,0 +1,22 @@
+<div class="card border border-base-300 bg-base-100/90">
+  <div class="card-body p-4">
+    <div class="mb-2 text-xs font-semibold uppercase tracking-wider text-base-content/50">{{ card.title }}</div>
+    <div class="grid gap-2 {{ card.grid_class }}">
+      {% for action in card.actions %}
+        {% match action.href %}
+          {% when Some with (href) %}
+          <a class="{{ action.button_class }}" href="{{ href }}">{{ action.label }}</a>
+          {% when None %}
+            {% match action.form_action %}
+              {% when Some with (form_action) %}
+              <form method="post" action="{{ form_action }}"{% match action.onsubmit %}{% when Some with (onsubmit) %} onsubmit="{{ onsubmit }}"{% when None %}{% endmatch %}>
+                <button class="{{ action.button_class }}" type="submit">{{ action.label }}</button>
+              </form>
+              {% when None %}
+              <span class="{{ action.button_class }}">{{ action.label }}</span>
+            {% endmatch %}
+        {% endmatch %}
+      {% endfor %}
+    </div>
+  </div>
+</div>

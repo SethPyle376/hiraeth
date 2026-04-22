@@ -75,6 +75,24 @@
           button.textContent = 'Copy failed';
         }
       }
+
+      function hiraethToggleSecret(button) {
+        const targetId = button.dataset.secretTarget;
+        if (!targetId) {
+          return;
+        }
+
+        const value = document.getElementById(targetId);
+        if (!value) {
+          return;
+        }
+
+        const isVisible = value.dataset.secretVisible === 'true';
+        value.dataset.secretVisible = isVisible ? 'false' : 'true';
+        value.textContent = isVisible ? value.dataset.secretMasked : value.dataset.secretValue;
+        button.textContent = isVisible ? 'Reveal' : 'Hide';
+        button.setAttribute('aria-pressed', isVisible ? 'false' : 'true');
+      }
     </script>
     <style>
       [data-theme="gruvbox"] {

@@ -4,20 +4,7 @@
 
 {% block content %}
 <section class="mx-auto max-w-[94rem]">
-  <div class="mb-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-    <div>
-      <p class="text-xs font-semibold uppercase tracking-[0.45em] text-primary">Service Dashboard</p>
-      <h1 class="mt-2 text-4xl font-black tracking-tight md:text-5xl">SQS</h1>
-      <p class="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
-        Inspect queue state for one account and region. Use the AWS SDK or CLI to create resources;
-        use this page to verify what the emulator stored.
-      </p>
-    </div>
-    <div class="flex flex-wrap gap-2 lg:justify-end">
-      <a class="btn btn-primary" href="/sqs/queues?region={{ region }}&account_id={{ account_id }}">Browse queues</a>
-      <a class="btn btn-outline" href="/sqs/api/queues?region={{ region }}&account_id={{ account_id }}">JSON API</a>
-    </div>
-  </div>
+  {{ page_header_html|safe }}
 
   {% if has_feedback %}
   <div class="alert {{ feedback_class }} mb-5 flex items-center justify-between gap-3 py-3 text-sm">
@@ -26,7 +13,7 @@
   </div>
   {% endif %}
 
-  {% include "sqs/fragments/dashboard_stats.html" %}
+  {{ dashboard_stats_html|safe }}
 
   <form class="card mb-5 border border-primary/30 bg-base-100"
         action="/sqs/queues/create"
