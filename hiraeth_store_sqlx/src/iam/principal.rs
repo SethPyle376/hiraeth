@@ -25,6 +25,20 @@ impl PrincipalStore for SqlitePrincipalStore {
         .await
         .map_err(|err| StoreError::StorageFailure(err.to_string()))
     }
+
+    async fn list_principals(&self) -> Result<Vec<Principal>, StoreError> {
+        sqlx::query_as!(
+            Principal,
+            r#"
+            SELECT id as "id!: i64", account_id, kind, name, created_at
+            FROM iam_principals
+            ORDER BY account_id ASC, kind ASC, name ASC
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))
+    }
 }
 
 #[cfg(test)]
@@ -117,5 +131,36 @@ mod tests {
         .await;
 
         assert!(duplicate_insert.is_err());
+    }
+
+    #[tokio::test]
+    async fn list_principals_returns_seeded_and_inserted_principals() {
+        let (_temp_dir, store) = test_store().await;
+
+        sqlx::query!(
+            "INSERT INTO iam_principals (account_id, kind, name) VALUES (?, ?, ?)",
+            "000000000000",
+            "role",
+            "integration-runner"
+        )
+        .execute(&store.pool)
+        .await
+        .expect("inserted principal should succeed");
+
+        let principals = store
+            .list_principals()
+            .await
+            .expect("listing principals should succeed");
+
+        assert!(principals.iter().any(|principal| {
+            principal.account_id == "000000000000"
+                && principal.kind == "user"
+                && principal.name == "test"
+        }));
+        assert!(principals.iter().any(|principal| {
+            principal.account_id == "000000000000"
+                && principal.kind == "role"
+                && principal.name == "integration-runner"
+        }));
     }
 }

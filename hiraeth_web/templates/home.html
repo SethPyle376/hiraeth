@@ -23,6 +23,7 @@
       </div>
       <div class="mt-6 flex flex-wrap gap-3">
         <a class="btn btn-primary" href="/sqs">Open SQS dashboard</a>
+        <a class="btn btn-outline" href="/iam">Open IAM dashboard</a>
       </div>
     </div>
 
@@ -37,16 +38,16 @@
           <p class="text-base-content/70">View queues, message counts, attributes, tags, and stored message bodies.</p>
         </div>
       </a>
-      <div class="card border border-base-300 bg-base-100/70">
+      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/iam">
         <div class="card-body">
           <div class="flex items-center justify-between">
-            <span class="badge badge-ghost">Planned</span>
-            <span class="text-2xl font-black text-base-content/40">IAM</span>
+            <span class="badge badge-primary badge-outline">Available</span>
+            <span class="text-2xl font-black text-primary">IAM</span>
           </div>
           <h2 class="card-title mt-3">IAM data</h2>
-          <p class="text-base-content/60">Planned views for principals, access keys, and policy checks.</p>
+          <p class="text-base-content/70">Inspect principals, attached access keys, and inline identity policies.</p>
         </div>
-      </div>
+      </a>
       <div class="card border border-base-300 bg-base-100/70">
         <div class="card-body">
           <div class="flex items-center justify-between">

@@ -2,10 +2,11 @@ use std::net::SocketAddr;
 
 use askama::Template;
 use axum::{Router, extract::State, response::Html, routing::get};
-use hiraeth_store_sqlx::SqliteSqsStore;
+use hiraeth_store_sqlx::{SqliteIamStore, SqliteSqsStore};
 use tokio::net::TcpListener;
 
 mod error;
+mod iam;
 mod sqs;
 mod templates;
 
@@ -13,13 +14,15 @@ use crate::{error::WebError, templates::HomeTemplate};
 
 #[derive(Clone)]
 pub struct WebState {
+    pub iam_store: SqliteIamStore,
     pub sqs_store: SqliteSqsStore,
     pub aws_endpoint_url: String,
 }
 
 impl WebState {
-    pub fn new(sqs_store: SqliteSqsStore) -> Self {
+    pub fn new(iam_store: SqliteIamStore, sqs_store: SqliteSqsStore) -> Self {
         Self {
+            iam_store,
             sqs_store,
             aws_endpoint_url: "http://localhost:4566".to_string(),
         }
@@ -34,6 +37,7 @@ impl WebState {
 pub fn router(state: WebState) -> Router {
     Router::new()
         .route("/", get(home))
+        .nest("/iam", iam::router())
         .nest("/sqs", sqs::router())
         .with_state(state)
 }

@@ -1,5 +1,9 @@
 use askama::Template;
 
+use crate::iam::{
+    IamDashboardStats, IamPrincipalAccessKeyView, IamPrincipalDetailView,
+    IamPrincipalInlinePolicyView, IamPrincipalSummary,
+};
 use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
 
 #[derive(Template)]
@@ -12,6 +16,24 @@ pub(crate) struct ErrorTemplate<'a> {
     pub(crate) status_code: u16,
     pub(crate) title: &'a str,
     pub(crate) message: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "iam/dashboard.html")]
+pub(crate) struct IamDashboardTemplate<'a> {
+    pub(crate) stats: &'a IamDashboardStats,
+    pub(crate) principals: &'a [IamPrincipalSummary],
+    pub(crate) has_principals: bool,
+}
+
+#[derive(Template)]
+#[template(path = "iam/principal_detail.html")]
+pub(crate) struct IamPrincipalDetailTemplate<'a> {
+    pub(crate) principal: &'a IamPrincipalDetailView,
+    pub(crate) access_keys: &'a [IamPrincipalAccessKeyView],
+    pub(crate) inline_policies: &'a [IamPrincipalInlinePolicyView],
+    pub(crate) has_access_keys: bool,
+    pub(crate) has_inline_policies: bool,
 }
 
 #[derive(Template)]
@@ -122,8 +144,10 @@ pub(crate) struct QueueMessageListTemplate<'a> {
 #[cfg(test)]
 mod tests {
     use askama::Template;
+    use chrono::NaiveDate;
 
-    use super::QueueListTemplate;
+    use super::{IamDashboardTemplate, QueueListTemplate};
+    use crate::iam::{IamDashboardStats, IamPrincipalSummary};
     use crate::sqs::QueueSummary;
 
     #[test]
@@ -149,5 +173,41 @@ mod tests {
         assert!(html.contains("orders"));
         assert!(html.contains("billing"));
         assert!(!html.contains("<orders&billing>"));
+    }
+
+    #[test]
+    fn iam_dashboard_template_escapes_principal_names() {
+        let principals = vec![IamPrincipalSummary {
+            id: 1,
+            account_id: "000000000000".to_string(),
+            kind: "user".to_string(),
+            name: "<test&admin>".to_string(),
+            created_at: NaiveDate::from_ymd_opt(2026, 4, 21)
+                .expect("date should be valid")
+                .and_hms_opt(12, 0, 0)
+                .expect("time should be valid")
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string(),
+            access_key_count: 1,
+            inline_policy_count: 2,
+        }];
+        let stats = IamDashboardStats {
+            principal_count: 1,
+            access_key_count: 1,
+            inline_policy_count: 2,
+            account_count: 1,
+        };
+
+        let html = IamDashboardTemplate {
+            stats: &stats,
+            principals: &principals,
+            has_principals: true,
+        }
+        .render()
+        .expect("iam dashboard template should render");
+
+        assert!(html.contains("test"));
+        assert!(html.contains("admin"));
+        assert!(!html.contains("<test&admin>"));
     }
 }

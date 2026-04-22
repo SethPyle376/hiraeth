@@ -1,0 +1,106 @@
+{% extends "layout.html" %}
+
+{% block title %}IAM Dashboard | Hiraeth{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-[94rem] space-y-6">
+  <div class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_20rem]">
+    <div class="card border border-primary/25 bg-base-100/90">
+      <div class="card-body">
+        <p class="text-xs font-semibold uppercase tracking-[0.45em] text-primary">Identity Access</p>
+        <h1 class="text-4xl font-black tracking-tight text-base-content md:text-5xl">IAM principals</h1>
+        <p class="max-w-3xl text-base leading-7 text-base-content/70">
+          Browse local identities, see which access keys are attached, and inspect inline policies
+          without leaving the emulator UI.
+        </p>
+      </div>
+    </div>
+    <div class="card border border-base-300 bg-base-100/80">
+      <div class="card-body">
+        <h2 class="card-title">Current scope</h2>
+        <p class="text-sm leading-6 text-base-content/70">
+          This first pass is read-only and focused on the IAM data already backing authentication
+          and authorization.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats stats-vertical border border-base-300 bg-base-100/80 shadow-sm lg:stats-horizontal">
+    <div class="stat">
+      <div class="stat-title">Principals</div>
+      <div class="stat-value text-primary">{{ stats.principal_count }}</div>
+      <div class="stat-desc">stored identities</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Access keys</div>
+      <div class="stat-value text-secondary">{{ stats.access_key_count }}</div>
+      <div class="stat-desc">credential ids linked to principals</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Inline policies</div>
+      <div class="stat-value text-accent">{{ stats.inline_policy_count }}</div>
+      <div class="stat-desc">identity policy documents</div>
+    </div>
+    <div class="stat">
+      <div class="stat-title">Accounts</div>
+      <div class="stat-value">{{ stats.account_count }}</div>
+      <div class="stat-desc">distinct AWS-style account ids</div>
+    </div>
+  </div>
+
+  <div class="card border border-base-300 bg-base-100/85">
+    <div class="card-body">
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 class="card-title text-2xl">Principals</h2>
+          <p class="text-sm text-base-content/65">
+            Start here, then open a principal to inspect its access keys and inline policies.
+          </p>
+        </div>
+        <div class="badge badge-outline">{{ stats.principal_count }} total</div>
+      </div>
+
+      {% if has_principals %}
+      <div class="overflow-x-auto">
+        <table class="table table-zebra">
+          <thead>
+            <tr>
+              <th>Principal</th>
+              <th>Kind</th>
+              <th>Account</th>
+              <th>Access keys</th>
+              <th>Inline policies</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for principal in principals %}
+            <tr>
+              <td>
+                <div class="font-semibold text-base-content">{{ principal.name }}</div>
+                <div class="text-xs uppercase tracking-[0.25em] text-base-content/45">id {{ principal.id }}</div>
+              </td>
+              <td><span class="badge badge-outline">{{ principal.kind }}</span></td>
+              <td class="font-mono text-sm">{{ principal.account_id }}</td>
+              <td>{{ principal.access_key_count }}</td>
+              <td>{{ principal.inline_policy_count }}</td>
+              <td class="text-sm text-base-content/70">{{ principal.created_at }}</td>
+              <td class="text-right">
+                <a class="btn btn-sm btn-primary" href="/iam/principals/{{ principal.id }}">Open</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="rounded border border-dashed border-base-300 px-4 py-6 text-sm text-base-content/65">
+        No principals are stored yet. Once IAM data is seeded or created, it will show up here.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

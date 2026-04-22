@@ -41,6 +41,15 @@ impl AccessKeyStore for SqliteIamStore {
         self.access_key_store.get_secret_key(access_key).await
     }
 
+    async fn list_access_keys_for_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<AccessKey>, hiraeth_store::StoreError> {
+        self.access_key_store
+            .list_access_keys_for_principal(principal_id)
+            .await
+    }
+
     async fn insert_secret_key(
         &mut self,
         access_key: &str,
@@ -59,6 +68,10 @@ impl PrincipalStore for SqliteIamStore {
         principal_id: i64,
     ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
         self.principal_store.get_principal(principal_id).await
+    }
+
+    async fn list_principals(&self) -> Result<Vec<Principal>, hiraeth_store::StoreError> {
+        self.principal_store.list_principals().await
     }
 }
 

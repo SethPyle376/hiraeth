@@ -13,6 +13,10 @@ pub struct AccessKey {
 #[allow(async_fn_in_trait)]
 pub trait AccessKeyStore {
     async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError>;
+    async fn list_access_keys_for_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<AccessKey>, StoreError>;
     async fn insert_secret_key(
         &mut self,
         access_key: &str,
@@ -36,6 +40,20 @@ impl InMemoryAccessKeyStore {
 impl AccessKeyStore for InMemoryAccessKeyStore {
     async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError> {
         Ok(self.keys.get(access_key).cloned())
+    }
+
+    async fn list_access_keys_for_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<AccessKey>, StoreError> {
+        let mut keys = self
+            .keys
+            .values()
+            .filter(|key| key.principal_id == principal_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        keys.sort_by(|left, right| left.key_id.cmp(&right.key_id));
+        Ok(keys)
     }
 
     async fn insert_secret_key(

@@ -14,6 +14,7 @@ pub struct Principal {
 #[allow(async_fn_in_trait)]
 pub trait PrincipalStore {
     async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError>;
+    async fn list_principals(&self) -> Result<Vec<Principal>, StoreError>;
 }
 
 pub struct InMemoryPrincipalStore {
@@ -31,5 +32,16 @@ impl InMemoryPrincipalStore {
 impl PrincipalStore for InMemoryPrincipalStore {
     async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError> {
         Ok(self.principals.get(&principal_id).cloned())
+    }
+
+    async fn list_principals(&self) -> Result<Vec<Principal>, StoreError> {
+        let mut principals = self.principals.values().cloned().collect::<Vec<_>>();
+        principals.sort_by(|left, right| {
+            left.account_id
+                .cmp(&right.account_id)
+                .then(left.kind.cmp(&right.kind))
+                .then(left.name.cmp(&right.name))
+        });
+        Ok(principals)
     }
 }

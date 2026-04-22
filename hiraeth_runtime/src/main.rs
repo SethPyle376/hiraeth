@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
             serve::serve(aws_addr, app),
             hiraeth_web::serve(
                 web_addr,
-                hiraeth_web::WebState::new(store.sqs_store.clone())
+                hiraeth_web::WebState::new(store.iam_store.clone(), store.sqs_store.clone())
                     .with_aws_endpoint_url(aws_endpoint_url)
             )
         )?;

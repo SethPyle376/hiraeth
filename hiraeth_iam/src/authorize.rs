@@ -167,6 +167,13 @@ mod tests {
             Ok(None)
         }
 
+        async fn list_access_keys_for_principal(
+            &self,
+            _principal_id: i64,
+        ) -> Result<Vec<AccessKey>, hiraeth_store::StoreError> {
+            Ok(vec![])
+        }
+
         async fn insert_secret_key(
             &mut self,
             _access_key: &str,
@@ -183,6 +190,10 @@ mod tests {
             _principal_id: i64,
         ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
             Ok(None)
+        }
+
+        async fn list_principals(&self) -> Result<Vec<Principal>, hiraeth_store::StoreError> {
+            Ok(vec![])
         }
     }
 

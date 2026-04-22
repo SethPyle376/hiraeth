@@ -36,6 +36,25 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         .map_err(map_sqlx_error)
     }
 
+    async fn list_access_keys_for_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<AccessKey>, StoreError> {
+        sqlx::query_as!(
+            AccessKey,
+            r#"
+            SELECT key_id, secret_key, principal_id, created_at
+            FROM iam_access_keys
+            WHERE principal_id = ?
+            ORDER BY created_at DESC, key_id ASC
+            "#,
+            principal_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)
+    }
+
     async fn insert_secret_key(
         &mut self,
         access_key: &str,
@@ -152,5 +171,60 @@ mod tests {
         .expect("iam_access_keys_principal_id_idx should exist after migrations");
 
         assert_eq!(index_name, "iam_access_keys_principal_id_idx");
+    }
+
+    #[tokio::test]
+    async fn list_access_keys_for_principal_returns_only_matching_keys() {
+        let (_temp_dir, mut store) = test_store().await;
+
+        let principal_id = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM iam_principals WHERE account_id = ? AND kind = ? AND name = ?",
+        )
+        .bind("000000000000")
+        .bind("user")
+        .bind("test")
+        .fetch_one(&store.pool)
+        .await
+        .expect("seeded principal id should exist");
+
+        let other_principal_id = sqlx::query!(
+            "INSERT INTO iam_principals (account_id, kind, name) VALUES (?, ?, ?)",
+            "000000000000",
+            "user",
+            "other-user"
+        )
+        .execute(&store.pool)
+        .await
+        .expect("other principal should insert")
+        .last_insert_rowid();
+
+        let baseline_keys = store
+            .list_access_keys_for_principal(principal_id)
+            .await
+            .expect("baseline key listing should succeed");
+
+        store
+            .insert_secret_key("AKIAPRINCIPALONE", "first-secret", principal_id)
+            .await
+            .expect("first key insert should succeed");
+        store
+            .insert_secret_key("AKIAPRINCIPALTWO", "second-secret", principal_id)
+            .await
+            .expect("second key insert should succeed");
+        store
+            .insert_secret_key("AKIAOTHERUSERKEY", "other-secret", other_principal_id)
+            .await
+            .expect("other key insert should succeed");
+
+        let keys = store
+            .list_access_keys_for_principal(principal_id)
+            .await
+            .expect("listing keys should succeed");
+
+        assert_eq!(keys.len(), baseline_keys.len() + 2);
+        assert!(keys.iter().all(|key| key.principal_id == principal_id));
+        assert!(keys.iter().any(|key| key.key_id == "AKIAPRINCIPALONE"));
+        assert!(keys.iter().any(|key| key.key_id == "AKIAPRINCIPALTWO"));
+        assert!(!keys.iter().any(|key| key.key_id == "AKIAOTHERUSERKEY"));
     }
 }
