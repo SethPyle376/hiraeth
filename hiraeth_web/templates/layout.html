@@ -5,95 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Hiraeth administration UI for AWS-compatible services">
     <title>{% block title %}Hiraeth{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    <script>
-      function hiraethDisableSubmit(form, label) {
-        const button = form.querySelector('button[type="submit"]');
-        if (button) {
-          button.disabled = true;
-          if (label) {
-            button.textContent = label;
-          }
-        }
-        return true;
-      }
-
-      function hiraethConfirmSubmit(form, message, label) {
-        if (!confirm(message)) {
-          return false;
-        }
-        return hiraethDisableSubmit(form, label);
-      }
-
-      function hiraethDismissBanner(button, paramsToClear) {
-        const banner = button.closest('.alert');
-        if (banner) {
-          banner.remove();
-        }
-
-        if (!window.history.replaceState || !paramsToClear) {
-          return;
-        }
-
-        const url = new URL(window.location.href);
-        paramsToClear.forEach((param) => url.searchParams.delete(param));
-        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-        window.history.replaceState({}, '', nextUrl);
-      }
-
-      async function hiraethCopyText(button) {
-        const value = button.dataset.copyValue;
-        if (!value) {
-          return;
-        }
-
-        try {
-          if (navigator.clipboard && window.isSecureContext) {
-            await navigator.clipboard.writeText(value);
-          } else {
-            const textarea = document.createElement('textarea');
-            textarea.value = value;
-            textarea.setAttribute('readonly', '');
-            textarea.style.position = 'fixed';
-            textarea.style.left = '-9999px';
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            textarea.remove();
-          }
-
-          const original = button.dataset.originalLabel || button.textContent;
-          button.dataset.originalLabel = original;
-          button.textContent = 'Copied';
-          window.setTimeout(() => {
-            button.textContent = button.dataset.originalLabel;
-          }, 1200);
-        } catch (error) {
-          console.error('Failed to copy text', error);
-          button.textContent = 'Copy failed';
-        }
-      }
-
-      function hiraethToggleSecret(button) {
-        const targetId = button.dataset.secretTarget;
-        if (!targetId) {
-          return;
-        }
-
-        const value = document.getElementById(targetId);
-        if (!value) {
-          return;
-        }
-
-        const isVisible = value.dataset.secretVisible === 'true';
-        value.dataset.secretVisible = isVisible ? 'false' : 'true';
-        value.textContent = isVisible ? value.dataset.secretMasked : value.dataset.secretValue;
-        button.textContent = isVisible ? 'Reveal' : 'Hide';
-        button.setAttribute('aria-pressed', isVisible ? 'false' : 'true');
-      }
-    </script>
+    <link href="/assets/vendor/daisyui.css" rel="stylesheet" type="text/css">
+    <script src="/assets/vendor/tailwind-browser.js"></script>
+    <script src="/assets/vendor/htmx.min.js"></script>
+    <script src="/assets/app.js"></script>
     <style>
       [data-theme="gruvbox"] {
         color-scheme: dark;

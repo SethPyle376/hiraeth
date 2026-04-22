@@ -1,0 +1,9 @@
+Vendored frontend assets used by the Hiraeth web UI.
+
+Current versions:
+- `htmx.min.js`: `htmx.org` `2.0.4`
+- `tailwind-browser.js`: `@tailwindcss/browser` `4.2.4`
+- `daisyui.css`: `daisyui` `5.5.19`
+
+These files were sourced from the corresponding npm package tarballs and checked into the repo so
+the UI does not rely on public CDNs at runtime.

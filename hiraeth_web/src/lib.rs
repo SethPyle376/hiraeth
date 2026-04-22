@@ -4,6 +4,7 @@ use askama::Template;
 use axum::{Router, extract::State, response::Html, routing::get};
 use hiraeth_store_sqlx::{SqliteIamStore, SqliteSqsStore};
 use tokio::net::TcpListener;
+use tower_http::services::ServeDir;
 
 mod components;
 mod error;
@@ -12,6 +13,8 @@ mod sqs;
 mod templates;
 
 use crate::{error::WebError, templates::HomeTemplate};
+
+const ASSETS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/assets");
 
 #[derive(Clone)]
 pub struct WebState {
@@ -38,6 +41,7 @@ impl WebState {
 pub fn router(state: WebState) -> Router {
     Router::new()
         .route("/", get(home))
+        .nest_service("/assets", ServeDir::new(ASSETS_DIR))
         .nest("/iam", iam::router())
         .nest("/sqs", sqs::router())
         .with_state(state)
