@@ -28,7 +28,7 @@ impl AccessKeyStore for SqliteAccessKeyStore {
     async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError> {
         sqlx::query_as!(
             AccessKey,
-            "SELECT key_id, secret_key, principal_id, created_at FROM access_keys WHERE key_id = ?",
+            "SELECT key_id, secret_key, principal_id, created_at FROM iam_access_keys WHERE key_id = ?",
             access_key
         )
         .fetch_optional(&self.pool)
@@ -43,7 +43,7 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         principal_id: i64,
     ) -> Result<(), StoreError> {
         sqlx::query!(
-            "INSERT INTO access_keys (key_id, secret_key, principal_id) VALUES (?, ?, ?)",
+            "INSERT INTO iam_access_keys (key_id, secret_key, principal_id) VALUES (?, ?, ?)",
             access_key,
             secret_key,
             principal_id
@@ -80,17 +80,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_migrations_creates_access_keys_table() {
+    async fn run_migrations_creates_iam_access_keys_table() {
         let (_temp_dir, store) = test_store().await;
 
         let table_name = sqlx::query_scalar::<_, String>(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'access_keys'",
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'iam_access_keys'",
         )
         .fetch_one(&store.pool)
         .await
-        .expect("access_keys table should exist after migrations");
+        .expect("iam_access_keys table should exist after migrations");
 
-        assert_eq!(table_name, "access_keys");
+        assert_eq!(table_name, "iam_access_keys");
     }
 
     #[tokio::test]
@@ -138,5 +138,19 @@ mod tests {
             .await;
 
         assert!(matches!(duplicate_insert, Err(StoreError::Conflict(_))));
+    }
+
+    #[tokio::test]
+    async fn run_migrations_creates_principal_id_index() {
+        let (_temp_dir, store) = test_store().await;
+
+        let index_name = sqlx::query_scalar::<_, String>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'iam_access_keys_principal_id_idx'",
+        )
+        .fetch_one(&store.pool)
+        .await
+        .expect("iam_access_keys_principal_id_idx should exist after migrations");
+
+        assert_eq!(index_name, "iam_access_keys_principal_id_idx");
     }
 }

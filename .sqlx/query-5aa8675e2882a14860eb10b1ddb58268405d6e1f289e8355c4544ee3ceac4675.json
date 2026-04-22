@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT key_id, secret_key, principal_id, created_at FROM access_keys WHERE key_id = ?",
+  "query": "SELECT key_id, secret_key, principal_id, created_at FROM iam_access_keys WHERE key_id = ?",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "f4952f604280a007ed20964e94ba98f99852b73867f6441d26bdfdf218187faa"
+  "hash": "5aa8675e2882a14860eb10b1ddb58268405d6e1f289e8355c4544ee3ceac4675"
 }

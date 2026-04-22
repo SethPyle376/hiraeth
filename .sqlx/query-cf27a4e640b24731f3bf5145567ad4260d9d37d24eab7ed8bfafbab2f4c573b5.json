@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, account_id, kind, name, created_at FROM principals WHERE id = ?",
+  "query": "SELECT id, account_id, kind, name, created_at FROM iam_principals WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -40,5 +40,5 @@
       false
     ]
   },
-  "hash": "4c3db619fa40b2a4ad7ec8da74f4c4d434c152089d915289daf5faced30ac6be"
+  "hash": "cf27a4e640b24731f3bf5145567ad4260d9d37d24eab7ed8bfafbab2f4c573b5"
 }

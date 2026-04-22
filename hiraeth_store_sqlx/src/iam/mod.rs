@@ -51,3 +51,89 @@ impl PrincipalStore for SqliteIamStore {
         self.principal_store.get_principal(principal_id).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use crate::{get_store_pool, run_migrations};
+
+    async fn test_pool() -> (TempDir, sqlx::SqlitePool) {
+        let temp_dir = TempDir::new().expect("temp dir should be created");
+        let db_url = format!(
+            "sqlite://{}",
+            temp_dir.path().join("store-test.sqlite").display()
+        );
+        let pool = get_store_pool(&db_url)
+            .await
+            .expect("pool should connect to temp sqlite db");
+        run_migrations(&pool)
+            .await
+            .expect("migrations should run for temp sqlite db");
+
+        (temp_dir, pool)
+    }
+
+    #[tokio::test]
+    async fn run_migrations_creates_inline_policy_table_and_index() {
+        let (_temp_dir, pool) = test_pool().await;
+
+        let table_name = sqlx::query_scalar::<_, String>(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'iam_principal_inline_policies'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("iam_principal_inline_policies table should exist after migrations");
+
+        let index_name = sqlx::query_scalar::<_, String>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'iam_principal_inline_policies_principal_id_idx'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("iam_principal_inline_policies_principal_id_idx should exist after migrations");
+
+        assert_eq!(table_name, "iam_principal_inline_policies");
+        assert_eq!(index_name, "iam_principal_inline_policies_principal_id_idx");
+    }
+
+    #[tokio::test]
+    async fn run_migrations_seeds_default_user_inline_policy() {
+        let (_temp_dir, pool) = test_pool().await;
+
+        let policy_name = sqlx::query_scalar::<_, String>(
+            "SELECT policy_name
+             FROM iam_principal_inline_policies
+             WHERE principal_id = (
+                 SELECT id FROM iam_principals
+                 WHERE account_id = ? AND kind = ? AND name = ?
+             )",
+        )
+        .bind("000000000000")
+        .bind("user")
+        .bind("test")
+        .fetch_one(&pool)
+        .await
+        .expect("default inline policy should be seeded");
+
+        let policy_document = sqlx::query_scalar::<_, String>(
+            "SELECT policy_document
+             FROM iam_principal_inline_policies
+             WHERE principal_id = (
+                 SELECT id FROM iam_principals
+                 WHERE account_id = ? AND kind = ? AND name = ?
+             )",
+        )
+        .bind("000000000000")
+        .bind("user")
+        .bind("test")
+        .fetch_one(&pool)
+        .await
+        .expect("default inline policy document should be seeded");
+
+        assert_eq!(policy_name, "default-account-admin");
+        assert_eq!(
+            policy_document,
+            r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"arn:aws:*:*:000000000000:*"}]}"#
+        );
+    }
+}

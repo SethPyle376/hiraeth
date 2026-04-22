@@ -18,7 +18,7 @@ impl PrincipalStore for SqlitePrincipalStore {
     async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError> {
         sqlx::query_as!(
             Principal,
-            "SELECT id, account_id, kind, name, created_at FROM principals WHERE id = ?",
+            "SELECT id, account_id, kind, name, created_at FROM iam_principals WHERE id = ?",
             principal_id
         )
         .fetch_optional(&self.pool)
@@ -52,17 +52,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_migrations_creates_principals_table() {
+    async fn run_migrations_creates_iam_principals_table() {
         let (_temp_dir, store) = test_store().await;
 
         let table_name = sqlx::query_scalar::<_, String>(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'principals'",
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'iam_principals'",
         )
         .fetch_one(&store.pool)
         .await
-        .expect("principals table should exist after migrations");
+        .expect("iam_principals table should exist after migrations");
 
-        assert_eq!(table_name, "principals");
+        assert_eq!(table_name, "iam_principals");
     }
 
     #[tokio::test]
@@ -70,7 +70,7 @@ mod tests {
         let (_temp_dir, store) = test_store().await;
 
         let principal_id = sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM principals WHERE account_id = ? AND kind = ? AND name = ?",
+            "SELECT id FROM iam_principals WHERE account_id = ? AND kind = ? AND name = ?",
         )
         .bind("000000000000")
         .bind("user")
@@ -101,5 +101,21 @@ mod tests {
             .expect("principal lookup should succeed");
 
         assert!(principal.is_none());
+    }
+
+    #[tokio::test]
+    async fn run_migrations_adds_unique_constraint_for_logical_principal_identity() {
+        let (_temp_dir, store) = test_store().await;
+
+        let duplicate_insert = sqlx::query!(
+            "INSERT INTO iam_principals (account_id, kind, name) VALUES (?, ?, ?)",
+            "000000000000",
+            "user",
+            "test"
+        )
+        .execute(&store.pool)
+        .await;
+
+        assert!(duplicate_insert.is_err());
     }
 }
