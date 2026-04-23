@@ -159,6 +159,7 @@ mod tests {
         inline_policies: Vec<PrincipalInlinePolicy>,
     }
 
+    #[async_trait]
     impl AccessKeyStore for TestIamStore {
         async fn get_secret_key(
             &self,
@@ -175,12 +176,12 @@ mod tests {
         }
 
         async fn insert_secret_key(
-            &mut self,
+            &self,
             _access_key: &str,
             _secret_key: &str,
             _principal_id: i64,
-        ) -> Result<(), hiraeth_store::StoreError> {
-            Ok(())
+        ) -> Result<AccessKey, hiraeth_store::StoreError> {
+            unreachable!("authorization tests do not insert access keys")
         }
     }
 
@@ -189,6 +190,15 @@ mod tests {
         async fn get_principal(
             &self,
             _principal_id: i64,
+        ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
+            Ok(None)
+        }
+
+        async fn get_principal_by_identity(
+            &self,
+            _account_id: &str,
+            _kind: &str,
+            _name: &str,
         ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
             Ok(None)
         }

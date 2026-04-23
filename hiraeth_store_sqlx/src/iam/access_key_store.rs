@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use hiraeth_store::{
     StoreError,
     iam::{AccessKey, AccessKeyStore},
@@ -24,6 +25,7 @@ fn map_sqlx_error(err: sqlx::Error) -> StoreError {
     StoreError::StorageFailure(err.to_string())
 }
 
+#[async_trait]
 impl AccessKeyStore for SqliteAccessKeyStore {
     async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError> {
         sqlx::query_as!(
@@ -56,21 +58,25 @@ impl AccessKeyStore for SqliteAccessKeyStore {
     }
 
     async fn insert_secret_key(
-        &mut self,
+        &self,
         access_key: &str,
         secret_key: &str,
         principal_id: i64,
-    ) -> Result<(), StoreError> {
-        sqlx::query!(
-            "INSERT INTO iam_access_keys (key_id, secret_key, principal_id) VALUES (?, ?, ?)",
+    ) -> Result<AccessKey, StoreError> {
+        sqlx::query_as!(
+            AccessKey,
+            r#"
+            INSERT INTO iam_access_keys (key_id, secret_key, principal_id)
+            VALUES (?, ?, ?)
+            RETURNING key_id, secret_key, principal_id, created_at
+            "#,
             access_key,
             secret_key,
             principal_id
         )
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .map_err(map_sqlx_error)?;
-        Ok(())
+        .map_err(map_sqlx_error)
     }
 }
 
@@ -114,9 +120,9 @@ mod tests {
 
     #[tokio::test]
     async fn insert_and_get_secret_key_round_trips_access_key() {
-        let (_temp_dir, mut store) = test_store().await;
+        let (_temp_dir, store) = test_store().await;
 
-        store
+        let created_key = store
             .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "example-secret", 1)
             .await
             .expect("insert should succeed");
@@ -127,6 +133,7 @@ mod tests {
             .expect("lookup should succeed")
             .expect("access key should exist");
 
+        assert_eq!(created_key, access_key);
         assert_eq!(access_key.key_id, "AKIAIOSFODNN7EXAMPLE");
         assert_eq!(access_key.secret_key, "example-secret");
     }
@@ -145,7 +152,7 @@ mod tests {
 
     #[tokio::test]
     async fn insert_secret_key_returns_conflict_for_duplicate_key() {
-        let (_temp_dir, mut store) = test_store().await;
+        let (_temp_dir, store) = test_store().await;
 
         store
             .insert_secret_key("AKIAIOSFODNN7EXAMPLE", "example-secret", 1)
@@ -175,7 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_access_keys_for_principal_returns_only_matching_keys() {
-        let (_temp_dir, mut store) = test_store().await;
+        let (_temp_dir, store) = test_store().await;
 
         let principal_id = sqlx::query_scalar::<_, i64>(
             "SELECT id FROM iam_principals WHERE account_id = ? AND kind = ? AND name = ?",

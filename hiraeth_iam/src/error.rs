@@ -7,6 +7,7 @@ use hiraeth_store::StoreError;
 pub(crate) enum IamError {
     BadRequest(String),
     EntityAlreadyExists(String),
+    NoSuchEntity(String),
     UnsupportedOperation(String),
     InternalError(String),
 }
@@ -16,6 +17,7 @@ impl Display for IamError {
         match self {
             IamError::BadRequest(message) => write!(f, "{message}"),
             IamError::EntityAlreadyExists(message) => write!(f, "{message}"),
+            IamError::NoSuchEntity(message) => write!(f, "{message}"),
             IamError::UnsupportedOperation(action) => {
                 write!(f, "IAM action {action} is not implemented")
             }
@@ -35,6 +37,7 @@ impl From<IamError> for ServiceResponse {
         let status_code = match value {
             IamError::BadRequest(_) => 400,
             IamError::EntityAlreadyExists(_) => 409,
+            IamError::NoSuchEntity(_) => 404,
             IamError::UnsupportedOperation(_) => 501,
             IamError::InternalError(_) => 500,
         };

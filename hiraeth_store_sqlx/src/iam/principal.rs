@@ -38,6 +38,28 @@ impl PrincipalStore for SqlitePrincipalStore {
         .map_err(map_sqlx_error)
     }
 
+    async fn get_principal_by_identity(
+        &self,
+        account_id: &str,
+        kind: &str,
+        name: &str,
+    ) -> Result<Option<Principal>, StoreError> {
+        sqlx::query_as!(
+            Principal,
+            r#"
+            SELECT id as "id!: i64", account_id, kind, name, path, user_id, created_at
+            FROM iam_principals
+            WHERE account_id = ? AND kind = ? AND name = ?
+            "#,
+            account_id,
+            kind,
+            name
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)
+    }
+
     async fn list_principals(&self) -> Result<Vec<Principal>, StoreError> {
         sqlx::query_as!(
             Principal,
@@ -144,6 +166,34 @@ mod tests {
 
         let principal = store
             .get_principal(999)
+            .await
+            .expect("principal lookup should succeed");
+
+        assert!(principal.is_none());
+    }
+
+    #[tokio::test]
+    async fn get_principal_by_identity_returns_matching_principal() {
+        let (_temp_dir, store) = test_store().await;
+
+        let principal = store
+            .get_principal_by_identity("000000000000", "user", "test")
+            .await
+            .expect("principal lookup should succeed")
+            .expect("principal should exist");
+
+        assert_eq!(principal.account_id, "000000000000");
+        assert_eq!(principal.kind, "user");
+        assert_eq!(principal.name, "test");
+        assert_eq!(principal.path, "/");
+    }
+
+    #[tokio::test]
+    async fn get_principal_by_identity_returns_none_for_missing_principal() {
+        let (_temp_dir, store) = test_store().await;
+
+        let principal = store
+            .get_principal_by_identity("000000000000", "user", "missing")
             .await
             .expect("principal lookup should succeed");
 

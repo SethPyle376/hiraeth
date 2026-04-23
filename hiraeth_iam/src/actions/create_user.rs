@@ -11,10 +11,15 @@ use hiraeth_store::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::IamError;
+use crate::{
+    actions::util::{
+        IAM_XMLNS, ResponseMetadata, default_user_path, normalize_user_path, response_metadata,
+        user_arn,
+    },
+    error::IamError,
+};
 
 pub(crate) struct CreateUserAction;
-const IAM_XMLNS: &str = "https://iam.amazonaws.com/doc/2010-05-08/";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -54,12 +59,6 @@ struct IamUserXml {
     arn: String,
     #[serde(rename = "CreateDate")]
     create_date: String,
-}
-
-#[derive(Debug, Serialize)]
-struct ResponseMetadata {
-    #[serde(rename = "RequestId")]
-    request_id: String,
 }
 
 #[async_trait]
@@ -129,27 +128,6 @@ where
     }
 }
 
-fn user_arn(account_id: &str, path: &str, user_name: &str) -> String {
-    format!(
-        "arn:aws:iam::{account_id}:user{}{user_name}",
-        normalize_user_path(path)
-    )
-}
-
-fn normalize_user_path(path: &str) -> String {
-    let trimmed = path.trim();
-    if trimmed.is_empty() || trimmed == "/" {
-        "/".to_string()
-    } else {
-        let trimmed = trimmed.trim_matches('/');
-        format!("/{trimmed}/")
-    }
-}
-
-fn default_user_path() -> String {
-    "/".to_string()
-}
-
 fn iam_user_xml(principal: &Principal) -> IamUserXml {
     IamUserXml {
         path: principal.path.clone(),
@@ -171,9 +149,7 @@ fn create_user_response(user: IamUserXml, request_id: impl Into<String>) -> Crea
     CreateUserResponse {
         xmlns: IAM_XMLNS,
         result: CreateUserResult { user },
-        response_metadata: ResponseMetadata {
-            request_id: request_id.into(),
-        },
+        response_metadata: response_metadata(request_id),
     }
 }
 

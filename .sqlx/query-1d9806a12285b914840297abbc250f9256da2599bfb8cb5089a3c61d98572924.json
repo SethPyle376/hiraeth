@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO iam_access_keys (key_id, secret_key, principal_id)\n            VALUES (?, ?, ?)\n            RETURNING key_id, secret_key, principal_id, created_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "key_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "secret_key",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "principal_id",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1d9806a12285b914840297abbc250f9256da2599bfb8cb5089a3c61d98572924"
+}

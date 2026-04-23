@@ -28,6 +28,12 @@ pub struct NewPrincipal {
 #[async_trait]
 pub trait PrincipalStore {
     async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError>;
+    async fn get_principal_by_identity(
+        &self,
+        account_id: &str,
+        kind: &str,
+        name: &str,
+    ) -> Result<Option<Principal>, StoreError>;
     async fn list_principals(&self) -> Result<Vec<Principal>, StoreError>;
     async fn create_principal(&self, principal: NewPrincipal) -> Result<Principal, StoreError>;
 }
@@ -52,6 +58,25 @@ impl PrincipalStore for InMemoryPrincipalStore {
             .read()
             .expect("in-memory principal store read lock should not be poisoned")
             .get(&principal_id)
+            .cloned())
+    }
+
+    async fn get_principal_by_identity(
+        &self,
+        account_id: &str,
+        kind: &str,
+        name: &str,
+    ) -> Result<Option<Principal>, StoreError> {
+        Ok(self
+            .principals
+            .read()
+            .expect("in-memory principal store read lock should not be poisoned")
+            .values()
+            .find(|principal| {
+                principal.account_id == account_id
+                    && principal.kind == kind
+                    && principal.name == name
+            })
             .cloned())
     }
 

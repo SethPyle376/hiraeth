@@ -38,6 +38,7 @@ impl Default for InMemoryIamStore {
     }
 }
 
+#[async_trait]
 impl AccessKeyStore for InMemoryIamStore {
     async fn get_secret_key(
         &self,
@@ -56,11 +57,11 @@ impl AccessKeyStore for InMemoryIamStore {
     }
 
     async fn insert_secret_key(
-        &mut self,
+        &self,
         access_key: &str,
         secret_key: &str,
         principal_id: i64,
-    ) -> Result<(), crate::StoreError> {
+    ) -> Result<AccessKey, crate::StoreError> {
         self.access_key_store
             .insert_secret_key(access_key, secret_key, principal_id)
             .await
@@ -74,6 +75,17 @@ impl PrincipalStore for InMemoryIamStore {
         principal_id: i64,
     ) -> Result<Option<Principal>, crate::StoreError> {
         self.principal_store.get_principal(principal_id).await
+    }
+
+    async fn get_principal_by_identity(
+        &self,
+        account_id: &str,
+        kind: &str,
+        name: &str,
+    ) -> Result<Option<Principal>, crate::StoreError> {
+        self.principal_store
+            .get_principal_by_identity(account_id, kind, name)
+            .await
     }
 
     async fn list_principals(&self) -> Result<Vec<Principal>, crate::StoreError> {
