@@ -2,11 +2,15 @@ use async_trait::async_trait;
 use hiraeth_auth::AuthenticatedRequest;
 use hiraeth_core::{
     ApiError, AuthContext, AuthMode, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
+    render_result,
 };
 use hiraeth_router::Service;
 use hiraeth_store::{IamStore, StoreError, iam::PrincipalStore};
 
+mod auth;
 mod authorize;
+mod error;
+mod user;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthorizationMode {
@@ -88,22 +92,37 @@ impl<S> Service for IamService<S>
 where
     S: IamStore + Send + Sync,
 {
-    fn can_handle(&self, _request: &ResolvedRequest) -> bool {
-        false
+    fn can_handle(&self, request: &ResolvedRequest) -> bool {
+        request.service == "iam"
     }
 
     async fn handle_request(
         &self,
-        _request: ResolvedRequest,
+        request: ResolvedRequest,
     ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
-        todo!()
+        let action = match auth::IamAction::from_request(&request) {
+            Ok(action) => action,
+            Err(error) => return Ok(ServiceResponse::from(error)),
+        };
+
+        Ok(render_result(match action {
+            auth::IamAction::CreateUser => user::create_user(&request, &self.store).await,
+        }))
     }
 
     async fn resolve_authorization(
         &self,
-        _request: &ResolvedRequest,
+        request: &ResolvedRequest,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        todo!()
+        let action = auth::IamAction::from_request(request).map_err(ServiceResponse::from)?;
+        let resource =
+            auth::get_resource_for_action(action, request).map_err(ServiceResponse::from)?;
+
+        Ok(AuthorizationCheck {
+            action: action.authorization_action().to_string(),
+            resource,
+            resource_policy: None,
+        })
     }
 }
 
@@ -113,7 +132,9 @@ mod tests {
 
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext as AuthenticatedAuthContext, AuthenticatedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
+    use hiraeth_router::Service;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
 
     use super::{AuthorizationMode, IamService, ResolveIdentityError};
@@ -199,5 +220,82 @@ mod tests {
             .expect_err("missing principal should fail identity resolution");
 
         assert_eq!(error, ResolveIdentityError::PrincipalNotFound);
+    }
+
+    fn iam_request(body: &[u8]) -> ResolvedRequest {
+        ResolvedRequest {
+            request: IncomingRequest {
+                host: "iam.amazonaws.com".to_string(),
+                method: "POST".to_string(),
+                path: "/".to_string(),
+                query: None,
+                headers: [(
+                    "content-type".to_string(),
+                    "application/x-www-form-urlencoded".to_string(),
+                )]
+                .into_iter()
+                .collect(),
+                body: body.to_vec(),
+            },
+            service: "iam".to_string(),
+            region: "us-east-1".to_string(),
+            auth_context: AuthContext {
+                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal: principal(1),
+            },
+            date: Utc.with_ymd_and_hms(2026, 4, 21, 12, 0, 0).unwrap(),
+        }
+    }
+
+    #[tokio::test]
+    async fn iam_service_claims_iam_requests() {
+        let iam = IamService::new(
+            AuthorizationMode::Audit,
+            InMemoryIamStore::new([access_key(1)], [principal(1)], []),
+        );
+
+        assert!(iam.can_handle(&iam_request(
+            b"Action=CreateUser&Version=2010-05-08&UserName=test-user"
+        )));
+    }
+
+    #[tokio::test]
+    async fn resolve_authorization_builds_iam_action_from_query_request() {
+        let iam = IamService::new(
+            AuthorizationMode::Audit,
+            InMemoryIamStore::new([access_key(1)], [principal(1)], []),
+        );
+
+        let check = iam
+            .resolve_authorization(&iam_request(
+                b"Action=CreateUser&Version=2010-05-08&UserName=test-user",
+            ))
+            .await
+            .expect("iam auth check should resolve");
+
+        assert_eq!(check.action, "iam:CreateUser");
+        assert_eq!(check.resource, "arn:aws:iam::000000000000:user/test-user");
+        assert!(check.resource_policy.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_request_returns_not_implemented_for_unimplemented_iam_action() {
+        let iam = IamService::new(
+            AuthorizationMode::Audit,
+            InMemoryIamStore::new([access_key(1)], [principal(1)], []),
+        );
+
+        let response = iam
+            .handle_request(iam_request(
+                b"Action=CreateUser&Version=2010-05-08&UserName=test-user",
+            ))
+            .await
+            .expect("placeholder iam response should be returned");
+
+        assert_eq!(response.status_code, 501);
+        assert_eq!(
+            String::from_utf8(response.body).unwrap(),
+            "IAM action CreateUser is not implemented"
+        );
     }
 }

@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 mod sqs;
 pub use sqs::*;
+mod iam;
+pub use iam::*;
 
 pub const DEFAULT_REGION: &str = "us-east-1";
 pub const TEST_ACCESS_KEY_ID: &str = "test";

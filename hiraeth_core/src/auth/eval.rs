@@ -35,6 +35,7 @@ pub fn evaluate_resource_policy(
 
 pub fn evaluate_identity_policy(resource: &str, action: &str, policy: &Policy) -> PolicyEvalResult {
     evaluate_matching_statements(policy, |statement| {
+        let principal_matches = statement.principal.is_empty();
         let action_matches = statement
             .action
             .iter()
@@ -44,7 +45,7 @@ pub fn evaluate_identity_policy(resource: &str, action: &str, policy: &Policy) -
             .iter()
             .any(|pattern| wildcard_match(pattern, resource));
 
-        action_matches && resource_matches
+        principal_matches && action_matches && resource_matches
     })
 }
 

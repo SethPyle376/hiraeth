@@ -1,6 +1,11 @@
-use std::fmt::{Debug, Display};
+use std::{
+    collections::BTreeMap,
+    fmt::{Debug, Display},
+};
 
+use hiraeth_http::IncomingRequest;
 use serde::{Serialize, de::DeserializeOwned};
+use url::form_urlencoded;
 
 use crate::ApiError;
 
@@ -110,6 +115,64 @@ pub fn parse_json_body<T: DeserializeOwned>(body: &[u8]) -> Result<T, RequestBod
     serde_json::from_slice(body).map_err(RequestBodyParseError::new)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsQueryParams {
+    encoded: Vec<u8>,
+    values: BTreeMap<String, Vec<String>>,
+}
+
+impl AwsQueryParams {
+    pub fn parse(request: &IncomingRequest) -> Result<Self, AwsQueryParseError> {
+        let encoded = encoded_aws_query_request(request)?;
+        Ok(Self::from_encoded(encoded))
+    }
+
+    fn from_encoded(encoded: Vec<u8>) -> Self {
+        let values =
+            form_urlencoded::parse(&encoded).fold(BTreeMap::new(), |mut values, (name, value)| {
+                values
+                    .entry(name.into_owned())
+                    .or_insert_with(Vec::new)
+                    .push(value.into_owned());
+                values
+            });
+
+        Self { encoded, values }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.values.contains_key(key)
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.values.get(key)?.first().map(String::as_str)
+    }
+
+    pub fn get_all(&self, key: &str) -> Option<&[String]> {
+        self.values.get(key).map(Vec::as_slice)
+    }
+
+    pub fn deserialize<T: DeserializeOwned>(&self) -> Result<T, AwsQueryParseError> {
+        serde_urlencoded::from_bytes(&self.encoded).map_err(AwsQueryParseError::new)
+    }
+}
+
+pub fn parse_aws_query_params(
+    request: &IncomingRequest,
+) -> Result<AwsQueryParams, AwsQueryParseError> {
+    AwsQueryParams::parse(request)
+}
+
+pub fn parse_aws_query_request<T: DeserializeOwned>(
+    request: &IncomingRequest,
+) -> Result<T, AwsQueryParseError> {
+    parse_aws_query_params(request)?.deserialize()
+}
+
 pub fn render_result<T, E>(result: Result<T, E>) -> ServiceResponse
 where
     T: Into<ServiceResponse>,
@@ -175,11 +238,89 @@ impl From<RequestBodyParseError> for ApiError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwsQueryParseError {
+    message: String,
+}
+
+impl AwsQueryParseError {
+    fn new(error: serde_urlencoded::de::Error) -> Self {
+        Self {
+            message: format!("Invalid AWS query request: {}", error),
+        }
+    }
+
+    fn unsupported_content_type(content_type: &str) -> Self {
+        Self {
+            message: format!(
+                "Invalid AWS query request: unsupported content-type '{}'",
+                content_type
+            ),
+        }
+    }
+}
+
+impl Display for AwsQueryParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for AwsQueryParseError {}
+
+impl From<AwsQueryParseError> for ApiError {
+    fn from(value: AwsQueryParseError) -> Self {
+        ApiError::BadRequest(value.to_string())
+    }
+}
+
+fn encoded_aws_query_request(request: &IncomingRequest) -> Result<Vec<u8>, AwsQueryParseError> {
+    let mut encoded = Vec::new();
+
+    if let Some(query) = request.query.as_deref().filter(|query| !query.is_empty()) {
+        encoded.extend_from_slice(query.as_bytes());
+    }
+
+    if !request.body.is_empty() {
+        let content_type = request
+            .headers
+            .get("content-type")
+            .map(String::as_str)
+            .unwrap_or("");
+
+        if !content_type.is_empty() && !is_form_urlencoded_content_type(content_type) {
+            return Err(AwsQueryParseError::unsupported_content_type(content_type));
+        }
+
+        if !encoded.is_empty() {
+            encoded.push(b'&');
+        }
+
+        encoded.extend_from_slice(&request.body);
+    }
+
+    Ok(encoded)
+}
+
+fn is_form_urlencoded_content_type(content_type: &str) -> bool {
+    content_type
+        .split(';')
+        .next()
+        .map(str::trim)
+        .is_some_and(|value| value.eq_ignore_ascii_case("application/x-www-form-urlencoded"))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use hiraeth_http::IncomingRequest;
+    use serde::Deserialize;
+
     use super::{
-        AwsErrorFault, AwsServiceError, ServiceResponse, aws_batch_error_details, empty_response,
-        json_response, parse_json_body, render_aws_json_error, render_result,
+        AwsErrorFault, AwsQueryParams, AwsServiceError, ServiceResponse, aws_batch_error_details,
+        empty_response, json_response, parse_aws_query_params, parse_aws_query_request,
+        parse_json_body, render_aws_json_error, render_result,
     };
 
     #[derive(Debug)]
@@ -281,5 +422,118 @@ mod tests {
 
         assert_eq!(success.status_code, 200);
         assert_eq!(failure.status_code, 400);
+    }
+
+    fn request_with_query_and_body(
+        query: Option<&str>,
+        content_type: Option<&str>,
+        body: &[u8],
+    ) -> IncomingRequest {
+        let mut headers = HashMap::new();
+        if let Some(content_type) = content_type {
+            headers.insert("content-type".to_string(), content_type.to_string());
+        }
+
+        IncomingRequest {
+            host: "iam.amazonaws.com".to_string(),
+            method: "POST".to_string(),
+            path: "/".to_string(),
+            query: query.map(str::to_string),
+            headers,
+            body: body.to_vec(),
+        }
+    }
+
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct QueryRequest {
+        #[serde(rename = "Action")]
+        action: String,
+        #[serde(rename = "Version")]
+        version: String,
+        #[serde(rename = "UserName")]
+        user_name: String,
+        #[serde(rename = "Path")]
+        path: String,
+    }
+
+    #[test]
+    fn parse_aws_query_request_reads_form_body_into_struct() {
+        let request = request_with_query_and_body(
+            None,
+            Some("application/x-www-form-urlencoded"),
+            b"Action=CreateUser&Version=2010-05-08&UserName=test-user&Path=%2Fengineering%2F",
+        );
+
+        let parsed: QueryRequest =
+            parse_aws_query_request(&request).expect("form body should deserialize");
+
+        assert_eq!(
+            parsed,
+            QueryRequest {
+                action: "CreateUser".to_string(),
+                version: "2010-05-08".to_string(),
+                user_name: "test-user".to_string(),
+                path: "/engineering/".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_aws_query_params_merges_query_string_and_body() {
+        let request = request_with_query_and_body(
+            Some("Action=CreateUser&Version=2010-05-08"),
+            Some("application/x-www-form-urlencoded; charset=utf-8"),
+            b"UserName=test-user&Path=%2F",
+        );
+
+        let params = parse_aws_query_params(&request).expect("query params should parse");
+
+        assert_eq!(params.get("Action"), Some("CreateUser"));
+        assert_eq!(params.get("Version"), Some("2010-05-08"));
+        assert_eq!(params.get("UserName"), Some("test-user"));
+        assert_eq!(params.get("Path"), Some("/"));
+    }
+
+    #[test]
+    fn parse_aws_query_params_preserves_member_style_keys() {
+        let request = request_with_query_and_body(
+            None,
+            Some("application/x-www-form-urlencoded"),
+            b"Tags.member.1.Key=team&Tags.member.1.Value=platform&Tags.member.2.Key=env&Tags.member.2.Value=dev",
+        );
+
+        let params = AwsQueryParams::parse(&request).expect("member params should parse");
+
+        assert_eq!(params.get("Tags.member.1.Key"), Some("team"));
+        assert_eq!(params.get("Tags.member.1.Value"), Some("platform"));
+        assert_eq!(params.get("Tags.member.2.Key"), Some("env"));
+        assert_eq!(params.get("Tags.member.2.Value"), Some("dev"));
+    }
+
+    #[test]
+    fn parse_aws_query_params_decodes_plus_and_percent_escapes() {
+        let request =
+            request_with_query_and_body(Some("UserName=test+user&Path=%2Fdev+ops%2F"), None, b"");
+
+        let params = parse_aws_query_params(&request).expect("query string should parse");
+
+        assert_eq!(params.get("UserName"), Some("test user"));
+        assert_eq!(params.get("Path"), Some("/dev ops/"));
+    }
+
+    #[test]
+    fn parse_aws_query_params_rejects_unsupported_body_content_type() {
+        let request = request_with_query_and_body(
+            None,
+            Some("application/json"),
+            br#"{"Action":"CreateUser"}"#,
+        );
+
+        let error = parse_aws_query_params(&request).expect_err("json body should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid AWS query request: unsupported content-type 'application/json'"
+        );
     }
 }
