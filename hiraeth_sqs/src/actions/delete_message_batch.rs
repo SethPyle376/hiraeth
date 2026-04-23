@@ -1,34 +1,13 @@
-use hiraeth_core::ResolvedRequest;
-use hiraeth_core::{ServiceResponse, empty_response, json_response};
-use hiraeth_store::sqs::SqsStore;
+use async_trait::async_trait;
+use hiraeth_core::{
+    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+};
+use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    error::{SqsError, batch_error_details, map_receipt_handle_store_error},
-    util,
-};
+use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error};
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct DeleteMessageRequest {
-    pub queue_url: String,
-    pub receipt_handle: String,
-}
-
-pub(crate) async fn delete_message<S: SqsStore>(
-    request: &ResolvedRequest,
-    store: &S,
-) -> Result<ServiceResponse, SqsError> {
-    let delete_request = util::parse_request_body::<DeleteMessageRequest>(request)?;
-    let queue = util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
-
-    store
-        .delete_message(queue.id, &delete_request.receipt_handle)
-        .await
-        .map_err(map_receipt_handle_store_error)?;
-
-    Ok(empty_response())
-}
+pub(crate) struct DeleteMessageBatchAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -66,13 +45,15 @@ struct DeleteMessageBatchResponse {
     pub failed: Vec<DeleteMessageBatchFailedEntry>,
 }
 
-pub(crate) async fn delete_message_batch<S: SqsStore>(
+async fn handle_delete_message_batch<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let delete_request = util::parse_request_body::<DeleteMessageBatchRequest>(request)?;
-    let queue = util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
-    util::validate_batch_request(delete_request.entries.iter().map(|entry| entry.id.as_str()))?;
+    let delete_request = crate::util::parse_request_body::<DeleteMessageBatchRequest>(request)?;
+    let queue = crate::util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
+    crate::util::validate_batch_request(
+        delete_request.entries.iter().map(|entry| entry.id.as_str()),
+    )?;
 
     let mut successful = Vec::new();
     let mut failed = Vec::new();
@@ -81,11 +62,9 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
         let result = store.delete_message(queue.id, &entry.receipt_handle).await;
 
         match result {
-            Ok(()) => {
-                successful.push(DeleteMessageBatchSuccessEntry {
-                    id: entry.id.clone(),
-                });
-            }
+            Ok(()) => successful.push(DeleteMessageBatchSuccessEntry {
+                id: entry.id.clone(),
+            }),
             Err(e) => {
                 let error = map_receipt_handle_store_error(e.clone());
                 let (code, sender_fault) = batch_error_details(&error);
@@ -99,9 +78,36 @@ pub(crate) async fn delete_message_batch<S: SqsStore>(
         }
     }
 
-    let response = DeleteMessageBatchResponse { successful, failed };
+    json_response(&DeleteMessageBatchResponse { successful, failed }).map_err(Into::into)
+}
 
-    json_response(&response).map_err(Into::into)
+#[async_trait]
+impl<S> AwsAction<S> for DeleteMessageBatchAction
+where
+    S: SqsStore + Send + Sync,
+{
+    fn name(&self) -> &'static str {
+        "DeleteMessageBatch"
+    }
+
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        store: &S,
+    ) -> Result<ServiceResponse, ApiError> {
+        match handle_delete_message_batch(&request, store).await {
+            Ok(response) => Ok(response),
+            Err(error) => Ok(ServiceResponse::from(error)),
+        }
+    }
+
+    async fn resolve_authorization(
+        &self,
+        request: &ResolvedRequest,
+        store: &S,
+    ) -> Result<AuthorizationCheck, ServiceResponse> {
+        crate::auth::resolve_authorization("sqs:DeleteMessage", request, store).await
+    }
 }
 
 #[cfg(test)]
@@ -109,14 +115,13 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
-    use super::{delete_message, delete_message_batch};
-    use crate::error::SqsError;
+    use super::{DeleteMessageBatchAction, handle_delete_message_batch};
 
     fn queue() -> SqsQueue {
         SqsQueue {
@@ -141,9 +146,12 @@ mod tests {
         }
     }
 
-    fn resolved_request(target: &str, body: &str) -> ResolvedRequest {
+    fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
-        headers.insert("x-amz-target".to_string(), target.to_string());
+        headers.insert(
+            "x-amz-target".to_string(),
+            "AmazonSQS.DeleteMessageBatch".to_string(),
+        );
 
         ResolvedRequest {
             request: IncomingRequest {
@@ -177,51 +185,18 @@ mod tests {
         serde_json::from_slice(&response.body).expect("response body should be valid json")
     }
 
-    #[tokio::test]
-    async fn delete_message_deletes_matching_receipt_handle() {
-        let store = SqsTestStore::with_queue(queue());
-        let request = resolved_request(
-            "AmazonSQS.DeleteMessage",
-            r#"{
-                "QueueUrl":"http://localhost:4566/123456789012/orders",
-                "ReceiptHandle":"receipt-123"
-            }"#,
+    #[test]
+    fn reports_expected_action_name() {
+        assert_eq!(
+            <DeleteMessageBatchAction as AwsAction<SqsTestStore>>::name(&DeleteMessageBatchAction),
+            "DeleteMessageBatch"
         );
-
-        let response = delete_message(&request, &store)
-            .await
-            .expect("delete message should succeed");
-
-        assert_eq!(response.status_code, 200);
-        assert!(response.body.is_empty());
-
-        let deleted = store.deleted_messages();
-        assert_eq!(deleted, vec![(42, "receipt-123".to_string())]);
     }
 
     #[tokio::test]
-    async fn delete_message_returns_not_found_for_missing_queue() {
-        let store = SqsTestStore::default();
-        let request = resolved_request(
-            "AmazonSQS.DeleteMessage",
-            r#"{
-                "QueueUrl":"http://localhost:4566/123456789012/orders",
-                "ReceiptHandle":"receipt-123"
-            }"#,
-        );
-
-        let error = delete_message(&request, &store)
-            .await
-            .expect_err("missing queue should error");
-
-        assert_eq!(error, SqsError::QueueNotFound);
-    }
-
-    #[tokio::test]
-    async fn delete_message_batch_returns_successful_and_failed_entries() {
+    async fn returns_successful_and_failed_entries() {
         let store = SqsTestStore::with_queue(queue()).with_failing_receipt_handles(&["receipt-2"]);
         let request = resolved_request(
-            "AmazonSQS.DeleteMessageBatch",
             r#"{
                 "QueueUrl":"http://localhost:4566/123456789012/orders",
                 "Entries":[
@@ -232,7 +207,7 @@ mod tests {
             }"#,
         );
 
-        let response = delete_message_batch(&request, &store)
+        let response = handle_delete_message_batch(&request, &store)
             .await
             .expect("delete message batch should succeed");
 
@@ -246,10 +221,8 @@ mod tests {
         assert_eq!(body["Failed"][0]["Id"], "entry-2");
         assert_eq!(body["Failed"][0]["Code"], "ReceiptHandleIsInvalid");
         assert_eq!(body["Failed"][0]["SenderFault"], true);
-
-        let deleted = store.deleted_messages();
         assert_eq!(
-            deleted,
+            store.deleted_messages(),
             vec![(42, "receipt-1".to_string()), (42, "receipt-3".to_string())]
         );
     }

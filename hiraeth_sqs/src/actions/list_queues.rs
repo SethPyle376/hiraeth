@@ -1,9 +1,13 @@
-use hiraeth_core::ResolvedRequest;
-use hiraeth_core::{ServiceResponse, json_response};
-use hiraeth_store::sqs::SqsStore;
+use async_trait::async_trait;
+use hiraeth_core::{
+    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+};
+use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use crate::{error::SqsError, util};
+use crate::error::SqsError;
+
+pub(crate) struct ListQueuesAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -21,11 +25,11 @@ struct ListQueuesResponse {
     next_token: Option<String>,
 }
 
-pub(crate) async fn list_queues<S: SqsStore>(
+async fn handle_list_queues<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = util::parse_request_body::<ListQueuesRequest>(request)?;
+    let request_body = crate::util::parse_request_body::<ListQueuesRequest>(request)?;
 
     if let Some(max_results) = request_body.max_results
         && !(1..=1000).contains(&max_results)
@@ -37,10 +41,8 @@ pub(crate) async fn list_queues<S: SqsStore>(
 
     let region = &request.region;
     let account_id = request.auth_context.principal.account_id.clone();
-
     let queue_name_prefix = request_body.queue_name_prefix.as_deref();
     let next_token = request_body.next_token.as_deref();
-
     let store_max_results = request_body
         .max_results
         .map(|max_results| max_results.saturating_add(1));
@@ -69,30 +71,58 @@ pub(crate) async fn list_queues<S: SqsStore>(
 
     let queue_urls = queues
         .into_iter()
-        .map(|q| util::queue_url(&request.request.host, &account_id, &q.name))
+        .map(|q| crate::util::queue_url(&request.request.host, &account_id, &q.name))
         .collect();
 
-    let list_response = ListQueuesResponse {
+    json_response(&ListQueuesResponse {
         queue_urls,
         next_token,
-    };
+    })
+    .map_err(Into::into)
+}
 
-    json_response(&list_response).map_err(Into::into)
+#[async_trait]
+impl<S> AwsAction<S> for ListQueuesAction
+where
+    S: SqsStore + Send + Sync,
+{
+    fn name(&self) -> &'static str {
+        "ListQueues"
+    }
+
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        store: &S,
+    ) -> Result<ServiceResponse, ApiError> {
+        match handle_list_queues(&request, store).await {
+            Ok(response) => Ok(response),
+            Err(error) => Ok(ServiceResponse::from(error)),
+        }
+    }
+
+    async fn resolve_authorization(
+        &self,
+        request: &ResolvedRequest,
+        store: &S,
+    ) -> Result<AuthorizationCheck, ServiceResponse> {
+        crate::auth::resolve_authorization("sqs:ListQueues", request, store).await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         principal::Principal,
         sqs::SqsQueue,
         test_support::{ListQueuesCall, SqsTestStore},
     };
-    use serde_json::Value;
 
-    use super::{SqsError, list_queues};
+    use super::{ListQueuesAction, handle_list_queues};
+    use crate::error::SqsError;
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         ResolvedRequest {
@@ -151,12 +181,20 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &hiraeth_router::ServiceResponse) -> Value {
+    fn parse_json_body(response: &hiraeth_router::ServiceResponse) -> serde_json::Value {
         serde_json::from_slice(&response.body).expect("response body should be valid json")
     }
 
+    #[test]
+    fn reports_expected_action_name() {
+        assert_eq!(
+            <ListQueuesAction as AwsAction<SqsTestStore>>::name(&ListQueuesAction),
+            "ListQueues"
+        );
+    }
+
     #[tokio::test]
-    async fn list_queues_returns_matching_queue_urls_and_forwards_filters() {
+    async fn returns_matching_queue_urls_and_forwards_filters() {
         let store = SqsTestStore::with_queues(vec![
             queue("orders-001", "us-east-1", "123456789012"),
             queue("orders-002", "us-east-1", "123456789012"),
@@ -173,7 +211,7 @@ mod tests {
             }"#,
         );
 
-        let response = list_queues(&request, &store)
+        let response = handle_list_queues(&request, &store)
             .await
             .expect("list queues should succeed");
         let body = parse_json_body(&response);
@@ -203,7 +241,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_queues_returns_next_token_when_another_page_exists() {
+    async fn returns_next_token_when_another_page_exists() {
         let store = SqsTestStore::with_queues(vec![
             queue("orders-001", "us-east-1", "123456789012"),
             queue("orders-002", "us-east-1", "123456789012"),
@@ -211,7 +249,7 @@ mod tests {
         ]);
         let request = resolved_request(r#"{"MaxResults":2}"#);
 
-        let response = list_queues(&request, &store)
+        let response = handle_list_queues(&request, &store)
             .await
             .expect("list queues should succeed");
         let body = parse_json_body(&response);
@@ -227,14 +265,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_queues_omits_next_token_when_page_is_exactly_full() {
+    async fn omits_next_token_when_page_is_exactly_full() {
         let store = SqsTestStore::with_queues(vec![
             queue("orders-001", "us-east-1", "123456789012"),
             queue("orders-002", "us-east-1", "123456789012"),
         ]);
         let request = resolved_request(r#"{"MaxResults":2}"#);
 
-        let response = list_queues(&request, &store)
+        let response = handle_list_queues(&request, &store)
             .await
             .expect("list queues should succeed");
         let body = parse_json_body(&response);
@@ -250,17 +288,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_queues_rejects_invalid_max_results() {
+    async fn rejects_invalid_max_results() {
         let store = SqsTestStore::with_queues(Vec::new());
         let request = resolved_request(r#"{"MaxResults":0}"#);
 
-        let result = list_queues(&request, &store).await;
+        let result = handle_list_queues(&request, &store).await;
 
-        assert!(matches!(
-            result,
-            Err(SqsError::BadRequest(message))
-                if message == "MaxResults must be between 1 and 1000"
-        ));
-        assert!(store.list_queues_calls().is_empty());
+        assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }
 }

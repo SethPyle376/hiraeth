@@ -1,0 +1,232 @@
+use async_trait::async_trait;
+use hiraeth_core::{
+    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+};
+use hiraeth_store::sqs::SqsStore;
+use serde::{Deserialize, Serialize};
+
+use super::queue_support;
+use crate::error::SqsError;
+
+pub(crate) struct GetQueueUrlAction;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) struct GetQueueUrlRequest {
+    pub(crate) queue_name: String,
+    pub(crate) queue_owner_aws_account_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct GetQueueUrlResponse {
+    queue_url: String,
+}
+
+async fn handle_get_queue_url<S: SqsStore>(
+    request: &ResolvedRequest,
+    store: &S,
+) -> Result<ServiceResponse, SqsError> {
+    let request_body = crate::util::parse_request_body::<GetQueueUrlRequest>(request)?;
+    queue_support::validate_queue_name(
+        &request_body.queue_name,
+        request_body.queue_name.ends_with(".fifo"),
+    )?;
+
+    let account_id = request_body
+        .queue_owner_aws_account_id
+        .unwrap_or_else(|| request.auth_context.principal.account_id.clone());
+
+    let queue = store
+        .get_queue(&request_body.queue_name, &request.region, &account_id)
+        .await
+        .map_err(|e| SqsError::InternalError(e.to_string()))?;
+
+    match queue {
+        Some(_) => {
+            let response = GetQueueUrlResponse {
+                queue_url: crate::util::queue_url(
+                    &request.request.host,
+                    &account_id,
+                    &request_body.queue_name,
+                ),
+            };
+            json_response(&response).map_err(Into::into)
+        }
+        None => Err(SqsError::QueueNotFound),
+    }
+}
+
+#[async_trait]
+impl<S> AwsAction<S> for GetQueueUrlAction
+where
+    S: SqsStore + Send + Sync,
+{
+    fn name(&self) -> &'static str {
+        "GetQueueUrl"
+    }
+
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        store: &S,
+    ) -> Result<ServiceResponse, ApiError> {
+        match handle_get_queue_url(&request, store).await {
+            Ok(response) => Ok(response),
+            Err(error) => Ok(ServiceResponse::from(error)),
+        }
+    }
+
+    async fn resolve_authorization(
+        &self,
+        request: &ResolvedRequest,
+        store: &S,
+    ) -> Result<AuthorizationCheck, ServiceResponse> {
+        crate::auth::resolve_authorization("sqs:GetQueueUrl", request, store).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use chrono::{TimeZone, Utc};
+    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_http::IncomingRequest;
+    use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
+
+    use super::{GetQueueUrlAction, handle_get_queue_url};
+    use crate::error::SqsError;
+
+    fn resolved_request(body: &str) -> ResolvedRequest {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "x-amz-target".to_string(),
+            "AmazonSQS.GetQueueUrl".to_string(),
+        );
+
+        ResolvedRequest {
+            request: IncomingRequest {
+                host: "localhost:4566".to_string(),
+                method: "POST".to_string(),
+                path: "/".to_string(),
+                query: None,
+                headers,
+                body: body.as_bytes().to_vec(),
+            },
+            service: "sqs".to_string(),
+            region: "us-east-1".to_string(),
+            auth_context: AuthContext {
+                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal: Principal {
+                    id: 1,
+                    account_id: "123456789012".to_string(),
+                    kind: "user".to_string(),
+                    name: "test-user".to_string(),
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 1, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
+                },
+            },
+            date: Utc.with_ymd_and_hms(2026, 4, 1, 12, 0, 0).unwrap(),
+        }
+    }
+
+    fn aws_style_resolved_request(body: &str) -> ResolvedRequest {
+        let mut request = resolved_request(body);
+        request.request.host = "sqs.us-east-1.amazonaws.com".to_string();
+        request
+    }
+
+    #[test]
+    fn reports_expected_action_name() {
+        assert_eq!(
+            <GetQueueUrlAction as AwsAction<SqsTestStore>>::name(&GetQueueUrlAction),
+            "GetQueueUrl"
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_not_found_when_queue_does_not_exist() {
+        let store = SqsTestStore::default();
+        let request = resolved_request(r#"{"QueueName":"missing-queue"}"#);
+
+        let result = handle_get_queue_url(&request, &store).await;
+
+        assert!(matches!(result, Err(SqsError::QueueNotFound)));
+    }
+
+    #[tokio::test]
+    async fn returns_queue_url_when_queue_exists() {
+        let store = SqsTestStore::with_queue(SqsQueue {
+            id: 1,
+            name: "existing-queue".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "123456789012".to_string(),
+            queue_type: "standard".to_string(),
+            visibility_timeout_seconds: 30,
+            delay_seconds: 0,
+            message_retention_period_seconds: 345600,
+            receive_message_wait_time_seconds: 0,
+            created_at: Utc
+                .with_ymd_and_hms(2026, 4, 1, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            updated_at: Utc
+                .with_ymd_and_hms(2026, 4, 1, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            ..Default::default()
+        });
+        let request = resolved_request(r#"{"QueueName":"existing-queue"}"#);
+
+        let response = handle_get_queue_url(&request, &store)
+            .await
+            .expect("get queue url should succeed");
+        let body: serde_json::Value =
+            serde_json::from_slice(&response.body).expect("response body should be valid json");
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(
+            body["QueueUrl"],
+            "http://localhost:4566/123456789012/existing-queue"
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_aws_style_queue_url_for_aws_hostnames() {
+        let store = SqsTestStore::with_queue(SqsQueue {
+            id: 1,
+            name: "existing-queue".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "123456789012".to_string(),
+            queue_type: "standard".to_string(),
+            visibility_timeout_seconds: 30,
+            delay_seconds: 0,
+            message_retention_period_seconds: 345600,
+            receive_message_wait_time_seconds: 0,
+            created_at: Utc
+                .with_ymd_and_hms(2026, 4, 1, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            updated_at: Utc
+                .with_ymd_and_hms(2026, 4, 1, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            ..Default::default()
+        });
+        let request = aws_style_resolved_request(r#"{"QueueName":"existing-queue"}"#);
+
+        let response = handle_get_queue_url(&request, &store)
+            .await
+            .expect("get queue url should succeed");
+        let body: serde_json::Value =
+            serde_json::from_slice(&response.body).expect("response body should be valid json");
+
+        assert_eq!(
+            body["QueueUrl"],
+            "http://sqs.us-east-1.amazonaws.com/123456789012/existing-queue"
+        );
+    }
+}

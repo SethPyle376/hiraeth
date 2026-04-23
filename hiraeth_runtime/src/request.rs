@@ -22,7 +22,7 @@ pub struct AppRequestOutcome {
 
 pub async fn resolve_and_route(
     incoming_request: IncomingRequest,
-    iam: &IamService<impl hiraeth_store::IamStore + Send + Sync>,
+    iam: &IamService<impl hiraeth_store::IamStore + Send + Sync + 'static>,
     router: &ServiceRouter,
 ) -> AppRequestOutcome {
     let auth_started_at = Instant::now();

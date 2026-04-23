@@ -1,24 +1,8 @@
 use std::collections::HashMap;
 
-use hiraeth_core::ResolvedRequest;
-use hiraeth_core::{ServiceResponse, json_response};
 use hiraeth_store::sqs::{SqsQueue, SqsQueueAttributeUpdate, SqsStore};
-use serde::{Deserialize, Serialize};
 
-use crate::{error::SqsError, util};
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct GetQueueAttributesRequest {
-    pub queue_url: String,
-    pub attribute_names: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct GetQueueAttributesResponse {
-    pub attributes: HashMap<String, String>,
-}
+use crate::error::SqsError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QueueAttributeValues {
@@ -234,19 +218,6 @@ pub(crate) fn parse_queue_attribute_update(
         redrive_allow_policy: parse_json_string_attribute(attributes, "RedriveAllowPolicy")?,
         sqs_managed_sse_enabled: parse_bool_attribute(attributes, "SqsManagedSseEnabled")?,
     })
-}
-
-pub(crate) async fn get_queue_attributes<S: SqsStore>(
-    request: &ResolvedRequest,
-    store: &S,
-) -> Result<ServiceResponse, SqsError> {
-    let attributes_request = util::parse_request_body::<GetQueueAttributesRequest>(request)?;
-
-    let queue = util::load_queue_from_url(request, store, &attributes_request.queue_url).await?;
-    let attributes =
-        collect_queue_attributes(store, &queue, &attributes_request.attribute_names).await?;
-
-    json_response(&GetQueueAttributesResponse { attributes }).map_err(Into::into)
 }
 
 pub(crate) async fn collect_queue_attributes<S: SqsStore>(
@@ -592,49 +563,10 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
-    use hiraeth_http::IncomingRequest;
-    use hiraeth_router::ServiceResponse;
-    use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
-    use serde_json::Value;
+    use hiraeth_store::{sqs::SqsQueue, test_support::SqsTestStore};
 
-    use super::{QueueAttributeValues, collect_queue_attributes, get_queue_attributes};
+    use super::{QueueAttributeValues, collect_queue_attributes};
     use crate::error::SqsError;
-
-    fn resolved_request(body: &str) -> ResolvedRequest {
-        let mut headers = HashMap::new();
-        headers.insert(
-            "x-amz-target".to_string(),
-            "AmazonSQS.GetQueueAttributes".to_string(),
-        );
-
-        ResolvedRequest {
-            request: IncomingRequest {
-                host: "localhost:4566".to_string(),
-                method: "POST".to_string(),
-                path: "/".to_string(),
-                query: None,
-                headers,
-                body: body.as_bytes().to_vec(),
-            },
-            service: "sqs".to_string(),
-            region: "us-east-1".to_string(),
-            auth_context: AuthContext {
-                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
-                principal: Principal {
-                    id: 1,
-                    account_id: "123456789012".to_string(),
-                    kind: "user".to_string(),
-                    name: "test-user".to_string(),
-                    created_at: Utc
-                        .with_ymd_and_hms(2026, 4, 4, 12, 0, 0)
-                        .unwrap()
-                        .naive_utc(),
-                },
-            },
-            date: Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap(),
-        }
-    }
 
     fn queue() -> SqsQueue {
         SqsQueue {
@@ -666,10 +598,6 @@ mod tests {
                 .unwrap()
                 .naive_utc(),
         }
-    }
-
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
     }
 
     fn attribute_names(names: &[&str]) -> Vec<String> {
@@ -812,64 +740,5 @@ mod tests {
             r#"{"redrivePermission":"allowAll"}"#
         );
         assert_eq!(attributes["SqsManagedSseEnabled"], "true");
-    }
-
-    #[tokio::test]
-    async fn get_queue_attributes_returns_requested_attributes() {
-        let store = SqsTestStore::with_queue(queue()).with_message_counts(7, 3, 2);
-        let request = resolved_request(
-            r#"{
-                "QueueUrl":"http://localhost:4566/123456789012/orders",
-                "AttributeNames":[
-                    "VisibilityTimeout",
-                    "ApproximateNumberOfMessages",
-                    "ApproximateNumberOfMessagesNotVisible",
-                    "ApproximateNumberOfMessagesDelayed",
-                    "QueueArn",
-                    "CreatedTimestamp",
-                    "ReceiveMessageWaitTimeSeconds"
-                ]
-            }"#,
-        );
-
-        let response = get_queue_attributes(&request, &store)
-            .await
-            .expect("get queue attributes should succeed");
-
-        assert_eq!(response.status_code, 200);
-
-        let body = parse_json_body(&response);
-        let attributes = &body["Attributes"];
-        assert_eq!(attributes["VisibilityTimeout"], "30");
-        assert_eq!(attributes["ApproximateNumberOfMessages"], "7");
-        assert_eq!(attributes["ApproximateNumberOfMessagesNotVisible"], "4");
-        assert_eq!(attributes["ApproximateNumberOfMessagesDelayed"], "2");
-        assert_eq!(
-            attributes["QueueArn"],
-            "arn:aws:sqs:us-east-1:123456789012:orders"
-        );
-        assert_eq!(
-            attributes["CreatedTimestamp"],
-            Utc.with_ymd_and_hms(2026, 4, 4, 11, 0, 0)
-                .unwrap()
-                .timestamp_millis()
-                .to_string()
-        );
-        assert_eq!(attributes["ReceiveMessageWaitTimeSeconds"], "10");
-    }
-
-    #[tokio::test]
-    async fn get_queue_attributes_returns_not_found_for_missing_queue() {
-        let store = SqsTestStore::default();
-        let request = resolved_request(
-            r#"{
-                "QueueUrl":"http://localhost:4566/123456789012/orders",
-                "AttributeNames":["All"]
-            }"#,
-        );
-
-        let result = get_queue_attributes(&request, &store).await;
-
-        assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
 }

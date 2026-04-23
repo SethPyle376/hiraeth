@@ -1,16 +1,16 @@
 use async_trait::async_trait;
 use hiraeth_auth::AuthenticatedRequest;
 use hiraeth_core::{
-    ApiError, AuthContext, AuthMode, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
-    render_result,
+    ApiError, AuthContext, AuthMode, AwsActionRegistry, ResolvedRequest, ServiceResponse,
+    auth::AuthorizationCheck,
 };
 use hiraeth_router::Service;
 use hiraeth_store::{IamStore, StoreError, iam::PrincipalStore};
 
+mod actions;
 mod auth;
 mod authorize;
 mod error;
-mod user;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthorizationMode {
@@ -19,15 +19,22 @@ pub enum AuthorizationMode {
     Off,
 }
 
-#[derive(Debug, Clone)]
 pub struct IamService<S: IamStore> {
     mode: AuthorizationMode,
     store: S,
+    actions: AwsActionRegistry<S>,
 }
 
-impl<S: IamStore> IamService<S> {
+impl<S> IamService<S>
+where
+    S: IamStore + Send + Sync + 'static,
+{
     pub fn new(mode: AuthorizationMode, store: S) -> Self {
-        Self { mode, store }
+        Self {
+            mode,
+            store,
+            actions: actions::registry(),
+        }
     }
 
     pub fn store(&self) -> &S {
@@ -100,29 +107,33 @@ where
         &self,
         request: ResolvedRequest,
     ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
-        let action = match auth::IamAction::from_request(&request) {
-            Ok(action) => action,
+        let action_name = match auth::get_action_name_for_request(&request) {
+            Ok(action_name) => action_name,
             Err(error) => return Ok(ServiceResponse::from(error)),
         };
+        let action = match self.actions.get(&action_name) {
+            Some(action) => action,
+            None => {
+                return Ok(ServiceResponse::from(
+                    error::IamError::UnsupportedOperation(action_name),
+                ));
+            }
+        };
 
-        Ok(render_result(match action {
-            auth::IamAction::CreateUser => user::create_user(&request, &self.store).await,
-        }))
+        action.handle(request, &self.store).await
     }
 
     async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let action = auth::IamAction::from_request(request).map_err(ServiceResponse::from)?;
-        let resource =
-            auth::get_resource_for_action(action, request).map_err(ServiceResponse::from)?;
+        let action_name =
+            auth::get_action_name_for_request(request).map_err(ServiceResponse::from)?;
+        let action = self.actions.get(&action_name).ok_or_else(|| {
+            ServiceResponse::from(error::IamError::UnsupportedOperation(action_name.clone()))
+        })?;
 
-        Ok(AuthorizationCheck {
-            action: action.authorization_action().to_string(),
-            resource,
-            resource_policy: None,
-        })
+        action.resolve_authorization(request, &self.store).await
     }
 }
 

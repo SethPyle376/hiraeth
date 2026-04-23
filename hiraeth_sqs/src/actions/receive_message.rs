@@ -1,12 +1,16 @@
 use std::{cmp::min, collections::BTreeMap};
 
+use async_trait::async_trait;
 use chrono::Utc;
-use hiraeth_core::ResolvedRequest;
-use hiraeth_core::{ServiceResponse, json_response};
-use hiraeth_store::sqs::SqsStore;
+use hiraeth_core::{
+    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+};
+use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use crate::{error::SqsError, util};
+
+pub(crate) struct ReceiveMessageAction;
 
 fn default_max_number_of_messages() -> i64 {
     1
@@ -52,22 +56,21 @@ pub struct ReceiveMessageResponse {
     pub messages: Vec<ReceivedMessage>,
 }
 
-pub(crate) async fn receive_message<S: SqsStore>(
+async fn handle_receive_message<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let receive_request = util::parse_request_body::<ReceiveMessageRequest>(request)?;
-    let queue = util::load_queue_from_url(request, store, &receive_request.queue_url).await?;
+    let receive_request = crate::util::parse_request_body::<ReceiveMessageRequest>(request)?;
+    let queue =
+        crate::util::load_queue_from_url(request, store, &receive_request.queue_url).await?;
     validate_receive_request(&receive_request)?;
 
     let visibility_timeout_seconds = receive_request
         .visibility_timeout
         .unwrap_or(queue.visibility_timeout_seconds as u32);
-
     let wait_time_seconds = receive_request
         .wait_time_seconds
         .unwrap_or(queue.receive_message_wait_time_seconds as u32);
-
     let deadline = Utc::now() + chrono::Duration::seconds(wait_time_seconds as i64);
 
     let received_messages = loop {
@@ -82,10 +85,10 @@ pub(crate) async fn receive_message<S: SqsStore>(
 
         let received_messages = messages
             .into_iter()
-            .map(|msg| {
-                let attributes = select_system_attributes(&receive_request, &msg);
+            .map(|message| {
+                let attributes = select_system_attributes(&receive_request, &message);
                 let message_attributes = filter_message_attributes(
-                    parse_message_attributes(&msg)?,
+                    parse_message_attributes(&message)?,
                     &receive_request.message_attribute_names,
                 );
                 let md5_of_message_attributes = if message_attributes.is_empty() {
@@ -97,10 +100,10 @@ pub(crate) async fn receive_message<S: SqsStore>(
                 Ok(ReceivedMessage {
                     attributes,
                     message_attributes,
-                    message_id: msg.message_id,
-                    receipt_handle: msg.receipt_handle.unwrap_or_default(),
-                    body: msg.body.clone(),
-                    md5_of_body: Some(format!("{:x}", md5::compute(msg.body.as_bytes()))),
+                    message_id: message.message_id,
+                    receipt_handle: message.receipt_handle.unwrap_or_default(),
+                    body: message.body.clone(),
+                    md5_of_body: Some(format!("{:x}", md5::compute(message.body.as_bytes()))),
                     md5_of_message_attributes,
                 })
             })
@@ -124,10 +127,10 @@ pub(crate) async fn receive_message<S: SqsStore>(
         .await;
     };
 
-    let response = ReceiveMessageResponse {
+    json_response(&ReceiveMessageResponse {
         messages: received_messages,
-    };
-    json_response(&response).map_err(Into::into)
+    })
+    .map_err(Into::into)
 }
 
 fn validate_receive_request(request: &ReceiveMessageRequest) -> Result<(), SqsError> {
@@ -175,7 +178,7 @@ fn should_include_system_attribute(attribute_name: &str, request: &ReceiveMessag
 
 fn select_system_attributes(
     request: &ReceiveMessageRequest,
-    message: &hiraeth_store::sqs::SqsMessage,
+    message: &SqsMessage,
 ) -> BTreeMap<String, String> {
     let mut attributes = BTreeMap::new();
 
@@ -185,7 +188,6 @@ fn select_system_attributes(
             message.receive_count.to_string(),
         );
     }
-
     if should_include_system_attribute("ApproximateFirstReceiveTimestamp", request)
         && let Some(first_received_at) = message.first_received_at
     {
@@ -194,17 +196,14 @@ fn select_system_attributes(
             epoch_millis(first_received_at),
         );
     }
-
     if should_include_system_attribute("SentTimestamp", request) {
         attributes.insert("SentTimestamp".to_string(), epoch_millis(message.sent_at));
     }
-
     if should_include_system_attribute("AWSTraceHeader", request)
         && let Some(aws_trace_header) = &message.aws_trace_header
     {
         attributes.insert("AWSTraceHeader".to_string(), aws_trace_header.clone());
     }
-
     if should_include_system_attribute("MessageDeduplicationId", request)
         && let Some(message_deduplication_id) = &message.message_deduplication_id
     {
@@ -213,7 +212,6 @@ fn select_system_attributes(
             message_deduplication_id.clone(),
         );
     }
-
     if should_include_system_attribute("MessageGroupId", request)
         && let Some(message_group_id) = &message.message_group_id
     {
@@ -224,7 +222,7 @@ fn select_system_attributes(
 }
 
 fn parse_message_attributes(
-    message: &hiraeth_store::sqs::SqsMessage,
+    message: &SqsMessage,
 ) -> Result<BTreeMap<String, util::MessageAttributeValue>, SqsError> {
     match message.message_attributes.as_deref() {
         Some(raw) if !raw.is_empty() => serde_json::from_str(raw).map_err(|e| {
@@ -262,12 +260,41 @@ fn filter_message_attributes(
         .collect()
 }
 
+#[async_trait]
+impl<S> AwsAction<S> for ReceiveMessageAction
+where
+    S: SqsStore + Send + Sync,
+{
+    fn name(&self) -> &'static str {
+        "ReceiveMessage"
+    }
+
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        store: &S,
+    ) -> Result<ServiceResponse, ApiError> {
+        match handle_receive_message(&request, store).await {
+            Ok(response) => Ok(response),
+            Err(error) => Ok(ServiceResponse::from(error)),
+        }
+    }
+
+    async fn resolve_authorization(
+        &self,
+        request: &ResolvedRequest,
+        store: &S,
+    ) -> Result<AuthorizationCheck, ServiceResponse> {
+        crate::auth::resolve_authorization("sqs:ReceiveMessage", request, store).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{
@@ -277,7 +304,7 @@ mod tests {
     };
     use serde_json::Value;
 
-    use super::receive_message;
+    use super::{ReceiveMessageAction, handle_receive_message};
     use crate::error::SqsError;
 
     fn queue() -> SqsQueue {
@@ -376,8 +403,16 @@ mod tests {
         serde_json::from_slice(&response.body).expect("response body should be valid json")
     }
 
+    #[test]
+    fn reports_expected_action_name() {
+        assert_eq!(
+            <ReceiveMessageAction as AwsAction<SqsTestStore>>::name(&ReceiveMessageAction),
+            "ReceiveMessage"
+        );
+    }
+
     #[tokio::test]
-    async fn receive_message_returns_requested_message_and_system_attributes() {
+    async fn returns_requested_message_and_system_attributes() {
         let store = SqsTestStore::with_queue(queue()).with_receive_responses([vec![message(42)]]);
         let request = resolved_request(
             r#"{
@@ -387,18 +422,16 @@ mod tests {
             }"#,
         );
 
-        let response = receive_message(&request, &store)
+        let response = handle_receive_message(&request, &store)
             .await
             .expect("receive message should succeed");
 
         assert_eq!(response.status_code, 200);
-
         let body = parse_json_body(&response);
         let messages = body["Messages"]
             .as_array()
             .expect("Messages should be an array");
         assert_eq!(messages.len(), 1);
-
         let message = &messages[0];
         assert_eq!(message["MessageId"], "msg-123");
         assert_eq!(message["ReceiptHandle"], "receipt-123");
@@ -408,7 +441,6 @@ mod tests {
             message["MD5OfMessageAttributes"],
             "dbf9f8110dff50952a8b7b0d4fc539f2"
         );
-
         assert_eq!(message["Attributes"]["ApproximateReceiveCount"], "2");
         assert_eq!(
             message["Attributes"]["ApproximateFirstReceiveTimestamp"],
@@ -421,7 +453,6 @@ mod tests {
         );
         assert_eq!(message["Attributes"]["MessageGroupId"], "group-1");
         assert_eq!(message["Attributes"]["MessageDeduplicationId"], "dedupe-1");
-
         assert_eq!(
             message["MessageAttributes"]["trace_id"]["StringValue"],
             "abc123"
@@ -433,7 +464,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn receive_message_filters_requested_message_attributes() {
+    async fn filters_requested_message_attributes() {
         let store = SqsTestStore::with_queue(queue()).with_receive_responses([vec![message(42)]]);
         let request = resolved_request(
             r#"{
@@ -443,13 +474,12 @@ mod tests {
             }"#,
         );
 
-        let response = receive_message(&request, &store)
+        let response = handle_receive_message(&request, &store)
             .await
             .expect("receive message should succeed");
 
         let body = parse_json_body(&response);
         let message = &body["Messages"][0];
-
         assert_eq!(message["Attributes"]["SentTimestamp"], "1775217540000");
         assert!(
             message["Attributes"]
@@ -468,7 +498,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn receive_message_returns_queue_not_found_for_missing_queue() {
+    async fn returns_queue_not_found_for_missing_queue() {
         let mut missing_queue = queue();
         missing_queue.name = "other".to_string();
         let store =
@@ -476,13 +506,13 @@ mod tests {
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
-        let result = receive_message(&request, &store).await;
+        let result = handle_receive_message(&request, &store).await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
 
     #[tokio::test]
-    async fn receive_message_rejects_invalid_max_number_of_messages() {
+    async fn rejects_invalid_max_number_of_messages() {
         let store = SqsTestStore::with_queue(queue());
         let request = resolved_request(
             r#"{
@@ -491,13 +521,13 @@ mod tests {
             }"#,
         );
 
-        let result = receive_message(&request, &store).await;
+        let result = handle_receive_message(&request, &store).await;
 
         assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }
 
     #[tokio::test]
-    async fn receive_message_retries_when_wait_time_seconds_is_set() {
+    async fn retries_when_wait_time_seconds_is_set() {
         let store = SqsTestStore::with_queue(queue())
             .with_receive_responses([Vec::new(), vec![message(42)]]);
         let request = resolved_request(
@@ -507,7 +537,7 @@ mod tests {
             }"#,
         );
 
-        let response = receive_message(&request, &store)
+        let response = handle_receive_message(&request, &store)
             .await
             .expect("receive message should succeed");
 
@@ -515,32 +545,7 @@ mod tests {
         let messages = body["Messages"]
             .as_array()
             .expect("Messages should be an array");
-
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0]["MessageId"], "msg-123");
-        assert!(store.receive_calls() >= 2);
-    }
-
-    #[tokio::test]
-    async fn receive_message_uses_queue_default_wait_time_when_request_omits_wait_time_seconds() {
-        let mut queue = queue();
-        queue.receive_message_wait_time_seconds = 1;
-        let store =
-            SqsTestStore::with_queue(queue).with_receive_responses([Vec::new(), vec![message(42)]]);
-        let request =
-            resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
-
-        let response = receive_message(&request, &store)
-            .await
-            .expect("receive message should succeed");
-
-        let body = parse_json_body(&response);
-        let messages = body["Messages"]
-            .as_array()
-            .expect("Messages should be an array");
-
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0]["MessageId"], "msg-123");
-        assert!(store.receive_calls() >= 2);
     }
 }

@@ -1,15 +1,18 @@
 use std::collections::HashMap;
 
-use futures::StreamExt;
-use hiraeth_core::ResolvedRequest;
-use hiraeth_core::{ServiceResponse, json_response};
-use hiraeth_store::sqs::{SqsMessage, SqsStore};
+use async_trait::async_trait;
+use hiraeth_core::{
+    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+};
+use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::{SqsError, batch_error_details},
-    util,
+    error::SqsError,
+    util::{self, MessageAttributeValue},
 };
+
+pub(crate) struct SendMessageAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -40,17 +43,16 @@ struct SendMessageResponse {
     sequence_number: Option<String>,
 }
 
-pub(crate) async fn send_message<S: SqsStore>(
+async fn handle_send_message<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = util::parse_request_body::<SendMessageRequest>(request)?;
-    let queue = util::load_queue_from_url(request, store, &request_body.queue_url).await?;
+    let request_body = crate::util::parse_request_body::<SendMessageRequest>(request)?;
+    let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
     validate_message_body(&request_body.message_body, queue.maximum_message_size)?;
     let delay_seconds = resolve_delay_seconds(request_body.delay_seconds, queue.delay_seconds)?;
 
     let visible_at = request.date.naive_utc() + chrono::Duration::seconds(delay_seconds);
-
     let expires_at = request.date.naive_utc()
         + chrono::Duration::seconds(queue.message_retention_period_seconds);
 
@@ -87,8 +89,8 @@ pub(crate) async fn send_message<S: SqsStore>(
         visible_at,
         expires_at,
         receive_count: 0,
-        receipt_handle: Option::None,
-        first_received_at: Option::None,
+        receipt_handle: None,
+        first_received_at: None,
         message_group_id: request_body.message_group_id.clone(),
         message_deduplication_id: request_body.message_deduplication_id.clone(),
     };
@@ -109,164 +111,7 @@ pub(crate) async fn send_message<S: SqsStore>(
     json_response(&response).map_err(Into::into)
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct SendMessageBatchEntry {
-    id: String,
-    delay_seconds: Option<i64>,
-    #[serde(default)]
-    message_attributes: Option<HashMap<String, util::MessageAttributeValue>>,
-    #[serde(default)]
-    message_system_attributes: Option<HashMap<String, util::MessageAttributeValue>>,
-    message_body: String,
-    message_deduplication_id: Option<String>,
-    message_group_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct SendMessageBatchRequest {
-    entries: Vec<SendMessageBatchEntry>,
-    queue_url: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct SendMessageBatchResultEntry {
-    id: String,
-    #[serde(rename = "MD5OfMessageAttributes")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    md5_of_message_attributes: Option<String>,
-    #[serde(rename = "MD5OfMessageBody")]
-    md5_of_message_body: String,
-    #[serde(rename = "MD5OfMessageSystemAttributes")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    md5_of_message_system_attributes: Option<String>,
-    message_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sequence_number: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct BatchResultErrorEntry {
-    id: String,
-    code: String,
-    message: String,
-    sender_fault: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct SendMessageBatchResponse {
-    successful: Vec<SendMessageBatchResultEntry>,
-    failed: Vec<BatchResultErrorEntry>,
-}
-
-pub(crate) async fn send_message_batch<S: SqsStore>(
-    request: &ResolvedRequest,
-    store: &S,
-) -> Result<ServiceResponse, SqsError> {
-    let request_body = util::parse_request_body::<SendMessageBatchRequest>(request)?;
-    let queue = util::load_queue_from_url(request, store, &request_body.queue_url).await?;
-    util::validate_batch_request(request_body.entries.iter().map(|entry| entry.id.as_str()))?;
-
-    let expires_at = request.date.naive_utc()
-        + chrono::Duration::seconds(queue.message_retention_period_seconds);
-
-    let messages = futures::stream::iter(request_body.entries)
-        .map(|entry| async move {
-            let delay_seconds = resolve_delay_seconds(entry.delay_seconds, queue.delay_seconds)
-                .map_err(|e| batch_error_entry(&entry.id, e))?;
-            validate_message_body(&entry.message_body, queue.maximum_message_size)
-                .map_err(|e| batch_error_entry(&entry.id, e))?;
-
-            let visible_at = request.date.naive_utc() + chrono::Duration::seconds(delay_seconds);
-
-            let message_attributes = entry
-                .message_attributes
-                .as_ref()
-                .map(util::serialize_message_attributes)
-                .transpose()
-                .map_err(|e| batch_error_entry(&entry.id, e))?;
-
-            let md5_of_message_attributes = entry
-                .message_attributes
-                .as_ref()
-                .filter(|attrs| !attrs.is_empty())
-                .map(util::calculate_message_attributes_md5)
-                .transpose()
-                .map_err(|e| batch_error_entry(&entry.id, e))?;
-
-            let aws_trace_header =
-                util::extract_aws_trace_header(entry.message_system_attributes.as_ref())
-                    .map_err(|e| batch_error_entry(&entry.id, e))?;
-
-            let md5_of_message_system_attributes = entry
-                .message_system_attributes
-                .as_ref()
-                .filter(|attrs| !attrs.is_empty())
-                .map(util::calculate_message_attributes_md5)
-                .transpose()
-                .map_err(|e| batch_error_entry(&entry.id, e))?;
-
-            let message = SqsMessage {
-                message_id: uuid::Uuid::new_v4().to_string(),
-                queue_id: queue.id,
-                body: entry.message_body.clone(),
-                message_attributes,
-                aws_trace_header,
-                sent_at: request.date.naive_utc(),
-                visible_at,
-                expires_at,
-                receive_count: 0,
-                receipt_handle: Option::None,
-                first_received_at: Option::None,
-                message_group_id: entry.message_group_id.clone(),
-                message_deduplication_id: entry.message_deduplication_id.clone(),
-            };
-
-            store.send_message(&message).await.map_err(|e| {
-                batch_error_entry(&entry.id, SqsError::InternalError(e.to_string()))
-            })?;
-
-            Ok(SendMessageBatchResultEntry {
-                id: entry.id.clone(),
-                md5_of_message_attributes,
-                md5_of_message_body: format!("{:x}", md5::compute(entry.message_body.as_bytes())),
-                md5_of_message_system_attributes,
-                message_id: message.message_id.clone(),
-                sequence_number: None,
-            })
-        })
-        .buffer_unordered(1)
-        .collect::<Vec<Result<SendMessageBatchResultEntry, BatchResultErrorEntry>>>()
-        .await;
-
-    let successful = messages
-        .iter()
-        .filter_map(|result| result.as_ref().ok().cloned())
-        .collect();
-
-    let failed = messages
-        .iter()
-        .filter_map(|result| result.as_ref().err().cloned())
-        .collect();
-
-    json_response(&SendMessageBatchResponse { successful, failed }).map_err(Into::into)
-}
-
-fn batch_error_entry(id: &str, error: SqsError) -> BatchResultErrorEntry {
-    let (code, sender_fault) = batch_error_details(&error);
-    BatchResultErrorEntry {
-        id: id.to_string(),
-        code: code.to_string(),
-        message: error.to_string(),
-        sender_fault,
-    }
-}
-
-fn resolve_delay_seconds(
+pub(super) fn resolve_delay_seconds(
     requested_delay_seconds: Option<i64>,
     queue_delay_seconds: i64,
 ) -> Result<i64, SqsError> {
@@ -280,7 +125,10 @@ fn resolve_delay_seconds(
     Ok(delay_seconds)
 }
 
-fn validate_message_body(message_body: &str, maximum_message_size: i64) -> Result<(), SqsError> {
+pub(super) fn validate_message_body(
+    message_body: &str,
+    maximum_message_size: i64,
+) -> Result<(), SqsError> {
     if message_body.len() > maximum_message_size as usize {
         return Err(SqsError::BadRequest(format!(
             "MessageBody exceeds the queue MaximumMessageSize of {} bytes",
@@ -291,20 +139,50 @@ fn validate_message_body(message_body: &str, maximum_message_size: i64) -> Resul
     Ok(())
 }
 
+#[async_trait]
+impl<S> AwsAction<S> for SendMessageAction
+where
+    S: SqsStore + Send + Sync,
+{
+    fn name(&self) -> &'static str {
+        "SendMessage"
+    }
+
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        store: &S,
+    ) -> Result<ServiceResponse, ApiError> {
+        match handle_send_message(&request, store).await {
+            Ok(response) => Ok(response),
+            Err(error) => Ok(ServiceResponse::from(error)),
+        }
+    }
+
+    async fn resolve_authorization(
+        &self,
+        request: &ResolvedRequest,
+        store: &S,
+    ) -> Result<AuthorizationCheck, ServiceResponse> {
+        crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
-    use super::{send_message, send_message_batch};
+    use super::{MessageAttributeValue, SendMessageAction, handle_send_message};
     use crate::{
         error::SqsError,
-        util::{self, MessageAttributeValue},
+        util::{self},
     };
 
     fn resolved_request(body: &str) -> ResolvedRequest {
@@ -342,15 +220,6 @@ mod tests {
         }
     }
 
-    fn batch_resolved_request(body: &str) -> ResolvedRequest {
-        let mut request = resolved_request(body);
-        request.request.headers.insert(
-            "x-amz-target".to_string(),
-            "AmazonSQS.SendMessageBatch".to_string(),
-        );
-        request
-    }
-
     fn queue() -> SqsQueue {
         SqsQueue {
             id: 42,
@@ -378,8 +247,16 @@ mod tests {
         serde_json::from_slice(&response.body).expect("response body should be valid json")
     }
 
+    #[test]
+    fn reports_expected_action_name() {
+        assert_eq!(
+            <SendMessageAction as AwsAction<SqsTestStore>>::name(&SendMessageAction),
+            "SendMessage"
+        );
+    }
+
     #[tokio::test]
-    async fn send_message_persists_message_and_returns_md5_values() {
+    async fn persists_message_and_returns_md5_values() {
         let store = SqsTestStore::with_queue(queue());
         let request = resolved_request(
             r#"{
@@ -394,12 +271,11 @@ mod tests {
             }"#,
         );
 
-        let response = send_message(&request, &store)
+        let response = handle_send_message(&request, &store)
             .await
             .expect("send message should succeed");
 
         assert_eq!(response.status_code, 200);
-
         let response_body = parse_json_body(&response);
         assert_eq!(
             response_body["MD5OfMessageBody"],
@@ -430,7 +306,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_message_uses_request_delay_over_queue_delay() {
+    async fn uses_request_delay_over_queue_delay() {
         let store = SqsTestStore::with_queue(queue());
         let request = resolved_request(
             r#"{
@@ -440,7 +316,7 @@ mod tests {
             }"#,
         );
 
-        let response = send_message(&request, &store)
+        let response = handle_send_message(&request, &store)
             .await
             .expect("send message should succeed");
 
@@ -459,7 +335,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_message_persists_aws_trace_header_and_returns_system_md5() {
+    async fn persists_aws_trace_header_and_returns_system_md5() {
         let store = SqsTestStore::with_queue(queue());
         let request = resolved_request(
             r#"{
@@ -474,7 +350,7 @@ mod tests {
             }"#,
         );
 
-        let response = send_message(&request, &store)
+        let response = handle_send_message(&request, &store)
             .await
             .expect("send message should succeed");
 
@@ -498,7 +374,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_message_returns_queue_not_found_for_unknown_queue() {
+    async fn returns_queue_not_found_for_unknown_queue() {
         let store = SqsTestStore::default();
         let request = resolved_request(
             r#"{
@@ -507,7 +383,7 @@ mod tests {
             }"#,
         );
 
-        let result = send_message(&request, &store).await;
+        let result = handle_send_message(&request, &store).await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
@@ -521,83 +397,6 @@ mod tests {
 
         assert_eq!(value.data_type, "String");
         assert_eq!(value.string_value.as_deref(), Some("abc123"));
-        assert_eq!(value.binary_value, None);
-    }
-
-    #[tokio::test]
-    async fn send_message_batch_returns_sdk_compatible_response_shape() {
-        let store = SqsTestStore::with_queue(queue());
-        let request = batch_resolved_request(
-            r#"{
-                "QueueUrl":"http://localhost:4566/123456789012/orders",
-                "Entries":[
-                    {
-                        "Id":"first",
-                        "MessageBody":"hello world"
-                    },
-                    {
-                        "Id":"second",
-                        "MessageBody":"goodbye world",
-                        "MessageAttributes":{
-                            "trace_id":{
-                                "DataType":"String",
-                                "StringValue":"abc123"
-                            }
-                        }
-                    }
-                ]
-            }"#,
-        );
-
-        let response = send_message_batch(&request, &store)
-            .await
-            .expect("send message batch should succeed");
-
-        assert_eq!(response.status_code, 200);
-
-        let response_body = parse_json_body(&response);
-        let successful = response_body["Successful"]
-            .as_array()
-            .expect("Successful should be an array");
-        let failed = response_body["Failed"]
-            .as_array()
-            .expect("Failed should be an array");
-
-        assert_eq!(successful.len(), 2);
-        assert!(failed.is_empty());
-
-        assert_eq!(successful[0]["Id"], "first");
-        assert_eq!(
-            successful[0]["MD5OfMessageBody"],
-            "5eb63bbbe01eeed093cb22bb8f5acdc3"
-        );
-        assert!(successful[0]["MessageId"].as_str().is_some());
-        assert!(successful[0].get("Success").is_none());
-        assert!(successful[0].get("SequenceNumber").is_none());
-
-        assert_eq!(successful[1]["Id"], "second");
-        assert_eq!(
-            successful[1]["MD5OfMessageAttributes"],
-            "853c383c82274bde6eac88d91ee96efe"
-        );
-        assert!(successful[1].get("Success").is_none());
-    }
-
-    #[tokio::test]
-    async fn send_message_batch_rejects_duplicate_entry_ids() {
-        let store = SqsTestStore::with_queue(queue());
-        let request = batch_resolved_request(
-            r#"{
-                "QueueUrl":"http://localhost:4566/123456789012/orders",
-                "Entries":[
-                    {"Id":"duplicate","MessageBody":"hello"},
-                    {"Id":"duplicate","MessageBody":"goodbye"}
-                ]
-            }"#,
-        );
-
-        let result = send_message_batch(&request, &store).await;
-
-        assert!(matches!(result, Err(SqsError::BatchEntryIdsNotDistinct)));
+        assert!(value.binary_value.is_none());
     }
 }
