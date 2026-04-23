@@ -4,6 +4,7 @@ use std::{
 };
 
 use hiraeth_http::IncomingRequest;
+use quick_xml::se::to_string as to_xml_string;
 use serde::{Serialize, de::DeserializeOwned};
 use url::form_urlencoded;
 
@@ -108,7 +109,24 @@ pub fn json_response<T: Serialize>(
 }
 
 pub fn json_body<T: Serialize>(body: &T) -> Result<Vec<u8>, ResponseSerializationError> {
-    serde_json::to_vec(body).map_err(ResponseSerializationError::new)
+    serde_json::to_vec(body).map_err(ResponseSerializationError::json)
+}
+
+pub fn xml_response<T: Serialize>(body: &T) -> Result<ServiceResponse, ResponseSerializationError> {
+    Ok(ServiceResponse {
+        status_code: 200,
+        headers: vec![(
+            "content-type".to_string(),
+            "text/xml; charset=utf-8".to_string(),
+        )],
+        body: xml_body(body)?,
+    })
+}
+
+pub fn xml_body<T: Serialize>(body: &T) -> Result<Vec<u8>, ResponseSerializationError> {
+    to_xml_string(body)
+        .map(String::into_bytes)
+        .map_err(ResponseSerializationError::xml)
 }
 
 pub fn parse_json_body<T: DeserializeOwned>(body: &[u8]) -> Result<T, RequestBodyParseError> {
@@ -190,7 +208,13 @@ pub struct ResponseSerializationError {
 }
 
 impl ResponseSerializationError {
-    fn new(error: serde_json::Error) -> Self {
+    fn json(error: serde_json::Error) -> Self {
+        Self {
+            message: format!("failed to serialize response: {}", error),
+        }
+    }
+
+    fn xml(error: impl Display) -> Self {
         Self {
             message: format!("failed to serialize response: {}", error),
         }
@@ -315,12 +339,12 @@ mod tests {
     use std::collections::HashMap;
 
     use hiraeth_http::IncomingRequest;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
     use super::{
         AwsErrorFault, AwsQueryParams, AwsServiceError, ServiceResponse, aws_batch_error_details,
         empty_response, json_response, parse_aws_query_params, parse_aws_query_request,
-        parse_json_body, render_aws_json_error, render_result,
+        parse_json_body, render_aws_json_error, render_result, xml_response,
     };
 
     #[derive(Debug)]
@@ -406,6 +430,38 @@ mod tests {
 
         assert_eq!(response.status_code, 200);
         assert_eq!(body["ok"], true);
+    }
+
+    #[derive(Debug, Serialize)]
+    #[serde(rename = "ExampleResponse")]
+    struct ExampleXmlResponse {
+        #[serde(rename = "@xmlns")]
+        xmlns: &'static str,
+        #[serde(rename = "Message")]
+        message: &'static str,
+    }
+
+    #[test]
+    fn builds_xml_success_response() {
+        let response = xml_response(&ExampleXmlResponse {
+            xmlns: "urn:test",
+            message: "hello",
+        })
+        .expect("xml response should serialize");
+        let body = String::from_utf8(response.body).expect("response body should be utf-8");
+
+        assert_eq!(response.status_code, 200);
+        assert_eq!(
+            response.headers,
+            vec![(
+                "content-type".to_string(),
+                "text/xml; charset=utf-8".to_string()
+            )]
+        );
+        assert_eq!(
+            body,
+            r#"<ExampleResponse xmlns="urn:test"><Message>hello</Message></ExampleResponse>"#
+        );
     }
 
     #[test]

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1"
+chrono = "0.4"
 hiraeth_auth = { path = "../hiraeth_auth" }
 hiraeth_core = { path = "../hiraeth_core" }
 hiraeth_router = { path = "../hiraeth_router" }
@@ -12,8 +13,8 @@ hiraeth_store = { path = "../hiraeth_store" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tracing = "0.1"
+uuid = { version = "1.0", features = ["v4"] }
 
 [dev-dependencies]
-chrono = "0.4"
 hiraeth_http = { path = "../hiraeth_http" }
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }

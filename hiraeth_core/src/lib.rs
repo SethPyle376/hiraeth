@@ -10,7 +10,7 @@ pub use protocol::{
     AwsErrorFault, AwsQueryParams, AwsQueryParseError, AwsServiceError, RequestBodyParseError,
     ResponseSerializationError, ServiceResponse, aws_batch_error_details, empty_response,
     json_body, json_response, parse_aws_query_params, parse_aws_query_request, parse_json_body,
-    render_aws_json_error, render_result,
+    render_aws_json_error, render_result, xml_body, xml_response,
 };
 pub use request::{AuthContext, ResolvedRequest};
 

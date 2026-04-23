@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
-use hiraeth_core::{AwsQueryParseError, ServiceResponse};
+use hiraeth_core::{AwsQueryParseError, ResponseSerializationError, ServiceResponse};
+use hiraeth_store::StoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum IamError {
@@ -43,5 +44,17 @@ impl From<IamError> for ServiceResponse {
             )],
             body: value.to_string().into_bytes(),
         }
+    }
+}
+
+impl From<ResponseSerializationError> for IamError {
+    fn from(value: ResponseSerializationError) -> Self {
+        IamError::InternalError(value.to_string())
+    }
+}
+
+impl From<StoreError> for IamError {
+    fn from(value: StoreError) -> Self {
+        IamError::InternalError(value.to_string())
     }
 }

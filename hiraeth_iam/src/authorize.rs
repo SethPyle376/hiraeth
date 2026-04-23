@@ -184,6 +184,7 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl PrincipalStore for TestIamStore {
         async fn get_principal(
             &self,
@@ -194,6 +195,13 @@ mod tests {
 
         async fn list_principals(&self) -> Result<Vec<Principal>, hiraeth_store::StoreError> {
             Ok(vec![])
+        }
+
+        async fn create_principal(
+            &self,
+            _principal: Principal,
+        ) -> Result<(), hiraeth_store::StoreError> {
+            Ok(())
         }
     }
 

@@ -67,6 +67,7 @@ impl AccessKeyStore for InMemoryIamStore {
     }
 }
 
+#[async_trait]
 impl PrincipalStore for InMemoryIamStore {
     async fn get_principal(
         &self,
@@ -77,6 +78,10 @@ impl PrincipalStore for InMemoryIamStore {
 
     async fn list_principals(&self) -> Result<Vec<Principal>, crate::StoreError> {
         self.principal_store.list_principals().await
+    }
+
+    async fn create_principal(&self, principal: Principal) -> Result<(), crate::StoreError> {
+        self.principal_store.create_principal(principal).await
     }
 }
 

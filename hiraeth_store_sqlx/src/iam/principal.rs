@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use hiraeth_store::{
     StoreError,
     iam::{Principal, PrincipalStore},
@@ -14,6 +15,7 @@ impl SqlitePrincipalStore {
     }
 }
 
+#[async_trait]
 impl PrincipalStore for SqlitePrincipalStore {
     async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError> {
         sqlx::query_as!(
@@ -38,6 +40,19 @@ impl PrincipalStore for SqlitePrincipalStore {
         .fetch_all(&self.pool)
         .await
         .map_err(|err| StoreError::StorageFailure(err.to_string()))
+    }
+
+    async fn create_principal(&self, principal: Principal) -> Result<(), StoreError> {
+        sqlx::query!(
+            "INSERT INTO iam_principals (account_id, kind, name) VALUES (?, ?, ?)",
+            principal.account_id,
+            principal.kind,
+            principal.name,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
+        Ok(())
     }
 }
 

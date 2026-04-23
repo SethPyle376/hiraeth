@@ -62,6 +62,7 @@ impl AccessKeyStore for SqliteIamStore {
     }
 }
 
+#[async_trait]
 impl PrincipalStore for SqliteIamStore {
     async fn get_principal(
         &self,
@@ -72,6 +73,13 @@ impl PrincipalStore for SqliteIamStore {
 
     async fn list_principals(&self) -> Result<Vec<Principal>, hiraeth_store::StoreError> {
         self.principal_store.list_principals().await
+    }
+
+    async fn create_principal(
+        &self,
+        principal: Principal,
+    ) -> Result<(), hiraeth_store::StoreError> {
+        self.principal_store.create_principal(principal).await
     }
 }
 
