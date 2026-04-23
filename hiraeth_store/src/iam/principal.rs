@@ -10,7 +10,18 @@ pub struct Principal {
     pub account_id: String,
     pub kind: String,
     pub name: String,
+    pub path: String,
+    pub user_id: String,
     pub created_at: chrono::NaiveDateTime,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewPrincipal {
+    pub account_id: String,
+    pub kind: String,
+    pub name: String,
+    pub path: String,
+    pub user_id: String,
 }
 
 #[allow(async_fn_in_trait)]
@@ -18,7 +29,7 @@ pub struct Principal {
 pub trait PrincipalStore {
     async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError>;
     async fn list_principals(&self) -> Result<Vec<Principal>, StoreError>;
-    async fn create_principal(&self, principal: Principal) -> Result<(), StoreError>;
+    async fn create_principal(&self, principal: NewPrincipal) -> Result<Principal, StoreError>;
 }
 
 pub struct InMemoryPrincipalStore {
@@ -61,19 +72,33 @@ impl PrincipalStore for InMemoryPrincipalStore {
         Ok(principals)
     }
 
-    async fn create_principal(&self, principal: Principal) -> Result<(), StoreError> {
+    async fn create_principal(&self, principal: NewPrincipal) -> Result<Principal, StoreError> {
         let mut principals = self
             .principals
             .write()
             .expect("in-memory principal store write lock should not be poisoned");
 
-        if principals.contains_key(&principal.id) {
+        if principals.values().any(|existing| {
+            existing.account_id == principal.account_id
+                && existing.kind == principal.kind
+                && existing.name == principal.name
+        }) {
             return Err(StoreError::Conflict(format!(
-                "Principal with id {} already exists",
-                principal.id
+                "Principal {} {} {} already exists",
+                principal.account_id, principal.kind, principal.name
             )));
         }
-        principals.insert(principal.id, principal);
-        Ok(())
+        let next_id = principals.keys().copied().max().unwrap_or(0) + 1;
+        let created_principal = Principal {
+            id: next_id,
+            account_id: principal.account_id,
+            kind: principal.kind,
+            name: principal.name,
+            path: principal.path,
+            user_id: principal.user_id,
+            created_at: chrono::Utc::now().naive_utc(),
+        };
+        principals.insert(next_id, created_principal.clone());
+        Ok(created_principal)
     }
 }

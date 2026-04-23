@@ -1,1 +1,1 @@
-pub use crate::iam::{InMemoryPrincipalStore, Principal, PrincipalStore};
+pub use crate::iam::{InMemoryPrincipalStore, NewPrincipal, Principal, PrincipalStore};

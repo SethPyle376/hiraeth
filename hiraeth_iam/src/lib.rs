@@ -188,6 +188,8 @@ mod tests {
             account_id: "000000000000".to_string(),
             kind: "user".to_string(),
             name: "test".to_string(),
+            path: "/".to_string(),
+            user_id: format!("AIDATESTUSER{:08}", id),
             created_at: Utc
                 .with_ymd_and_hms(2026, 4, 21, 12, 0, 0)
                 .unwrap()
@@ -290,7 +292,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_request_returns_not_implemented_for_unimplemented_iam_action() {
+    async fn handle_request_returns_created_user_xml_for_create_user() {
         let iam = IamService::new(
             AuthorizationMode::Audit,
             InMemoryIamStore::new([access_key(1)], [principal(1)], []),
@@ -301,12 +303,12 @@ mod tests {
                 b"Action=CreateUser&Version=2010-05-08&UserName=test-user",
             ))
             .await
-            .expect("placeholder iam response should be returned");
+            .expect("create user response should be returned");
 
-        assert_eq!(response.status_code, 501);
-        assert_eq!(
-            String::from_utf8(response.body).unwrap(),
-            "IAM action CreateUser is not implemented"
-        );
+        let body = String::from_utf8(response.body).expect("response body should be utf-8");
+
+        assert_eq!(response.status_code, 200);
+        assert!(body.contains("<CreateUserResponse"));
+        assert!(body.contains("<UserName>test-user</UserName>"));
     }
 }

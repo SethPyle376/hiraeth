@@ -146,8 +146,8 @@ mod tests {
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::{AuthorizationResult, Authorizer};
     use hiraeth_store::iam::{
-        AccessKey, AccessKeyStore, Principal, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
-        PrincipalStore,
+        AccessKey, AccessKeyStore, NewPrincipal, Principal, PrincipalInlinePolicy,
+        PrincipalInlinePolicyStore, PrincipalStore,
     };
 
     use crate::{AuthorizationMode, IamService};
@@ -199,9 +199,17 @@ mod tests {
 
         async fn create_principal(
             &self,
-            _principal: Principal,
-        ) -> Result<(), hiraeth_store::StoreError> {
-            Ok(())
+            principal: NewPrincipal,
+        ) -> Result<Principal, hiraeth_store::StoreError> {
+            Ok(Principal {
+                id: 999,
+                account_id: principal.account_id,
+                kind: principal.kind,
+                name: principal.name,
+                path: principal.path,
+                user_id: principal.user_id,
+                created_at: Utc::now().naive_utc(),
+            })
         }
     }
 
@@ -251,6 +259,8 @@ mod tests {
                     account_id: "123456789012".to_string(),
                     kind: kind.to_string(),
                     name: "alice".to_string(),
+                    path: "/".to_string(),
+                    user_id: "AIDATESTUSER000001".to_string(),
                     created_at: Utc
                         .with_ymd_and_hms(2026, 4, 20, 12, 0, 0)
                         .unwrap()

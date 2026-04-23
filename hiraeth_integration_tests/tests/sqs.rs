@@ -484,12 +484,18 @@ async fn seed_unprivileged_user(
     let pool = SqlitePool::connect(db_url)
         .await
         .context("sqlite pool should open for iam user seeding")?;
+    let user_id = format!(
+        "AIDA{}",
+        uuid::Uuid::new_v4().simple().to_string().to_uppercase()
+    );
 
     let principal_id = sqlx::query!(
-        "INSERT INTO iam_principals (account_id, kind, name) VALUES (?, ?, ?)",
+        "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
         TEST_ACCOUNT_ID,
         "user",
-        user_name
+        user_name,
+        "/",
+        user_id
     )
     .execute(&pool)
     .await

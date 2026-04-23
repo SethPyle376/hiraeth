@@ -5,7 +5,7 @@ mod principal;
 mod principal_inline_policy_store;
 
 pub use access_key_store::{AccessKey, AccessKeyStore, InMemoryAccessKeyStore};
-pub use principal::{InMemoryPrincipalStore, Principal, PrincipalStore};
+pub use principal::{InMemoryPrincipalStore, NewPrincipal, Principal, PrincipalStore};
 pub use principal_inline_policy_store::{
     InMemoryPrincipalInlinePolicyStore, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
 };
@@ -80,7 +80,10 @@ impl PrincipalStore for InMemoryIamStore {
         self.principal_store.list_principals().await
     }
 
-    async fn create_principal(&self, principal: Principal) -> Result<(), crate::StoreError> {
+    async fn create_principal(
+        &self,
+        principal: NewPrincipal,
+    ) -> Result<Principal, crate::StoreError> {
         self.principal_store.create_principal(principal).await
     }
 }

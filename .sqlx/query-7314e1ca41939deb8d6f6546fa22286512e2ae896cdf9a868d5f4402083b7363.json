@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, account_id, kind, name, created_at FROM iam_principals WHERE id = ?",
+  "query": "SELECT id, account_id, kind, name, path, user_id, created_at FROM iam_principals WHERE id = ?",
   "describe": {
     "columns": [
       {
@@ -24,8 +24,18 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "path",
         "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "user_id",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 6,
         "type_info": "Datetime"
       }
     ],
@@ -37,8 +47,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "cf27a4e640b24731f3bf5145567ad4260d9d37d24eab7ed8bfafbab2f4c573b5"
+  "hash": "7314e1ca41939deb8d6f6546fa22286512e2ae896cdf9a868d5f4402083b7363"
 }

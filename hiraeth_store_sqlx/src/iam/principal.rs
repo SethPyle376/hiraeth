@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use hiraeth_store::{
     StoreError,
-    iam::{Principal, PrincipalStore},
+    iam::{NewPrincipal, Principal, PrincipalStore},
 };
 
 #[derive(Clone)]
@@ -15,44 +15,60 @@ impl SqlitePrincipalStore {
     }
 }
 
+fn map_sqlx_error(err: sqlx::Error) -> StoreError {
+    if let sqlx::Error::Database(database_error) = &err
+        && database_error.is_unique_violation()
+    {
+        return StoreError::Conflict(database_error.message().to_string());
+    }
+
+    StoreError::StorageFailure(err.to_string())
+}
+
 #[async_trait]
 impl PrincipalStore for SqlitePrincipalStore {
     async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError> {
         sqlx::query_as!(
             Principal,
-            "SELECT id, account_id, kind, name, created_at FROM iam_principals WHERE id = ?",
+            "SELECT id, account_id, kind, name, path, user_id, created_at FROM iam_principals WHERE id = ?",
             principal_id
         )
         .fetch_optional(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))
+        .map_err(map_sqlx_error)
     }
 
     async fn list_principals(&self) -> Result<Vec<Principal>, StoreError> {
         sqlx::query_as!(
             Principal,
             r#"
-            SELECT id as "id!: i64", account_id, kind, name, created_at
+            SELECT id as "id!: i64", account_id, kind, name, path, user_id, created_at
             FROM iam_principals
             ORDER BY account_id ASC, kind ASC, name ASC
             "#
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))
+        .map_err(map_sqlx_error)
     }
 
-    async fn create_principal(&self, principal: Principal) -> Result<(), StoreError> {
-        sqlx::query!(
-            "INSERT INTO iam_principals (account_id, kind, name) VALUES (?, ?, ?)",
+    async fn create_principal(&self, principal: NewPrincipal) -> Result<Principal, StoreError> {
+        sqlx::query_as!(
+            Principal,
+            r#"
+            INSERT INTO iam_principals (account_id, kind, name, path, user_id)
+            VALUES (?, ?, ?, ?, ?)
+            RETURNING id as "id!: i64", account_id, kind, name, path, user_id, created_at
+            "#,
             principal.account_id,
             principal.kind,
             principal.name,
+            principal.path,
+            principal.user_id,
         )
-        .execute(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
-        Ok(())
+        .map_err(map_sqlx_error)
     }
 }
 
@@ -118,6 +134,8 @@ mod tests {
         assert_eq!(principal.account_id, "000000000000");
         assert_eq!(principal.kind, "user");
         assert_eq!(principal.name, "test");
+        assert_eq!(principal.path, "/");
+        assert!(principal.user_id.starts_with("AIDA"));
     }
 
     #[tokio::test]
@@ -137,10 +155,12 @@ mod tests {
         let (_temp_dir, store) = test_store().await;
 
         let duplicate_insert = sqlx::query!(
-            "INSERT INTO iam_principals (account_id, kind, name) VALUES (?, ?, ?)",
+            "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
             "000000000000",
             "user",
-            "test"
+            "test",
+            "/",
+            "AIDADUPLICATETEST01"
         )
         .execute(&store.pool)
         .await;
@@ -153,10 +173,12 @@ mod tests {
         let (_temp_dir, store) = test_store().await;
 
         sqlx::query!(
-            "INSERT INTO iam_principals (account_id, kind, name) VALUES (?, ?, ?)",
+            "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
             "000000000000",
             "role",
-            "integration-runner"
+            "integration-runner",
+            "/service-role/",
+            "AIDAINTEGRATIONRUN01"
         )
         .execute(&store.pool)
         .await
@@ -176,6 +198,7 @@ mod tests {
             principal.account_id == "000000000000"
                 && principal.kind == "role"
                 && principal.name == "integration-runner"
+                && principal.path == "/service-role/"
         }));
     }
 }

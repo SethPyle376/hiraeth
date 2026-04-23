@@ -1,10 +1,15 @@
 use async_trait::async_trait;
+use chrono::{SecondsFormat, Utc};
 use hiraeth_core::{
     ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
     parse_aws_query_request, xml_response,
 };
-use hiraeth_store::{IamStore, iam::Principal};
+use hiraeth_store::{
+    IamStore,
+    iam::{NewPrincipal, Principal},
+};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::error::IamError;
 
@@ -78,39 +83,28 @@ where
             Err(error) => return Ok(ServiceResponse::from(IamError::from(error))),
         };
 
-        let principal = Principal {
-            id: 1,
-            account_id: account_id.clone(),
-            kind: "user".to_string(),
-            name: create_user_request.user_name.clone(),
-            created_at: chrono::Utc::now().naive_utc(),
+        let path = normalize_user_path(&create_user_request.path);
+        let created_principal = match store
+            .create_principal(NewPrincipal {
+                account_id: account_id.clone(),
+                kind: "user".to_string(),
+                name: create_user_request.user_name,
+                path,
+                user_id: new_user_id(),
+            })
+            .await
+            .map_err(IamError::from)
+        {
+            Ok(principal) => principal,
+            Err(error) => return Ok(ServiceResponse::from(error)),
         };
 
-        let result = store
-            .create_principal(principal)
-            .await
-            .map(|_| {
-                create_user_response(
-                    IamUserXml {
-                        path: "/".to_string(),
-                        user_name: create_user_request.user_name.clone(),
-                        user_id: account_id.clone(),
-                        arn: user_arn(account_id, "/", &create_user_request.user_name),
-                        create_date: chrono::Utc::now().to_rfc3339(),
-                    },
-                    "bogus",
-                )
-            })
-            .map(|result| xml_response(&result).map_err(IamError::from))
-            .map_err(IamError::from)
-            .map_err(ServiceResponse::from);
-
-        match result {
-            Ok(response) => match response {
-                Ok(xml_response) => Ok(xml_response),
-                Err(error) => Ok(ServiceResponse::from(error)),
-            },
-            Err(error) => Ok(error),
+        match xml_response(&create_user_response(
+            iam_user_xml(&created_principal),
+            Uuid::new_v4().to_string(),
+        )) {
+            Ok(response) => Ok(response),
+            Err(error) => Ok(ServiceResponse::from(IamError::from(error))),
         }
     }
 
@@ -156,6 +150,23 @@ fn default_user_path() -> String {
     "/".to_string()
 }
 
+fn iam_user_xml(principal: &Principal) -> IamUserXml {
+    IamUserXml {
+        path: principal.path.clone(),
+        user_name: principal.name.clone(),
+        user_id: principal.user_id.clone(),
+        arn: user_arn(&principal.account_id, &principal.path, &principal.name),
+        create_date: principal
+            .created_at
+            .and_utc()
+            .to_rfc3339_opts(SecondsFormat::Secs, true),
+    }
+}
+
+fn new_user_id() -> String {
+    format!("AIDA{}", Uuid::new_v4().simple().to_string().to_uppercase())
+}
+
 fn create_user_response(user: IamUserXml, request_id: impl Into<String>) -> CreateUserResponse {
     CreateUserResponse {
         xmlns: IAM_XMLNS,
@@ -170,7 +181,7 @@ fn create_user_response(user: IamUserXml, request_id: impl Into<String>) -> Crea
 mod tests {
     use std::collections::HashMap;
 
-    use chrono::{TimeZone, Utc};
+    use chrono::{NaiveDate, TimeZone, Utc};
     use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, xml_body};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
@@ -178,7 +189,7 @@ mod tests {
         iam::{AccessKey, InMemoryIamStore, Principal},
     };
 
-    use super::{CreateUserAction, IamUserXml, create_user_response};
+    use super::{CreateUserAction, IamUserXml, create_user_response, iam_user_xml, new_user_id};
 
     fn store() -> InMemoryIamStore {
         InMemoryIamStore::new(
@@ -196,6 +207,8 @@ mod tests {
                 account_id: "123456789012".to_string(),
                 kind: "user".to_string(),
                 name: "test-user".to_string(),
+                path: "/".to_string(),
+                user_id: "AIDATESTUSER000001".to_string(),
                 created_at: Utc
                     .with_ymd_and_hms(2026, 4, 22, 12, 0, 0)
                     .unwrap()
@@ -229,6 +242,8 @@ mod tests {
                     account_id: "123456789012".to_string(),
                     kind: "user".to_string(),
                     name: "test-user".to_string(),
+                    path: "/".to_string(),
+                    user_id: "AIDATESTUSER000001".to_string(),
                     created_at: Utc
                         .with_ymd_and_hms(2026, 4, 22, 12, 0, 0)
                         .unwrap()
@@ -275,20 +290,72 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_returns_not_implemented_placeholder() {
+    async fn handle_returns_created_user_xml_response() {
         let action = CreateUserAction;
         let response = action
             .handle(
-                resolved_request(b"Action=CreateUser&Version=2010-05-08&UserName=alice"),
+                resolved_request(
+                    b"Action=CreateUser&Version=2010-05-08&UserName=alice&Path=%2Fengineering%2Fdev%2F",
+                ),
                 &store(),
             )
             .await
-            .expect("placeholder response should be returned");
+            .expect("create user should return xml response");
 
-        assert_eq!(response.status_code, 501);
+        let body = String::from_utf8(response.body).expect("response body should be utf-8");
+
+        assert_eq!(response.status_code, 200);
         assert_eq!(
-            String::from_utf8(response.body).unwrap(),
-            "IAM action CreateUser is not implemented"
+            response.headers,
+            vec![(
+                "content-type".to_string(),
+                "text/xml; charset=utf-8".to_string()
+            )]
+        );
+        assert!(body.contains("<UserName>alice</UserName>"));
+        assert!(body.contains("<Path>/engineering/dev/</Path>"));
+        assert!(body.contains("<Arn>arn:aws:iam::123456789012:user/engineering/dev/alice</Arn>"));
+        assert!(body.contains("<UserId>AIDA"));
+        assert!(body.contains("<ResponseMetadata><RequestId>"));
+    }
+
+    #[test]
+    fn iam_user_xml_uses_principal_metadata() {
+        let principal = Principal {
+            id: 42,
+            account_id: "123456789012".to_string(),
+            kind: "user".to_string(),
+            name: "Bob".to_string(),
+            path: "/division_abc/subdivision_xyz/".to_string(),
+            user_id: "AIDACKCEVSQ6C2EXAMPLE".to_string(),
+            created_at: NaiveDate::from_ymd_opt(2026, 4, 23)
+                .unwrap()
+                .and_hms_opt(18, 20, 17)
+                .unwrap(),
+        };
+
+        let user = iam_user_xml(&principal);
+
+        assert_eq!(user.path, "/division_abc/subdivision_xyz/");
+        assert_eq!(user.user_name, "Bob");
+        assert_eq!(user.user_id, "AIDACKCEVSQ6C2EXAMPLE");
+        assert_eq!(
+            user.arn,
+            "arn:aws:iam::123456789012:user/division_abc/subdivision_xyz/Bob"
+        );
+        assert_eq!(user.create_date, "2026-04-23T18:20:17Z");
+    }
+
+    #[test]
+    fn new_user_id_uses_aida_prefix() {
+        let user_id = new_user_id();
+
+        assert!(user_id.starts_with("AIDA"));
+        assert_eq!(user_id.len(), 36);
+        assert!(
+            user_id
+                .chars()
+                .all(|character| character.is_ascii_uppercase() || character.is_ascii_digit())
         );
     }
 

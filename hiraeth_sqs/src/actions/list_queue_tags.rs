@@ -105,6 +105,8 @@ mod tests {
                     account_id: "123456789012".to_string(),
                     kind: "user".to_string(),
                     name: "test-user".to_string(),
+                    path: "/".to_string(),
+                    user_id: "AIDATESTUSER000001".to_string(),
                     created_at: Utc
                         .with_ymd_and_hms(2026, 4, 15, 12, 0, 0)
                         .unwrap()

@@ -8,8 +8,8 @@ pub use access_key_store::SqliteAccessKeyStore;
 pub use principal::SqlitePrincipalStore;
 
 use hiraeth_store::iam::{
-    AccessKey, AccessKeyStore, Principal, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
-    PrincipalStore,
+    AccessKey, AccessKeyStore, NewPrincipal, Principal, PrincipalInlinePolicy,
+    PrincipalInlinePolicyStore, PrincipalStore,
 };
 
 use crate::iam::principal_inline_policy_store::SqlitePrincipalInlinePolicyStore;
@@ -77,8 +77,8 @@ impl PrincipalStore for SqliteIamStore {
 
     async fn create_principal(
         &self,
-        principal: Principal,
-    ) -> Result<(), hiraeth_store::StoreError> {
+        principal: NewPrincipal,
+    ) -> Result<Principal, hiraeth_store::StoreError> {
         self.principal_store.create_principal(principal).await
     }
 }

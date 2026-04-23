@@ -6,6 +6,7 @@ use hiraeth_store::StoreError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum IamError {
     BadRequest(String),
+    EntityAlreadyExists(String),
     UnsupportedOperation(String),
     InternalError(String),
 }
@@ -14,6 +15,7 @@ impl Display for IamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             IamError::BadRequest(message) => write!(f, "{message}"),
+            IamError::EntityAlreadyExists(message) => write!(f, "{message}"),
             IamError::UnsupportedOperation(action) => {
                 write!(f, "IAM action {action} is not implemented")
             }
@@ -32,6 +34,7 @@ impl From<IamError> for ServiceResponse {
     fn from(value: IamError) -> Self {
         let status_code = match value {
             IamError::BadRequest(_) => 400,
+            IamError::EntityAlreadyExists(_) => 409,
             IamError::UnsupportedOperation(_) => 501,
             IamError::InternalError(_) => 500,
         };
@@ -55,6 +58,9 @@ impl From<ResponseSerializationError> for IamError {
 
 impl From<StoreError> for IamError {
     fn from(value: StoreError) -> Self {
-        IamError::InternalError(value.to_string())
+        match value {
+            StoreError::Conflict(message) => IamError::EntityAlreadyExists(message),
+            _ => IamError::InternalError(value.to_string()),
+        }
     }
 }
