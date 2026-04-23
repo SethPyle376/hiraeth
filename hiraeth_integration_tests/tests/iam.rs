@@ -60,3 +60,35 @@ async fn create_access_key_request_returns_created_key_for_requested_user() -> a
 
     Ok(())
 }
+
+#[tokio::test]
+async fn get_user_request_returns_user_to_aws_sdk() -> anyhow::Result<()> {
+    let server = iam_test_server().await?;
+    let user_name = unique_name("integration-test-get-user");
+
+    server
+        .client
+        .create_user()
+        .user_name(&user_name)
+        .send()
+        .await?;
+
+    let response = server
+        .client
+        .get_user()
+        .user_name(&user_name)
+        .send()
+        .await?;
+    let user = response
+        .user()
+        .context("get user response should include user")?;
+
+    assert_eq!(user.user_name(), user_name.as_str());
+    assert_eq!(user.path(), "/");
+    assert_eq!(
+        user.arn(),
+        format!("arn:aws:iam::000000000000:user/{user_name}")
+    );
+
+    Ok(())
+}

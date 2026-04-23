@@ -13,8 +13,8 @@ use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, default_user_path, normalize_user_path, response_metadata,
-        user_arn,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, normalize_user_path,
+        response_metadata, user_arn,
     },
     error::IamError,
 };
@@ -45,20 +45,6 @@ struct CreateUserResponse {
 struct CreateUserResult {
     #[serde(rename = "User")]
     user: IamUserXml,
-}
-
-#[derive(Debug, Serialize)]
-struct IamUserXml {
-    #[serde(rename = "Path")]
-    path: String,
-    #[serde(rename = "UserName")]
-    user_name: String,
-    #[serde(rename = "UserId")]
-    user_id: String,
-    #[serde(rename = "Arn")]
-    arn: String,
-    #[serde(rename = "CreateDate")]
-    create_date: String,
 }
 
 #[async_trait]
@@ -98,10 +84,8 @@ where
             Err(error) => return Ok(ServiceResponse::from(error)),
         };
 
-        match xml_response(&create_user_response(
-            iam_user_xml(&created_principal),
-            Uuid::new_v4().to_string(),
-        )) {
+        let user_xml = created_principal.into();
+        match xml_response(&create_user_response(user_xml, Uuid::new_v4().to_string())) {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(IamError::from(error))),
         }
@@ -125,19 +109,6 @@ where
             ),
             resource_policy: None,
         })
-    }
-}
-
-fn iam_user_xml(principal: &Principal) -> IamUserXml {
-    IamUserXml {
-        path: principal.path.clone(),
-        user_name: principal.name.clone(),
-        user_id: principal.user_id.clone(),
-        arn: user_arn(&principal.account_id, &principal.path, &principal.name),
-        create_date: principal
-            .created_at
-            .and_utc()
-            .to_rfc3339_opts(SecondsFormat::Secs, true),
     }
 }
 
@@ -165,7 +136,7 @@ mod tests {
         iam::{AccessKey, InMemoryIamStore, Principal},
     };
 
-    use super::{CreateUserAction, IamUserXml, create_user_response, iam_user_xml, new_user_id};
+    use super::{CreateUserAction, IamUserXml, create_user_response, new_user_id};
 
     fn store() -> InMemoryIamStore {
         InMemoryIamStore::new(
@@ -310,7 +281,7 @@ mod tests {
                 .unwrap(),
         };
 
-        let user = iam_user_xml(&principal);
+        let user = IamUserXml::from(principal);
 
         assert_eq!(user.path, "/division_abc/subdivision_xyz/");
         assert_eq!(user.user_name, "Bob");

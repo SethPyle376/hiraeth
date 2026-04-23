@@ -1,3 +1,5 @@
+use chrono::SecondsFormat;
+use hiraeth_store::iam::Principal;
 use serde::Serialize;
 
 pub(super) const IAM_XMLNS: &str = "https://iam.amazonaws.com/doc/2010-05-08/";
@@ -11,6 +13,35 @@ pub(super) struct ResponseMetadata {
 pub(super) fn response_metadata(request_id: impl Into<String>) -> ResponseMetadata {
     ResponseMetadata {
         request_id: request_id.into(),
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct IamUserXml {
+    #[serde(rename = "Path")]
+    pub path: String,
+    #[serde(rename = "UserName")]
+    pub user_name: String,
+    #[serde(rename = "UserId")]
+    pub user_id: String,
+    #[serde(rename = "Arn")]
+    pub arn: String,
+    #[serde(rename = "CreateDate")]
+    pub create_date: String,
+}
+
+impl From<Principal> for IamUserXml {
+    fn from(principal: Principal) -> Self {
+        IamUserXml {
+            path: principal.path.clone(),
+            user_name: principal.name.clone(),
+            user_id: principal.user_id.clone(),
+            arn: user_arn(&principal.account_id, &principal.path, &principal.name),
+            create_date: principal
+                .created_at
+                .and_utc()
+                .to_rfc3339_opts(SecondsFormat::Secs, true),
+        }
     }
 }
 
