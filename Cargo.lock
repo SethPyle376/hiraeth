@@ -1451,6 +1451,7 @@ dependencies = [
  "hiraeth_store_sqlx",
  "serde",
  "serde_json",
+ "sqlx",
  "tempfile",
  "terraform-wrapper",
  "tokio",
