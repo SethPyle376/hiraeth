@@ -2,28 +2,32 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, empty_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, empty_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
-use super::tag_support::validate_tags;
+use super::{
+    action_support::{json_payload_format, parse_payload_error},
+    tag_support::validate_tags,
+};
 use crate::error::SqsError;
 
 pub(crate) struct TagQueueAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct TagQueueRequest {
+pub(crate) struct TagQueueRequest {
     queue_url: String,
     tags: HashMap<String, String>,
 }
 
-async fn handle_tag_queue<S: SqsStore>(
+async fn handle_tag_queue_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: TagQueueRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<TagQueueRequest>(request)?;
     validate_tags(&request_body.tags, false)?;
 
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
@@ -42,28 +46,40 @@ async fn handle_tag_queue<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for TagQueueAction
+impl<S> TypedAwsAction<S> for TagQueueAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = TagQueueRequest;
+
     fn name(&self) -> &'static str {
         "TagQueue"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: TagQueueRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_tag_queue(&request, store).await {
+        match handle_tag_queue_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: TagQueueRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:TagQueue", request, store).await
@@ -75,13 +91,13 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         principal::Principal, sqs::SqsQueue, sqs::SqsStore, test_support::SqsTestStore,
     };
 
-    use super::{TagQueueAction, handle_tag_queue};
+    use super::{TagQueueAction, handle_tag_queue_typed};
     use crate::error::SqsError;
 
     fn resolved_request(body: &str) -> ResolvedRequest {
@@ -138,7 +154,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <TagQueueAction as AwsAction<SqsTestStore>>::name(&TagQueueAction),
+            <TagQueueAction as TypedAwsAction<SqsTestStore>>::name(&TagQueueAction),
             "TagQueue"
         );
     }
@@ -165,9 +181,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_tag_queue(&request, &store)
-            .await
-            .expect("tag queue should succeed");
+        let response = handle_tag_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("tag queue should succeed");
 
         assert_eq!(response.status_code, 200);
         assert_eq!(
@@ -191,7 +211,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_tag_queue(&request, &store).await;
+        let result = handle_tag_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }
@@ -213,7 +238,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_tag_queue(&request, &store).await;
+        let result = handle_tag_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }
@@ -228,7 +258,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_tag_queue(&request, &store).await;
+        let result = handle_tag_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }

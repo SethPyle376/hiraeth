@@ -4,7 +4,10 @@ mod config;
 mod protocol;
 mod request;
 
-pub use action::{AwsAction, AwsActionRegistry};
+pub use action::{
+    AwsAction, AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionRegistry,
+    TypedAwsAction, TypedAwsActionAdapter,
+};
 pub use config::{AuthMode, Config};
 pub use protocol::{
     AwsErrorFault, AwsQueryParams, AwsQueryParseError, AwsServiceError, RequestBodyParseError,

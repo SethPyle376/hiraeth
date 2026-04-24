@@ -63,6 +63,7 @@ impl From<StoreError> for IamError {
     fn from(value: StoreError) -> Self {
         match value {
             StoreError::Conflict(message) => IamError::EntityAlreadyExists(message),
+            StoreError::NotFound(message) => IamError::NoSuchEntity(message),
             _ => IamError::InternalError(value.to_string()),
         }
     }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM iam_principals WHERE kind = 'user' AND account_id = ? AND name = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "08a2f6bfba36506cdaee8f59ca8297a58e02c01cbddb25a457cc66ec08941d8f"
+}

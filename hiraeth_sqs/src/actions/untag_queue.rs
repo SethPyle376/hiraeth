@@ -1,27 +1,31 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, empty_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, empty_response,
 };
 use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::tag_support::validate_tag_keys;
+use super::{
+    action_support::{json_payload_format, parse_payload_error},
+    tag_support::validate_tag_keys,
+};
 use crate::error::SqsError;
 
 pub(crate) struct UntagQueueAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct UntagQueueRequest {
+pub(crate) struct UntagQueueRequest {
     queue_url: String,
     tag_keys: Vec<String>,
 }
 
-async fn handle_untag_queue<S: SqsStore>(
+async fn handle_untag_queue_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: UntagQueueRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<UntagQueueRequest>(request)?;
     validate_tag_keys(&request_body.tag_keys, false)?;
 
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
@@ -33,28 +37,40 @@ async fn handle_untag_queue<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for UntagQueueAction
+impl<S> TypedAwsAction<S> for UntagQueueAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = UntagQueueRequest;
+
     fn name(&self) -> &'static str {
         "UntagQueue"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: UntagQueueRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_untag_queue(&request, store).await {
+        match handle_untag_queue_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: UntagQueueRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:UntagQueue", request, store).await
@@ -64,13 +80,13 @@ where
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         principal::Principal, sqs::SqsQueue, sqs::SqsStore, test_support::SqsTestStore,
     };
 
-    use super::{UntagQueueAction, handle_untag_queue};
+    use super::{UntagQueueAction, handle_untag_queue_typed};
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         ResolvedRequest {
@@ -129,7 +145,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <UntagQueueAction as AwsAction<SqsTestStore>>::name(&UntagQueueAction),
+            <UntagQueueAction as TypedAwsAction<SqsTestStore>>::name(&UntagQueueAction),
             "UntagQueue"
         );
     }
@@ -156,9 +172,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_untag_queue(&request, &store)
-            .await
-            .expect("untag queue should succeed");
+        let response = handle_untag_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("untag queue should succeed");
 
         assert_eq!(response.status_code, 200);
         assert_eq!(

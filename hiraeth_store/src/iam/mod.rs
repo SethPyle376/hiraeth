@@ -98,6 +98,10 @@ impl PrincipalStore for InMemoryIamStore {
     ) -> Result<Principal, crate::StoreError> {
         self.principal_store.create_principal(principal).await
     }
+
+    async fn delete_user(&self, account_id: &str, name: &str) -> Result<(), crate::StoreError> {
+        self.principal_store.delete_user(account_id, name).await
+    }
 }
 
 #[async_trait]

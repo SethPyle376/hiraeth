@@ -2,18 +2,20 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct ListQueueTagsAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct ListQueueTagsRequest {
+pub(crate) struct ListQueueTagsRequest {
     queue_url: String,
 }
 
@@ -23,11 +25,11 @@ struct ListQueueTagsResponse {
     tags: HashMap<String, String>,
 }
 
-async fn handle_list_queue_tags<S: SqsStore>(
+async fn handle_list_queue_tags_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: ListQueueTagsRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<ListQueueTagsRequest>(request)?;
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
 
     let tags = store
@@ -39,28 +41,40 @@ async fn handle_list_queue_tags<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for ListQueueTagsAction
+impl<S> TypedAwsAction<S> for ListQueueTagsAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = ListQueueTagsRequest;
+
     fn name(&self) -> &'static str {
         "ListQueueTags"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: ListQueueTagsRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_list_queue_tags(&request, store).await {
+        match handle_list_queue_tags_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: ListQueueTagsRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:ListQueueTags", request, store).await
@@ -72,14 +86,14 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{
         principal::Principal, sqs::SqsQueue, sqs::SqsStore, test_support::SqsTestStore,
     };
 
-    use super::{ListQueueTagsAction, handle_list_queue_tags};
+    use super::{ListQueueTagsAction, handle_list_queue_tags_typed};
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         ResolvedRequest {
@@ -142,7 +156,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <ListQueueTagsAction as AwsAction<SqsTestStore>>::name(&ListQueueTagsAction),
+            <ListQueueTagsAction as TypedAwsAction<SqsTestStore>>::name(&ListQueueTagsAction),
             "ListQueueTags"
         );
     }
@@ -165,9 +179,13 @@ mod tests {
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
-        let response = handle_list_queue_tags(&request, &store)
-            .await
-            .expect("list queue tags should succeed");
+        let response = handle_list_queue_tags_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("list queue tags should succeed");
         let body = parse_json_body(&response);
 
         assert_eq!(response.status_code, 200);

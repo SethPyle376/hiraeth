@@ -1,11 +1,15 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use super::queue_support;
+use super::{
+    action_support::{json_payload_format, parse_payload_error},
+    queue_support,
+};
 use crate::error::SqsError;
 
 pub(crate) struct GetQueueUrlAction;
@@ -23,11 +27,11 @@ struct GetQueueUrlResponse {
     queue_url: String,
 }
 
-async fn handle_get_queue_url<S: SqsStore>(
+async fn handle_get_queue_url_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: GetQueueUrlRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<GetQueueUrlRequest>(request)?;
     queue_support::validate_queue_name(
         &request_body.queue_name,
         request_body.queue_name.ends_with(".fifo"),
@@ -58,28 +62,40 @@ async fn handle_get_queue_url<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for GetQueueUrlAction
+impl<S> TypedAwsAction<S> for GetQueueUrlAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = GetQueueUrlRequest;
+
     fn name(&self) -> &'static str {
         "GetQueueUrl"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: GetQueueUrlRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_get_queue_url(&request, store).await {
+        match handle_get_queue_url_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: GetQueueUrlRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:GetQueueUrl", request, store).await
@@ -91,11 +107,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
 
-    use super::{GetQueueUrlAction, handle_get_queue_url};
+    use super::{GetQueueUrlAction, handle_get_queue_url_typed};
     use crate::error::SqsError;
 
     fn resolved_request(body: &str) -> ResolvedRequest {
@@ -144,7 +160,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <GetQueueUrlAction as AwsAction<SqsTestStore>>::name(&GetQueueUrlAction),
+            <GetQueueUrlAction as TypedAwsAction<SqsTestStore>>::name(&GetQueueUrlAction),
             "GetQueueUrl"
         );
     }
@@ -154,7 +170,12 @@ mod tests {
         let store = SqsTestStore::default();
         let request = resolved_request(r#"{"QueueName":"missing-queue"}"#);
 
-        let result = handle_get_queue_url(&request, &store).await;
+        let result = handle_get_queue_url_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
@@ -183,9 +204,13 @@ mod tests {
         });
         let request = resolved_request(r#"{"QueueName":"existing-queue"}"#);
 
-        let response = handle_get_queue_url(&request, &store)
-            .await
-            .expect("get queue url should succeed");
+        let response = handle_get_queue_url_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("get queue url should succeed");
         let body: serde_json::Value =
             serde_json::from_slice(&response.body).expect("response body should be valid json");
 
@@ -220,9 +245,13 @@ mod tests {
         });
         let request = aws_style_resolved_request(r#"{"QueueName":"existing-queue"}"#);
 
-        let response = handle_get_queue_url(&request, &store)
-            .await
-            .expect("get queue url should succeed");
+        let response = handle_get_queue_url_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("get queue url should succeed");
         let body: serde_json::Value =
             serde_json::from_slice(&response.body).expect("response body should be valid json");
 

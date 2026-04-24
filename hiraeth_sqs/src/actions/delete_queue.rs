@@ -1,25 +1,27 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, empty_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, empty_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct DeleteQueueAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct DeleteQueueRequest {
+pub(crate) struct DeleteQueueRequest {
     queue_url: String,
 }
 
-async fn handle_delete_queue<S: SqsStore>(
+async fn handle_delete_queue_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: DeleteQueueRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<DeleteQueueRequest>(request)?;
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
 
     store
@@ -30,28 +32,40 @@ async fn handle_delete_queue<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for DeleteQueueAction
+impl<S> TypedAwsAction<S> for DeleteQueueAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = DeleteQueueRequest;
+
     fn name(&self) -> &'static str {
         "DeleteQueue"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: DeleteQueueRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_delete_queue(&request, store).await {
+        match handle_delete_queue_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: DeleteQueueRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:DeleteQueue", request, store).await
@@ -63,11 +77,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
 
-    use super::{DeleteQueueAction, handle_delete_queue};
+    use super::{DeleteQueueAction, handle_delete_queue_typed};
     use crate::error::SqsError;
 
     fn resolved_request(body: &str) -> ResolvedRequest {
@@ -133,7 +147,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <DeleteQueueAction as AwsAction<SqsTestStore>>::name(&DeleteQueueAction),
+            <DeleteQueueAction as TypedAwsAction<SqsTestStore>>::name(&DeleteQueueAction),
             "DeleteQueue"
         );
     }
@@ -144,9 +158,13 @@ mod tests {
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
-        let response = handle_delete_queue(&request, &store)
-            .await
-            .expect("delete queue should succeed");
+        let response = handle_delete_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("delete queue should succeed");
 
         assert_eq!(response.status_code, 200);
         assert!(response.body.is_empty());
@@ -159,7 +177,12 @@ mod tests {
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
-        let result = handle_delete_queue(&request, &store).await;
+        let result = handle_delete_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }

@@ -1,14 +1,16 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
-    parse_aws_query_request, xml_response,
+    ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    auth::AuthorizationCheck, xml_response,
 };
 use hiraeth_store::{IamStore, iam::Principal};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    actions::util::{IAM_XMLNS, IamUserXml, ResponseMetadata, response_metadata, user_arn},
+    actions::util::{
+        IAM_XMLNS, IamUserXml, ResponseMetadata, parse_payload_error, response_metadata, user_arn,
+    },
     error::IamError,
 };
 
@@ -16,7 +18,7 @@ pub(crate) struct GetUserAction;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct GetUserRequest {
+pub(crate) struct GetUserRequest {
     user_name: Option<String>,
 }
 
@@ -38,24 +40,26 @@ struct GetUserResult {
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for GetUserAction
+impl<S> TypedAwsAction<S> for GetUserAction
 where
     S: IamStore + Send + Sync,
 {
+    type Request = GetUserRequest;
+
     fn name(&self) -> &'static str {
         "GetUser"
     }
 
-    async fn handle(
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        get_user_request: GetUserRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        let get_user_request = match parse_aws_query_request::<GetUserRequest>(&request.request) {
-            Ok(request) => request,
-            Err(error) => return Ok(ServiceResponse::from(IamError::from(error))),
-        };
-
         let principal =
             match target_user(&request, store, get_user_request.user_name.as_deref()).await {
                 Ok(Some(principal)) => principal,
@@ -79,14 +83,12 @@ where
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        get_user_request: GetUserRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let get_user_request = parse_aws_query_request::<GetUserRequest>(&request.request)
-            .map_err(IamError::from)
-            .map_err(ServiceResponse::from)?;
         let principal = target_user(request, store, get_user_request.user_name.as_deref())
             .await
             .map_err(IamError::from)
@@ -137,7 +139,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, xml_body};
+    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, xml_body};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
 
@@ -204,7 +206,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_returns_nested_user_xml_for_requested_user() {
-        let action = GetUserAction;
+        let action = TypedAwsActionAdapter::new(GetUserAction);
         let response = action
             .handle(
                 resolved_request(b"Action=GetUser&Version=2010-05-08&UserName=alice"),
@@ -224,7 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_uses_signing_user_when_user_name_is_omitted() {
-        let action = GetUserAction;
+        let action = TypedAwsActionAdapter::new(GetUserAction);
         let response = action
             .handle(
                 resolved_request(b"Action=GetUser&Version=2010-05-08"),
@@ -242,7 +244,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_authorization_uses_stored_user_path() {
-        let action = GetUserAction;
+        let action = TypedAwsActionAdapter::new(GetUserAction);
         let check = action
             .resolve_authorization(
                 &resolved_request(b"Action=GetUser&Version=2010-05-08&UserName=alice"),

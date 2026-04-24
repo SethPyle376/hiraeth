@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::{
     StoreError,
@@ -11,7 +12,10 @@ use hiraeth_store::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    queue_attribute_support::QueueAttributeValues, queue_support, tag_support::validate_tags,
+    action_support::{json_payload_format, parse_payload_error},
+    queue_attribute_support::QueueAttributeValues,
+    queue_support,
+    tag_support::validate_tags,
 };
 use crate::error::SqsError;
 
@@ -19,7 +23,7 @@ pub(crate) struct CreateQueueAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct CreateQueueRequest {
+pub(crate) struct CreateQueueRequest {
     queue_name: String,
     #[serde(default)]
     attributes: HashMap<String, String>,
@@ -33,11 +37,11 @@ struct CreateQueueResponse {
     queue_url: String,
 }
 
-async fn handle_create_queue<S: SqsStore>(
+async fn handle_create_queue_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: CreateQueueRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<CreateQueueRequest>(request)?;
     let queue_attributes = QueueAttributeValues::from_attribute_map(&request_body.attributes)?;
     queue_support::validate_queue_name(&request_body.queue_name, queue_attributes.fifo_queue)?;
     validate_tags(&request_body.tags, true)?;
@@ -145,28 +149,40 @@ fn create_queue_response(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for CreateQueueAction
+impl<S> TypedAwsAction<S> for CreateQueueAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = CreateQueueRequest;
+
     fn name(&self) -> &'static str {
         "CreateQueue"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: CreateQueueRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_create_queue(&request, store).await {
+        match handle_create_queue_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: CreateQueueRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:CreateQueue", request, store).await
@@ -178,13 +194,13 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, test_support::SqsTestStore};
     use serde_json::Value;
 
-    use super::{CreateQueueAction, handle_create_queue};
+    use super::{CreateQueueAction, handle_create_queue_typed};
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -236,7 +252,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <CreateQueueAction as AwsAction<SqsTestStore>>::name(&CreateQueueAction),
+            <CreateQueueAction as TypedAwsAction<SqsTestStore>>::name(&CreateQueueAction),
             "CreateQueue"
         );
     }
@@ -254,9 +270,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_create_queue(&request, &store)
-            .await
-            .expect("create queue should succeed");
+        let response = handle_create_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("create queue should succeed");
 
         assert_eq!(response.status_code, 200);
         assert_eq!(
@@ -275,9 +295,13 @@ mod tests {
         let store = SqsTestStore::default();
         let request = aws_style_resolved_request(r#"{"QueueName":"test-queue"}"#);
 
-        let response = handle_create_queue(&request, &store)
-            .await
-            .expect("create queue should succeed");
+        let response = handle_create_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("create queue should succeed");
 
         assert_eq!(response.status_code, 200);
         assert_eq!(
@@ -333,9 +357,13 @@ mod tests {
             }"#,
         );
 
-        handle_create_queue(&request, &store)
-            .await
-            .expect("create queue should succeed");
+        handle_create_queue_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("create queue should succeed");
 
         let created = store.created_queues();
         assert_eq!(created.len(), 1);

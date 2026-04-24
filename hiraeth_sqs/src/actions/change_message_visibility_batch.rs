@@ -1,19 +1,23 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::change_message_visibility::validate_visibility_timeout;
+use super::{
+    action_support::{json_payload_format, parse_payload_error},
+    change_message_visibility::validate_visibility_timeout,
+};
 use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error};
 
 pub(crate) struct ChangeMessageVisibilityBatchAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct ChangeMessageVisibilityBatchEntry {
+pub(crate) struct ChangeMessageVisibilityBatchEntry {
     pub id: String,
     pub receipt_handle: String,
     pub visibility_timeout: u32,
@@ -21,7 +25,7 @@ struct ChangeMessageVisibilityBatchEntry {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct ChangeMessageVisibilityBatchRequest {
+pub(crate) struct ChangeMessageVisibilityBatchRequest {
     pub queue_url: String,
     pub entries: Vec<ChangeMessageVisibilityBatchEntry>,
 }
@@ -48,12 +52,11 @@ struct ChangeMessageVisibilityBatchResponse {
     pub failed: Vec<ChangeMessageVisibilityBatchFailedEntry>,
 }
 
-async fn handle_change_message_visibility_batch<S: SqsStore>(
+async fn handle_change_message_visibility_batch_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    change_request: ChangeMessageVisibilityBatchRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let change_request =
-        crate::util::parse_request_body::<ChangeMessageVisibilityBatchRequest>(request)?;
     let queue = crate::util::load_queue_from_url(request, store, &change_request.queue_url).await?;
     crate::util::validate_batch_request(
         change_request.entries.iter().map(|entry| entry.id.as_str()),
@@ -102,28 +105,40 @@ async fn handle_change_message_visibility_batch<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for ChangeMessageVisibilityBatchAction
+impl<S> TypedAwsAction<S> for ChangeMessageVisibilityBatchAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = ChangeMessageVisibilityBatchRequest;
+
     fn name(&self) -> &'static str {
         "ChangeMessageVisibilityBatch"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        change_request: ChangeMessageVisibilityBatchRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_change_message_visibility_batch(&request, store).await {
+        match handle_change_message_visibility_batch_typed(&request, store, change_request).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: ChangeMessageVisibilityBatchRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
@@ -135,13 +150,13 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
-    use super::{ChangeMessageVisibilityBatchAction, handle_change_message_visibility_batch};
+    use super::{ChangeMessageVisibilityBatchAction, handle_change_message_visibility_batch_typed};
 
     fn queue() -> SqsQueue {
         SqsQueue {
@@ -210,7 +225,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <ChangeMessageVisibilityBatchAction as AwsAction<SqsTestStore>>::name(
+            <ChangeMessageVisibilityBatchAction as TypedAwsAction<SqsTestStore>>::name(
                 &ChangeMessageVisibilityBatchAction
             ),
             "ChangeMessageVisibilityBatch"
@@ -231,9 +246,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_change_message_visibility_batch(&request, &store)
-            .await
-            .expect("change visibility batch should succeed");
+        let response = handle_change_message_visibility_batch_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("change visibility batch should succeed");
 
         assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);

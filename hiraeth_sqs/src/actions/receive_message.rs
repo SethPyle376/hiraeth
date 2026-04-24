@@ -3,11 +3,13 @@ use std::{cmp::min, collections::BTreeMap};
 use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::{error::SqsError, util};
 
 pub(crate) struct ReceiveMessageAction;
@@ -56,11 +58,11 @@ pub struct ReceiveMessageResponse {
     pub messages: Vec<ReceivedMessage>,
 }
 
-async fn handle_receive_message<S: SqsStore>(
+async fn handle_receive_message_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    receive_request: ReceiveMessageRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let receive_request = crate::util::parse_request_body::<ReceiveMessageRequest>(request)?;
     let queue =
         crate::util::load_queue_from_url(request, store, &receive_request.queue_url).await?;
     validate_receive_request(&receive_request)?;
@@ -261,28 +263,40 @@ fn filter_message_attributes(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for ReceiveMessageAction
+impl<S> TypedAwsAction<S> for ReceiveMessageAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = ReceiveMessageRequest;
+
     fn name(&self) -> &'static str {
         "ReceiveMessage"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        receive_request: ReceiveMessageRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_receive_message(&request, store).await {
+        match handle_receive_message_typed(&request, store, receive_request).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: ReceiveMessageRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:ReceiveMessage", request, store).await
@@ -294,7 +308,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{
@@ -304,7 +318,7 @@ mod tests {
     };
     use serde_json::Value;
 
-    use super::{ReceiveMessageAction, handle_receive_message};
+    use super::{ReceiveMessageAction, handle_receive_message_typed};
     use crate::error::SqsError;
 
     fn queue() -> SqsQueue {
@@ -408,7 +422,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <ReceiveMessageAction as AwsAction<SqsTestStore>>::name(&ReceiveMessageAction),
+            <ReceiveMessageAction as TypedAwsAction<SqsTestStore>>::name(&ReceiveMessageAction),
             "ReceiveMessage"
         );
     }
@@ -424,9 +438,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_receive_message(&request, &store)
-            .await
-            .expect("receive message should succeed");
+        let response = handle_receive_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("receive message should succeed");
 
         assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);
@@ -476,9 +494,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_receive_message(&request, &store)
-            .await
-            .expect("receive message should succeed");
+        let response = handle_receive_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("receive message should succeed");
 
         let body = parse_json_body(&response);
         let message = &body["Messages"][0];
@@ -508,7 +530,12 @@ mod tests {
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
-        let result = handle_receive_message(&request, &store).await;
+        let result = handle_receive_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
@@ -523,7 +550,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_receive_message(&request, &store).await;
+        let result = handle_receive_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }
@@ -539,9 +571,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_receive_message(&request, &store)
-            .await
-            .expect("receive message should succeed");
+        let response = handle_receive_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("receive message should succeed");
 
         let body = parse_json_body(&response);
         let messages = body["Messages"]

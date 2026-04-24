@@ -3,12 +3,16 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use futures::StreamExt;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::send_message::{resolve_delay_seconds, validate_message_body};
+use super::{
+    action_support::{json_payload_format, parse_payload_error},
+    send_message::{resolve_delay_seconds, validate_message_body},
+};
 use crate::{
     error::{SqsError, batch_error_details},
     util::{self, MessageAttributeValue},
@@ -18,7 +22,7 @@ pub(crate) struct SendMessageBatchAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct SendMessageBatchEntry {
+pub(crate) struct SendMessageBatchEntry {
     id: String,
     delay_seconds: Option<i64>,
     #[serde(default)]
@@ -32,7 +36,7 @@ struct SendMessageBatchEntry {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct SendMessageBatchRequest {
+pub(crate) struct SendMessageBatchRequest {
     entries: Vec<SendMessageBatchEntry>,
     queue_url: String,
 }
@@ -70,11 +74,11 @@ struct SendMessageBatchResponse {
     failed: Vec<BatchResultErrorEntry>,
 }
 
-async fn handle_send_message_batch<S: SqsStore>(
+async fn handle_send_message_batch_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: SendMessageBatchRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<SendMessageBatchRequest>(request)?;
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
     crate::util::validate_batch_request(
         request_body.entries.iter().map(|entry| entry.id.as_str()),
@@ -175,28 +179,40 @@ fn batch_error_entry(id: &str, error: SqsError) -> BatchResultErrorEntry {
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for SendMessageBatchAction
+impl<S> TypedAwsAction<S> for SendMessageBatchAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = SendMessageBatchRequest;
+
     fn name(&self) -> &'static str {
         "SendMessageBatch"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: SendMessageBatchRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_send_message_batch(&request, store).await {
+        match handle_send_message_batch_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: SendMessageBatchRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
@@ -208,13 +224,13 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
-    use super::{SendMessageBatchAction, handle_send_message_batch};
+    use super::{SendMessageBatchAction, handle_send_message_batch_typed};
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -283,7 +299,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <SendMessageBatchAction as AwsAction<SqsTestStore>>::name(&SendMessageBatchAction),
+            <SendMessageBatchAction as TypedAwsAction<SqsTestStore>>::name(&SendMessageBatchAction),
             "SendMessageBatch"
         );
     }
@@ -301,9 +317,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_send_message_batch(&request, &store)
-            .await
-            .expect("send message batch should succeed");
+        let response = handle_send_message_batch_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("send message batch should succeed");
 
         assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);
@@ -326,7 +346,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_send_message_batch(&request, &store).await;
+        let result = handle_send_message_batch_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(
             result,

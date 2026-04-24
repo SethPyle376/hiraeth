@@ -1,6 +1,10 @@
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
 
-use crate::{ApiError, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck};
+use crate::{
+    ApiError, AwsQueryParseError, RequestBodyParseError, ResolvedRequest, ServiceResponse,
+    auth::AuthorizationCheck, parse_aws_query_request, parse_json_body,
+};
 
 #[async_trait]
 pub trait AwsAction<S>: Send + Sync {
@@ -19,6 +23,109 @@ pub trait AwsAction<S>: Send + Sync {
     ) -> Result<AuthorizationCheck, ServiceResponse>;
 }
 
+#[async_trait]
+pub trait TypedAwsAction<S>: Send + Sync {
+    type Request: DeserializeOwned + Send;
+
+    fn name(&self) -> &'static str;
+
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        AwsActionPayloadFormat::AwsQuery
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse;
+
+    async fn handle_typed(
+        &self,
+        request: ResolvedRequest,
+        payload: Self::Request,
+        store: &S,
+    ) -> Result<ServiceResponse, ApiError>;
+
+    async fn resolve_authorization_typed(
+        &self,
+        request: &ResolvedRequest,
+        payload: Self::Request,
+        store: &S,
+    ) -> Result<AuthorizationCheck, ServiceResponse>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AwsActionPayloadFormat {
+    AwsQuery,
+    Json,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AwsActionPayloadParseError {
+    AwsQuery(AwsQueryParseError),
+    Json(RequestBodyParseError),
+}
+
+pub struct TypedAwsActionAdapter<A> {
+    action: A,
+}
+
+impl<A> TypedAwsActionAdapter<A> {
+    pub fn new(action: A) -> Self {
+        Self { action }
+    }
+}
+
+#[async_trait]
+impl<S, A> AwsAction<S> for TypedAwsActionAdapter<A>
+where
+    S: Send + Sync,
+    A: TypedAwsAction<S>,
+{
+    fn name(&self) -> &'static str {
+        self.action.name()
+    }
+
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        store: &S,
+    ) -> Result<ServiceResponse, ApiError> {
+        let payload = match parse_payload::<A::Request>(self.action.payload_format(), &request) {
+            Ok(payload) => payload,
+            Err(error) => return Ok(self.action.parse_error(error)),
+        };
+
+        self.action.handle_typed(request, payload, store).await
+    }
+
+    async fn resolve_authorization(
+        &self,
+        request: &ResolvedRequest,
+        store: &S,
+    ) -> Result<AuthorizationCheck, ServiceResponse> {
+        let payload = parse_payload::<A::Request>(self.action.payload_format(), request)
+            .map_err(|error| self.action.parse_error(error))?;
+
+        self.action
+            .resolve_authorization_typed(request, payload, store)
+            .await
+    }
+}
+
+fn parse_payload<T>(
+    format: AwsActionPayloadFormat,
+    request: &ResolvedRequest,
+) -> Result<T, AwsActionPayloadParseError>
+where
+    T: DeserializeOwned,
+{
+    match format {
+        AwsActionPayloadFormat::AwsQuery => {
+            parse_aws_query_request(&request.request).map_err(AwsActionPayloadParseError::AwsQuery)
+        }
+        AwsActionPayloadFormat::Json => {
+            parse_json_body(&request.request.body).map_err(AwsActionPayloadParseError::Json)
+        }
+    }
+}
+
 pub struct AwsActionRegistry<S> {
     actions: Vec<Box<dyn AwsAction<S>>>,
 }
@@ -32,6 +139,14 @@ impl<S> AwsActionRegistry<S> {
 
     pub fn register(&mut self, action: Box<dyn AwsAction<S>>) {
         self.actions.push(action);
+    }
+
+    pub fn register_typed<A>(&mut self, action: A)
+    where
+        S: Send + Sync + 'static,
+        A: TypedAwsAction<S> + 'static,
+    {
+        self.register(Box::new(TypedAwsActionAdapter::new(action)));
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn AwsAction<S>> {

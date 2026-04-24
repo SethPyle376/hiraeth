@@ -221,6 +221,14 @@ mod tests {
                 created_at: Utc::now().naive_utc(),
             })
         }
+
+        async fn delete_user(
+            &self,
+            _account_id: &str,
+            _name: &str,
+        ) -> Result<(), hiraeth_store::StoreError> {
+            unreachable!("authorization tests do not delete users")
+        }
     }
 
     #[async_trait]

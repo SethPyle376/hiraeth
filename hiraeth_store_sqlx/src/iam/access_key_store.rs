@@ -194,14 +194,14 @@ mod tests {
         .await
         .expect("seeded principal id should exist");
 
-        let other_principal_id = sqlx::query!(
+        let other_principal_id = sqlx::query(
             "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
-            "000000000000",
-            "user",
-            "other-user",
-            "/",
-            "AIDAOTHERUSERKEY01"
         )
+        .bind("000000000000")
+        .bind("user")
+        .bind("other-user")
+        .bind("/")
+        .bind("AIDAOTHERUSERKEY01")
         .execute(&store.pool)
         .await
         .expect("other principal should insert")

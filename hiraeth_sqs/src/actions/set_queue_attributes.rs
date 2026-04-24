@@ -2,28 +2,32 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, empty_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, empty_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
-use super::queue_attribute_support::parse_queue_attribute_update;
+use super::{
+    action_support::{json_payload_format, parse_payload_error},
+    queue_attribute_support::parse_queue_attribute_update,
+};
 use crate::error::SqsError;
 
 pub(crate) struct SetQueueAttributesAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct SetQueueAttributesRequest {
+pub(crate) struct SetQueueAttributesRequest {
     pub queue_url: String,
     pub attributes: HashMap<String, String>,
 }
 
-async fn handle_set_queue_attributes<S: SqsStore>(
+async fn handle_set_queue_attributes_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: SetQueueAttributesRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<SetQueueAttributesRequest>(request)?;
     let queue =
         crate::util::load_queue_from_url(request, store, request_body.queue_url.as_str()).await?;
 
@@ -38,28 +42,40 @@ async fn handle_set_queue_attributes<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for SetQueueAttributesAction
+impl<S> TypedAwsAction<S> for SetQueueAttributesAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = SetQueueAttributesRequest;
+
     fn name(&self) -> &'static str {
         "SetQueueAttributes"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: SetQueueAttributesRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_set_queue_attributes(&request, store).await {
+        match handle_set_queue_attributes_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: SetQueueAttributesRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:SetQueueAttributes", request, store).await
@@ -71,7 +87,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         principal::Principal,
@@ -79,7 +95,7 @@ mod tests {
         test_support::SqsTestStore,
     };
 
-    use super::{SetQueueAttributesAction, handle_set_queue_attributes};
+    use super::{SetQueueAttributesAction, handle_set_queue_attributes_typed};
     use crate::error::SqsError;
 
     fn resolved_request(body: &str) -> ResolvedRequest {
@@ -139,7 +155,9 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <SetQueueAttributesAction as AwsAction<SqsTestStore>>::name(&SetQueueAttributesAction),
+            <SetQueueAttributesAction as TypedAwsAction<SqsTestStore>>::name(
+                &SetQueueAttributesAction
+            ),
             "SetQueueAttributes"
         );
     }
@@ -158,9 +176,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_set_queue_attributes(&request, &store)
-            .await
-            .expect("set queue attributes should succeed");
+        let response = handle_set_queue_attributes_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("set queue attributes should succeed");
 
         assert_eq!(response.status_code, 200);
         assert!(response.body.is_empty());
@@ -191,7 +213,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_set_queue_attributes(&request, &store).await;
+        let result = handle_set_queue_attributes_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }
@@ -206,7 +233,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_set_queue_attributes(&request, &store).await;
+        let result = handle_set_queue_attributes_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }

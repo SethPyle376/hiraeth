@@ -92,6 +92,26 @@ impl PrincipalStore for SqlitePrincipalStore {
         .await
         .map_err(map_sqlx_error)
     }
+
+    async fn delete_user(&self, account_id: &str, name: &str) -> Result<(), StoreError> {
+        let result = sqlx::query!(
+            "DELETE FROM iam_principals WHERE kind = 'user' AND account_id = ? AND name = ?",
+            account_id,
+            name
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound(format!(
+                "User with account_id {} and name {} not found",
+                account_id, name
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -100,7 +120,7 @@ mod tests {
 
     use super::SqlitePrincipalStore;
     use crate::{get_store_pool, run_migrations};
-    use hiraeth_store::iam::PrincipalStore;
+    use hiraeth_store::{StoreError, iam::PrincipalStore};
 
     async fn test_store() -> (TempDir, SqlitePrincipalStore) {
         let temp_dir = TempDir::new().expect("temp dir should be created");
@@ -204,14 +224,14 @@ mod tests {
     async fn run_migrations_adds_unique_constraint_for_logical_principal_identity() {
         let (_temp_dir, store) = test_store().await;
 
-        let duplicate_insert = sqlx::query!(
+        let duplicate_insert = sqlx::query(
             "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
-            "000000000000",
-            "user",
-            "test",
-            "/",
-            "AIDADUPLICATETEST01"
         )
+        .bind("000000000000")
+        .bind("user")
+        .bind("test")
+        .bind("/")
+        .bind("AIDADUPLICATETEST01")
         .execute(&store.pool)
         .await;
 
@@ -222,14 +242,14 @@ mod tests {
     async fn list_principals_returns_seeded_and_inserted_principals() {
         let (_temp_dir, store) = test_store().await;
 
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
-            "000000000000",
-            "role",
-            "integration-runner",
-            "/service-role/",
-            "AIDAINTEGRATIONRUN01"
         )
+        .bind("000000000000")
+        .bind("role")
+        .bind("integration-runner")
+        .bind("/service-role/")
+        .bind("AIDAINTEGRATIONRUN01")
         .execute(&store.pool)
         .await
         .expect("inserted principal should succeed");
@@ -250,5 +270,125 @@ mod tests {
                 && principal.name == "integration-runner"
                 && principal.path == "/service-role/"
         }));
+    }
+
+    #[tokio::test]
+    async fn delete_user_deletes_matching_user() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .delete_user("000000000000", "test")
+            .await
+            .expect("delete user should succeed");
+
+        let deleted = store
+            .get_principal_by_identity("000000000000", "user", "test")
+            .await
+            .expect("principal lookup should succeed");
+
+        assert!(deleted.is_none());
+    }
+
+    #[tokio::test]
+    async fn delete_user_does_not_delete_other_accounts_or_kinds() {
+        let (_temp_dir, store) = test_store().await;
+
+        sqlx::query(
+            "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("111111111111")
+        .bind("user")
+        .bind("test")
+        .bind("/")
+        .bind("AIDAOTHERACCOUNT001")
+        .execute(&store.pool)
+        .await
+        .expect("other account user insert should succeed");
+        sqlx::query(
+            "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind("000000000000")
+        .bind("role")
+        .bind("test")
+        .bind("/")
+        .bind("AIDAROLEWITHSAMENAME")
+        .execute(&store.pool)
+        .await
+        .expect("same-name role insert should succeed");
+
+        store
+            .delete_user("000000000000", "test")
+            .await
+            .expect("delete user should succeed");
+
+        assert!(
+            store
+                .get_principal_by_identity("111111111111", "user", "test")
+                .await
+                .expect("principal lookup should succeed")
+                .is_some()
+        );
+        assert!(
+            store
+                .get_principal_by_identity("000000000000", "role", "test")
+                .await
+                .expect("principal lookup should succeed")
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_user_returns_not_found_for_missing_user() {
+        let (_temp_dir, store) = test_store().await;
+
+        let error = store
+            .delete_user("000000000000", "missing")
+            .await
+            .expect_err("missing user should return not found");
+
+        assert_eq!(
+            error,
+            StoreError::NotFound(
+                "User with account_id 000000000000 and name missing not found".to_string()
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_user_cascades_access_keys_and_inline_policies() {
+        let (_temp_dir, store) = test_store().await;
+
+        let principal_id = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM iam_principals WHERE account_id = ? AND kind = ? AND name = ?",
+        )
+        .bind("000000000000")
+        .bind("user")
+        .bind("test")
+        .fetch_one(&store.pool)
+        .await
+        .expect("seeded principal should exist");
+
+        store
+            .delete_user("000000000000", "test")
+            .await
+            .expect("delete user should succeed");
+
+        let access_key_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM iam_access_keys WHERE principal_id = ?",
+        )
+        .bind(principal_id)
+        .fetch_one(&store.pool)
+        .await
+        .expect("access key count should succeed");
+        let inline_policy_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM iam_principal_inline_policies WHERE principal_id = ?",
+        )
+        .bind(principal_id)
+        .fetch_one(&store.pool)
+        .await
+        .expect("inline policy count should succeed");
+
+        assert_eq!(access_key_count, 0);
+        assert_eq!(inline_policy_count, 0);
     }
 }

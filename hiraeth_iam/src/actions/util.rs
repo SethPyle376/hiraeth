@@ -1,10 +1,22 @@
 use chrono::SecondsFormat;
+use hiraeth_core::{AwsActionPayloadParseError, ServiceResponse};
 use hiraeth_store::iam::Principal;
 use serde::Serialize;
 
+use crate::error::IamError;
+
 pub(super) const IAM_XMLNS: &str = "https://iam.amazonaws.com/doc/2010-05-08/";
 
-#[derive(Debug, Serialize)]
+pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> ServiceResponse {
+    let error = match error {
+        AwsActionPayloadParseError::AwsQuery(error) => IamError::from(error),
+        AwsActionPayloadParseError::Json(error) => IamError::BadRequest(error.to_string()),
+    };
+
+    ServiceResponse::from(error)
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub(super) struct ResponseMetadata {
     #[serde(rename = "RequestId")]
     pub request_id: String,

@@ -2,11 +2,13 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::{
     error::SqsError,
     util::{self, MessageAttributeValue},
@@ -16,7 +18,7 @@ pub(crate) struct SendMessageAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct SendMessageRequest {
+pub(crate) struct SendMessageRequest {
     delay_seconds: Option<i64>,
     #[serde(default)]
     message_attributes: Option<HashMap<String, util::MessageAttributeValue>>,
@@ -43,11 +45,11 @@ struct SendMessageResponse {
     sequence_number: Option<String>,
 }
 
-async fn handle_send_message<S: SqsStore>(
+async fn handle_send_message_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: SendMessageRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<SendMessageRequest>(request)?;
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
     validate_message_body(&request_body.message_body, queue.maximum_message_size)?;
     let delay_seconds = resolve_delay_seconds(request_body.delay_seconds, queue.delay_seconds)?;
@@ -140,28 +142,40 @@ pub(super) fn validate_message_body(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for SendMessageAction
+impl<S> TypedAwsAction<S> for SendMessageAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = SendMessageRequest;
+
     fn name(&self) -> &'static str {
         "SendMessage"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: SendMessageRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_send_message(&request, store).await {
+        match handle_send_message_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: SendMessageRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
@@ -173,13 +187,13 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
-    use super::{MessageAttributeValue, SendMessageAction, handle_send_message};
+    use super::{MessageAttributeValue, SendMessageAction, handle_send_message_typed};
     use crate::{
         error::SqsError,
         util::{self},
@@ -252,7 +266,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <SendMessageAction as AwsAction<SqsTestStore>>::name(&SendMessageAction),
+            <SendMessageAction as TypedAwsAction<SqsTestStore>>::name(&SendMessageAction),
             "SendMessage"
         );
     }
@@ -273,9 +287,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_send_message(&request, &store)
-            .await
-            .expect("send message should succeed");
+        let response = handle_send_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("send message should succeed");
 
         assert_eq!(response.status_code, 200);
         let response_body = parse_json_body(&response);
@@ -318,9 +336,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_send_message(&request, &store)
-            .await
-            .expect("send message should succeed");
+        let response = handle_send_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("send message should succeed");
 
         assert_eq!(response.status_code, 200);
         assert!(parse_json_body(&response)["MD5OfMessageAttributes"].is_null());
@@ -352,9 +374,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_send_message(&request, &store)
-            .await
-            .expect("send message should succeed");
+        let response = handle_send_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("send message should succeed");
 
         let response_body = parse_json_body(&response);
         let expected_md5 = util::calculate_message_attributes_md5(&HashMap::from([(
@@ -385,7 +411,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_send_message(&request, &store).await;
+        let result = handle_send_message_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }

@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use chrono::SecondsFormat;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
-    parse_aws_query_request, xml_response,
+    ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    auth::AuthorizationCheck, xml_response,
 };
 use hiraeth_store::{
     IamStore,
@@ -12,7 +12,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    actions::util::{IAM_XMLNS, ResponseMetadata, response_metadata, user_arn},
+    actions::util::{
+        IAM_XMLNS, ResponseMetadata, parse_payload_error, response_metadata, user_arn,
+    },
     error::IamError,
 };
 
@@ -20,7 +22,7 @@ pub(crate) struct CreateAccessKeyAction;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct CreateAccessKeyRequest {
+pub(crate) struct CreateAccessKeyRequest {
     user_name: Option<String>,
 }
 
@@ -56,25 +58,26 @@ struct IamAccessKeyXml {
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for CreateAccessKeyAction
+impl<S> TypedAwsAction<S> for CreateAccessKeyAction
 where
     S: IamStore + Send + Sync,
 {
+    type Request = CreateAccessKeyRequest;
+
     fn name(&self) -> &'static str {
         "CreateAccessKey"
     }
 
-    async fn handle(
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        create_access_key_request: CreateAccessKeyRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        let create_access_key_request: CreateAccessKeyRequest =
-            match parse_aws_query_request(&request.request) {
-                Ok(request) => request,
-                Err(error) => return Ok(ServiceResponse::from(IamError::from(error))),
-            };
-
         let target_user = match target_user(
             &request,
             store,
@@ -106,15 +109,12 @@ where
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        create_access_key_request: CreateAccessKeyRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let create_access_key_request: CreateAccessKeyRequest =
-            parse_aws_query_request(&request.request)
-                .map_err(IamError::from)
-                .map_err(ServiceResponse::from)?;
         let target_user = target_user(
             request,
             store,
@@ -204,7 +204,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{NaiveDate, TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, xml_body};
+    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, xml_body};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{
         AccessKey, AccessKeyStore, InMemoryIamStore, Principal, PrincipalStore,
@@ -276,7 +276,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_authorization_uses_requested_user() {
-        let action = CreateAccessKeyAction;
+        let action = TypedAwsActionAdapter::new(CreateAccessKeyAction);
         let check = action
             .resolve_authorization(
                 &resolved_request(b"Action=CreateAccessKey&Version=2010-05-08&UserName=alice"),
@@ -295,7 +295,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_authorization_uses_signing_user_when_user_name_is_omitted() {
-        let action = CreateAccessKeyAction;
+        let action = TypedAwsActionAdapter::new(CreateAccessKeyAction);
         let check = action
             .resolve_authorization(
                 &resolved_request(b"Action=CreateAccessKey&Version=2010-05-08"),
@@ -314,7 +314,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_creates_access_key_for_requested_user() {
-        let action = CreateAccessKeyAction;
+        let action = TypedAwsActionAdapter::new(CreateAccessKeyAction);
         let store = store();
         let response = action
             .handle(
@@ -346,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_creates_access_key_for_signing_user_when_user_name_is_omitted() {
-        let action = CreateAccessKeyAction;
+        let action = TypedAwsActionAdapter::new(CreateAccessKeyAction);
         let store = store();
         let response = action
             .handle(
@@ -369,7 +369,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_returns_no_such_entity_for_missing_user() {
-        let action = CreateAccessKeyAction;
+        let action = TypedAwsActionAdapter::new(CreateAccessKeyAction);
         let response = action
             .handle(
                 resolved_request(b"Action=CreateAccessKey&Version=2010-05-08&UserName=missing"),

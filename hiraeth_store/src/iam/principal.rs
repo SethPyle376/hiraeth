@@ -36,6 +36,7 @@ pub trait PrincipalStore {
     ) -> Result<Option<Principal>, StoreError>;
     async fn list_principals(&self) -> Result<Vec<Principal>, StoreError>;
     async fn create_principal(&self, principal: NewPrincipal) -> Result<Principal, StoreError>;
+    async fn delete_user(&self, account_id: &str, name: &str) -> Result<(), StoreError>;
 }
 
 pub struct InMemoryPrincipalStore {
@@ -125,5 +126,26 @@ impl PrincipalStore for InMemoryPrincipalStore {
         };
         principals.insert(next_id, created_principal.clone());
         Ok(created_principal)
+    }
+
+    async fn delete_user(&self, account_id: &str, name: &str) -> Result<(), StoreError> {
+        let mut principals = self
+            .principals
+            .write()
+            .expect("in-memory principal store write lock should not be poisoned");
+
+        let Some(id) = principals.iter().find_map(|(id, principal)| {
+            (principal.account_id == account_id
+                && principal.kind == "user"
+                && principal.name == name)
+                .then_some(*id)
+        }) else {
+            return Err(StoreError::NotFound(format!(
+                "User with account_id {account_id} and name {name} not found"
+            )));
+        };
+
+        principals.remove(&id);
+        Ok(())
     }
 }

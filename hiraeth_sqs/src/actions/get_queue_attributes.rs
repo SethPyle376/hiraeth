@@ -2,12 +2,16 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::queue_attribute_support::collect_queue_attributes;
+use super::{
+    action_support::{json_payload_format, parse_payload_error},
+    queue_attribute_support::collect_queue_attributes,
+};
 use crate::error::SqsError;
 
 pub(crate) struct GetQueueAttributesAction;
@@ -25,11 +29,11 @@ pub struct GetQueueAttributesResponse {
     pub attributes: HashMap<String, String>,
 }
 
-async fn handle_get_queue_attributes<S: SqsStore>(
+async fn handle_get_queue_attributes_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    attributes_request: GetQueueAttributesRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let attributes_request = crate::util::parse_request_body::<GetQueueAttributesRequest>(request)?;
     let queue =
         crate::util::load_queue_from_url(request, store, &attributes_request.queue_url).await?;
     let attributes =
@@ -39,28 +43,40 @@ async fn handle_get_queue_attributes<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for GetQueueAttributesAction
+impl<S> TypedAwsAction<S> for GetQueueAttributesAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = GetQueueAttributesRequest;
+
     fn name(&self) -> &'static str {
         "GetQueueAttributes"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        attributes_request: GetQueueAttributesRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_get_queue_attributes(&request, store).await {
+        match handle_get_queue_attributes_typed(&request, store, attributes_request).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: GetQueueAttributesRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:GetQueueAttributes", request, store).await
@@ -72,13 +88,13 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::ServiceResponse;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
 
-    use super::{GetQueueAttributesAction, handle_get_queue_attributes};
+    use super::{GetQueueAttributesAction, handle_get_queue_attributes_typed};
     use crate::error::SqsError;
 
     fn resolved_request(body: &str) -> ResolvedRequest {
@@ -157,7 +173,9 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <GetQueueAttributesAction as AwsAction<SqsTestStore>>::name(&GetQueueAttributesAction),
+            <GetQueueAttributesAction as TypedAwsAction<SqsTestStore>>::name(
+                &GetQueueAttributesAction
+            ),
             "GetQueueAttributes"
         );
     }
@@ -180,9 +198,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_get_queue_attributes(&request, &store)
-            .await
-            .expect("get queue attributes should succeed");
+        let response = handle_get_queue_attributes_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("get queue attributes should succeed");
 
         assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);
@@ -215,7 +237,12 @@ mod tests {
             }"#,
         );
 
-        let result = handle_get_queue_attributes(&request, &store).await;
+        let result = handle_get_queue_attributes_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::QueueNotFound)));
     }

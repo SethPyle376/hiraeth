@@ -1,17 +1,19 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, json_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct ListQueuesAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct ListQueuesRequest {
+pub(crate) struct ListQueuesRequest {
     max_results: Option<i64>,
     next_token: Option<String>,
     queue_name_prefix: Option<String>,
@@ -25,12 +27,11 @@ struct ListQueuesResponse {
     next_token: Option<String>,
 }
 
-async fn handle_list_queues<S: SqsStore>(
+async fn handle_list_queues_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    request_body: ListQueuesRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let request_body = crate::util::parse_request_body::<ListQueuesRequest>(request)?;
-
     if let Some(max_results) = request_body.max_results
         && !(1..=1000).contains(&max_results)
     {
@@ -82,28 +83,40 @@ async fn handle_list_queues<S: SqsStore>(
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for ListQueuesAction
+impl<S> TypedAwsAction<S> for ListQueuesAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = ListQueuesRequest;
+
     fn name(&self) -> &'static str {
         "ListQueues"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        request_body: ListQueuesRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_list_queues(&request, store).await {
+        match handle_list_queues_typed(&request, store, request_body).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: ListQueuesRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:ListQueues", request, store).await
@@ -113,7 +126,7 @@ where
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         principal::Principal,
@@ -121,7 +134,7 @@ mod tests {
         test_support::{ListQueuesCall, SqsTestStore},
     };
 
-    use super::{ListQueuesAction, handle_list_queues};
+    use super::{ListQueuesAction, handle_list_queues_typed};
     use crate::error::SqsError;
 
     fn resolved_request(body: &str) -> ResolvedRequest {
@@ -190,7 +203,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <ListQueuesAction as AwsAction<SqsTestStore>>::name(&ListQueuesAction),
+            <ListQueuesAction as TypedAwsAction<SqsTestStore>>::name(&ListQueuesAction),
             "ListQueues"
         );
     }
@@ -213,9 +226,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_list_queues(&request, &store)
-            .await
-            .expect("list queues should succeed");
+        let response = handle_list_queues_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("list queues should succeed");
         let body = parse_json_body(&response);
 
         assert_eq!(response.status_code, 200);
@@ -251,9 +268,13 @@ mod tests {
         ]);
         let request = resolved_request(r#"{"MaxResults":2}"#);
 
-        let response = handle_list_queues(&request, &store)
-            .await
-            .expect("list queues should succeed");
+        let response = handle_list_queues_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("list queues should succeed");
         let body = parse_json_body(&response);
 
         assert_eq!(
@@ -274,9 +295,13 @@ mod tests {
         ]);
         let request = resolved_request(r#"{"MaxResults":2}"#);
 
-        let response = handle_list_queues(&request, &store)
-            .await
-            .expect("list queues should succeed");
+        let response = handle_list_queues_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("list queues should succeed");
         let body = parse_json_body(&response);
 
         assert_eq!(
@@ -294,7 +319,12 @@ mod tests {
         let store = SqsTestStore::with_queues(Vec::new());
         let request = resolved_request(r#"{"MaxResults":0}"#);
 
-        let result = handle_list_queues(&request, &store).await;
+        let result = handle_list_queues_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await;
 
         assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }

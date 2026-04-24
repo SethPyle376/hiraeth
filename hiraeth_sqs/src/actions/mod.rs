@@ -1,3 +1,4 @@
+mod action_support;
 mod change_message_visibility;
 mod change_message_visibility_batch;
 mod create_queue;
@@ -42,23 +43,23 @@ where
     S: SqsStore + Send + Sync + 'static,
 {
     let mut registry = AwsActionRegistry::new();
-    registry.register(Box::new(ChangeMessageVisibilityAction));
-    registry.register(Box::new(ChangeMessageVisibilityBatchAction));
-    registry.register(Box::new(CreateQueueAction));
-    registry.register(Box::new(DeleteMessageAction));
-    registry.register(Box::new(DeleteMessageBatchAction));
-    registry.register(Box::new(DeleteQueueAction));
-    registry.register(Box::new(GetQueueAttributesAction));
-    registry.register(Box::new(GetQueueUrlAction));
-    registry.register(Box::new(ListQueueTagsAction));
-    registry.register(Box::new(ListQueuesAction));
-    registry.register(Box::new(PurgeQueueAction));
-    registry.register(Box::new(ReceiveMessageAction));
-    registry.register(Box::new(SendMessageAction));
-    registry.register(Box::new(SendMessageBatchAction));
-    registry.register(Box::new(SetQueueAttributesAction));
-    registry.register(Box::new(TagQueueAction));
-    registry.register(Box::new(UntagQueueAction));
+    registry.register_typed(ChangeMessageVisibilityAction);
+    registry.register_typed(ChangeMessageVisibilityBatchAction);
+    registry.register_typed(CreateQueueAction);
+    registry.register_typed(DeleteMessageAction);
+    registry.register_typed(DeleteMessageBatchAction);
+    registry.register_typed(DeleteQueueAction);
+    registry.register_typed(GetQueueAttributesAction);
+    registry.register_typed(GetQueueUrlAction);
+    registry.register_typed(ListQueueTagsAction);
+    registry.register_typed(ListQueuesAction);
+    registry.register_typed(PurgeQueueAction);
+    registry.register_typed(ReceiveMessageAction);
+    registry.register_typed(SendMessageAction);
+    registry.register_typed(SendMessageBatchAction);
+    registry.register_typed(SetQueueAttributesAction);
+    registry.register_typed(TagQueueAction);
+    registry.register_typed(UntagQueueAction);
     registry
 }
 
@@ -77,5 +78,18 @@ mod tests {
         assert!(registry.get("SendMessage").is_some());
         assert!(registry.get("ReceiveMessage").is_some());
         assert!(registry.get("MissingAction").is_none());
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use hiraeth_core::ResolvedRequest;
+    use serde::de::DeserializeOwned;
+
+    pub(crate) fn parse_request_body<T>(request: &ResolvedRequest) -> T
+    where
+        T: DeserializeOwned,
+    {
+        crate::util::parse_request_body(request).expect("test request body should parse")
     }
 }

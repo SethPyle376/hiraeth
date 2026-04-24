@@ -1,20 +1,17 @@
 use async_trait::async_trait;
-use chrono::{SecondsFormat, Utc};
+use chrono::Utc;
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
-    parse_aws_query_request, xml_response,
+    ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    auth::AuthorizationCheck, xml_response,
 };
-use hiraeth_store::{
-    IamStore,
-    iam::{NewPrincipal, Principal},
-};
+use hiraeth_store::{IamStore, iam::NewPrincipal};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     actions::util::{
         IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, normalize_user_path,
-        response_metadata, user_arn,
+        parse_payload_error, response_metadata, user_arn,
     },
     error::IamError,
 };
@@ -23,7 +20,7 @@ pub(crate) struct CreateUserAction;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct CreateUserRequest {
+pub(crate) struct CreateUserRequest {
     user_name: String,
     #[serde(default = "default_user_path")]
     path: String,
@@ -48,25 +45,27 @@ struct CreateUserResult {
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for CreateUserAction
+impl<S> TypedAwsAction<S> for CreateUserAction
 where
     S: IamStore + Send + Sync,
 {
+    type Request = CreateUserRequest;
+
     fn name(&self) -> &'static str {
         "CreateUser"
     }
 
-    async fn handle(
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        create_user_request: CreateUserRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
         let account_id = &request.auth_context.principal.account_id;
-        let create_user_request: CreateUserRequest = match parse_aws_query_request(&request.request)
-        {
-            Ok(request) => request,
-            Err(error) => return Ok(ServiceResponse::from(IamError::from(error))),
-        };
 
         let path = normalize_user_path(&create_user_request.path);
         let created_principal = match store
@@ -91,15 +90,12 @@ where
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        create_user_request: CreateUserRequest,
         _store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let create_user_request: CreateUserRequest = parse_aws_query_request(&request.request)
-            .map_err(IamError::from)
-            .map_err(ServiceResponse::from)?;
-
         Ok(AuthorizationCheck {
             action: "iam:CreateUser".to_string(),
             resource: user_arn(
@@ -129,7 +125,7 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{NaiveDate, TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, xml_body};
+    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, xml_body};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         IamStore,
@@ -203,7 +199,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_authorization_uses_default_user_path() {
-        let action = CreateUserAction;
+        let action = TypedAwsActionAdapter::new(CreateUserAction);
         let check = action
             .resolve_authorization(
                 &resolved_request(b"Action=CreateUser&Version=2010-05-08&UserName=alice"),
@@ -219,7 +215,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_authorization_uses_custom_user_path() {
-        let action = CreateUserAction;
+        let action = TypedAwsActionAdapter::new(CreateUserAction);
         let check = action
             .resolve_authorization(
                 &resolved_request(
@@ -238,7 +234,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_returns_created_user_xml_response() {
-        let action = CreateUserAction;
+        let action = TypedAwsActionAdapter::new(CreateUserAction);
         let response = action
             .handle(
                 resolved_request(

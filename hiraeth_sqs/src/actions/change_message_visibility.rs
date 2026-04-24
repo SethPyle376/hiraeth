@@ -1,29 +1,30 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use hiraeth_core::{
-    ApiError, AwsAction, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, empty_response,
+    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    TypedAwsAction, auth::AuthorizationCheck, empty_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct ChangeMessageVisibilityAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct ChangeMessageVisibilityRequest {
+pub(crate) struct ChangeMessageVisibilityRequest {
     pub queue_url: String,
     pub receipt_handle: String,
     pub visibility_timeout: u32,
 }
 
-async fn handle_change_message_visibility<S: SqsStore>(
+async fn handle_change_message_visibility_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
+    change_request: ChangeMessageVisibilityRequest,
 ) -> Result<ServiceResponse, SqsError> {
-    let change_request =
-        crate::util::parse_request_body::<ChangeMessageVisibilityRequest>(request)?;
     let queue = crate::util::load_queue_from_url(request, store, &change_request.queue_url).await?;
     validate_visibility_timeout(change_request.visibility_timeout)?;
 
@@ -50,28 +51,40 @@ pub(super) fn validate_visibility_timeout(visibility_timeout: u32) -> Result<(),
 }
 
 #[async_trait]
-impl<S> AwsAction<S> for ChangeMessageVisibilityAction
+impl<S> TypedAwsAction<S> for ChangeMessageVisibilityAction
 where
     S: SqsStore + Send + Sync,
 {
+    type Request = ChangeMessageVisibilityRequest;
+
     fn name(&self) -> &'static str {
         "ChangeMessageVisibility"
     }
 
-    async fn handle(
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        json_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+        parse_payload_error(error)
+    }
+
+    async fn handle_typed(
         &self,
         request: ResolvedRequest,
+        change_request: ChangeMessageVisibilityRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_change_message_visibility(&request, store).await {
+        match handle_change_message_visibility_typed(&request, store, change_request).await {
             Ok(response) => Ok(response),
             Err(error) => Ok(ServiceResponse::from(error)),
         }
     }
 
-    async fn resolve_authorization(
+    async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
+        _payload: ChangeMessageVisibilityRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
@@ -83,11 +96,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{Duration, TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
 
-    use super::{ChangeMessageVisibilityAction, handle_change_message_visibility};
+    use super::{ChangeMessageVisibilityAction, handle_change_message_visibility_typed};
     use crate::error::SqsError;
 
     fn queue() -> SqsQueue {
@@ -153,7 +166,7 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <ChangeMessageVisibilityAction as AwsAction<SqsTestStore>>::name(
+            <ChangeMessageVisibilityAction as TypedAwsAction<SqsTestStore>>::name(
                 &ChangeMessageVisibilityAction
             ),
             "ChangeMessageVisibility"
@@ -172,9 +185,13 @@ mod tests {
         );
 
         let before = Utc::now().naive_utc();
-        let response = handle_change_message_visibility(&request, &store)
-            .await
-            .expect("change message visibility should succeed");
+        let response = handle_change_message_visibility_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect("change message visibility should succeed");
         let after = Utc::now().naive_utc();
 
         assert_eq!(response.status_code, 200);
@@ -198,9 +215,13 @@ mod tests {
             }"#,
         );
 
-        let error = handle_change_message_visibility(&request, &store)
-            .await
-            .expect_err("missing queue should error");
+        let error = handle_change_message_visibility_typed(
+            &request,
+            &store,
+            crate::actions::test_support::parse_request_body(&request),
+        )
+        .await
+        .expect_err("missing queue should error");
 
         assert_eq!(error, SqsError::QueueNotFound);
     }
