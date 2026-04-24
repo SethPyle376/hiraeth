@@ -4,7 +4,7 @@
 
 {% block content %}
 <section class="mx-auto max-w-[110rem]">
-  <div class="mb-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+  <div class="mb-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
     <div class="min-w-0">
       <p class="text-xs font-semibold uppercase tracking-[0.35em] text-primary">IAM Principal</p>
       <h1 class="mt-2 break-words text-4xl font-black tracking-tight md:text-5xl">{{ principal.name }}</h1>
@@ -30,7 +30,7 @@
 
   {{ summary_cards_html|safe }}
 
-  <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+  <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
     <section class="card border border-base-300 bg-base-100">
       <div class="card-body">
         <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
@@ -58,14 +58,14 @@
             {% if has_policy_error %}
             <div class="alert alert-error mb-3 py-2 text-sm">{{ policy_error }}</div>
             {% endif %}
-            <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/inline-policies">
+            <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/inline-policies" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
               <label class="block">
                 <span class="mb-1 block text-sm text-base-content/70">Policy name</span>
-                <input class="input input-bordered w-full font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin">
+                <input class="input input-bordered w-full font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin" required>
               </label>
               <label class="block">
                 <span class="mb-1 block text-sm text-base-content/70">Policy document</span>
-                <textarea class="textarea textarea-bordered min-h-48 w-full font-mono text-xs" name="policy_document">{{ policy_document }}</textarea>
+                <textarea class="textarea textarea-bordered min-h-48 w-full font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
               </label>
               <button class="btn btn-primary w-full" type="submit">Save inline policy</button>
             </form>
@@ -140,7 +140,7 @@
               </div>
             </summary>
             <div class="collapse-content px-3 pb-3">
-              <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/access-keys">
+              <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/access-keys" onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
                 <label class="block">
                   <span class="mb-1 block text-sm text-base-content/70">Access key id optional</span>
                   <input class="input input-bordered w-full font-mono" name="key_id" placeholder="AKIA...">

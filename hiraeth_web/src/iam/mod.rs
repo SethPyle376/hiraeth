@@ -733,10 +733,11 @@ fn dashboard_page_header() -> Result<String, askama::Error> {
         eyebrow: "Service Dashboard".to_string(),
         title: "IAM".to_string(),
         description: "Review principals, access keys, and inline identity policies for the current environment.".to_string(),
-        actions: vec![
-            HeaderAction::link("Browse principals", "/iam/principals", "btn btn-primary"),
-            HeaderAction::disabled("View mode", "btn btn-outline btn-disabled"),
-        ],
+        actions: vec![HeaderAction::link(
+            "Add principal",
+            "#add-principal",
+            "btn btn-primary",
+        )],
     }
     .render()
 }
@@ -806,7 +807,7 @@ fn principal_summary_cards_html(
 fn principal_action_card_html(principal_id: i64) -> Result<String, askama::Error> {
     ActionCard {
         title: "Principal actions".to_string(),
-        grid_class: "sm:grid-cols-2",
+        grid_class: "grid-cols-2",
         actions: vec![
             ActionCardAction::link("Back", "/iam", "btn btn-ghost"),
             ActionCardAction::link(

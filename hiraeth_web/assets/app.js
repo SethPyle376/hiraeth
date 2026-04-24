@@ -146,8 +146,21 @@ function hiraethInitCollapsibles(root) {
   details.forEach(hiraethBindCollapsible);
 }
 
+function hiraethOpenHashTarget() {
+  if (!window.location.hash) {
+    return;
+  }
+
+  const target = document.getElementById(window.location.hash.slice(1));
+  if (target instanceof HTMLDetailsElement) {
+    target.open = true;
+    target.scrollIntoView({ block: "start" });
+  }
+}
+
 function hiraethInitApp(root) {
   hiraethInitCollapsibles(root);
+  hiraethOpenHashTarget();
 }
 
 if (document.readyState === "loading") {
@@ -159,3 +172,5 @@ if (document.readyState === "loading") {
 document.addEventListener("htmx:afterSwap", (event) => {
   hiraethInitApp(event.target);
 });
+
+window.addEventListener("hashchange", hiraethOpenHashTarget);

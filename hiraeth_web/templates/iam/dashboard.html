@@ -15,7 +15,7 @@
 
   <div class="mb-5">{{ stats_html|safe }}</div>
 
-  <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
+  <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
     <section class="card border border-base-300 bg-base-100">
       <div class="card-body">
         <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
@@ -67,7 +67,8 @@
     </section>
 
     <aside class="space-y-3">
-      <details class="collapse collapse-arrow border border-primary/40 bg-base-100/80"
+      <details id="add-principal"
+               class="collapse collapse-arrow border border-primary/40 bg-base-100/80"
                data-collapse-persist
                data-collapse-key="iam-create-principal"
                {% if has_create_error %}open{% endif %}>
@@ -84,10 +85,10 @@
           {% if has_create_error %}
           <div class="alert alert-error mb-3 py-2 text-sm">{{ create_error }}</div>
           {% endif %}
-          <form class="space-y-3" method="post" action="/iam/principals/create">
+          <form class="space-y-3" method="post" action="/iam/principals/create" onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
             <label class="block">
               <span class="mb-1 block text-sm text-base-content/70">Name</span>
-              <input class="input input-bordered w-full" name="name" value="{{ create_name }}" placeholder="test-user">
+              <input class="input input-bordered w-full" name="name" value="{{ create_name }}" placeholder="test-user" required>
             </label>
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="block">
@@ -104,7 +105,7 @@
             </div>
             <label class="block">
               <span class="mb-1 block text-sm text-base-content/70">Account ID</span>
-              <input class="input input-bordered w-full font-mono" name="account_id" value="{{ create_account_id }}" placeholder="000000000000">
+              <input class="input input-bordered w-full font-mono" name="account_id" value="{{ create_account_id }}" placeholder="000000000000" required>
             </label>
             <button class="btn btn-primary w-full" type="submit">Create principal</button>
           </form>
