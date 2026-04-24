@@ -21,6 +21,13 @@
     {{ action_card_html|safe }}
   </div>
 
+  {% if has_feedback %}
+  <div class="alert {{ feedback_class }} mb-5">
+    <span>{{ feedback_message }}</span>
+    <button class="btn btn-ghost btn-xs ml-auto" type="button" onclick="this.closest('.alert').remove()" aria-label="Dismiss">×</button>
+  </div>
+  {% endif %}
+
   {{ summary_cards_html|safe }}
 
   <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_24rem]">
@@ -33,6 +40,37 @@
           </div>
           <div class="badge badge-outline">{{ principal.inline_policy_count }} total</div>
         </div>
+
+        <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35"
+                 data-collapse-persist
+                 data-collapse-key="principal-{{ principal.id }}-set-inline-policy"
+                 {% if policy_panel_open %}open{% endif %}>
+          <summary class="collapse-title min-h-0 px-4 py-3">
+            <div class="flex items-center justify-between gap-3 pr-6">
+              <div>
+                <h3 class="font-black">Set inline policy</h3>
+                <p class="text-xs text-base-content/60">Create or replace a policy document by name.</p>
+              </div>
+              <span class="badge badge-outline">Action</span>
+            </div>
+          </summary>
+          <div class="collapse-content px-4 pb-4">
+            {% if has_policy_error %}
+            <div class="alert alert-error mb-3 py-2 text-sm">{{ policy_error }}</div>
+            {% endif %}
+            <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/inline-policies">
+              <label class="block">
+                <span class="mb-1 block text-sm text-base-content/70">Policy name</span>
+                <input class="input input-bordered w-full font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin">
+              </label>
+              <label class="block">
+                <span class="mb-1 block text-sm text-base-content/70">Policy document</span>
+                <textarea class="textarea textarea-bordered min-h-48 w-full font-mono text-xs" name="policy_document">{{ policy_document }}</textarea>
+              </label>
+              <button class="btn btn-primary w-full" type="submit">Save inline policy</button>
+            </form>
+          </div>
+        </details>
 
         {% if has_inline_policies %}
         <div class="space-y-2">
@@ -51,6 +89,10 @@
             </summary>
             <div class="collapse-content border-t border-base-300 px-4 pb-4 pt-4">
               <pre class="overflow-x-auto rounded bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
+              <form class="mt-3 text-right" method="post" action="/iam/principals/{{ principal.id }}/inline-policies/delete" onsubmit="return confirm('Delete inline policy {{ policy.policy_name }}?')">
+                <input type="hidden" name="policy_name" value="{{ policy.policy_name }}">
+                <button class="btn btn-error btn-sm" type="submit">Delete policy</button>
+              </form>
             </div>
           </details>
           {% endfor %}
@@ -83,6 +125,35 @@
           </div>
         </summary>
         <div class="collapse-content px-4 pb-4">
+          {% if has_access_key_error %}
+          <div class="alert alert-error mb-3 py-2 text-sm">{{ access_key_error }}</div>
+          {% endif %}
+          <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35 mb-3"
+                   data-collapse-persist
+                   data-collapse-key="principal-{{ principal.id }}-create-access-key">
+            <summary class="collapse-title min-h-0 px-3 py-2">
+              <div class="flex items-center justify-between gap-3 pr-6">
+                <div>
+                  <h3 class="font-black">Add access key</h3>
+                  <p class="text-xs text-base-content/60">Leave fields blank to generate values.</p>
+                </div>
+              </div>
+            </summary>
+            <div class="collapse-content px-3 pb-3">
+              <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/access-keys">
+                <label class="block">
+                  <span class="mb-1 block text-sm text-base-content/70">Access key id optional</span>
+                  <input class="input input-bordered w-full font-mono" name="key_id" placeholder="AKIA...">
+                </label>
+                <label class="block">
+                  <span class="mb-1 block text-sm text-base-content/70">Secret key optional</span>
+                  <input class="input input-bordered w-full font-mono" name="secret_key" placeholder="generated when blank">
+                </label>
+                <button class="btn btn-primary w-full" type="submit">Create access key</button>
+              </form>
+            </div>
+          </details>
+
           {% if has_access_keys %}
           <div class="space-y-2">
             {% for access_key in access_keys %}
@@ -99,6 +170,10 @@
                 <div class="text-xs text-base-content/50">
                   Created {{ access_key.created_at }}
                 </div>
+                <form method="post" action="/iam/principals/{{ principal.id }}/access-keys/delete" onsubmit="return confirm('Delete access key {{ access_key.key_id }}?')">
+                  <input type="hidden" name="key_id" value="{{ access_key.key_id }}">
+                  <button class="btn btn-error btn-xs" type="submit">Delete key</button>
+                </form>
               </div>
             </div>
             {% endfor %}
@@ -122,6 +197,24 @@
         </summary>
         <div class="collapse-content px-4 pb-4">
           {{ metadata_list_html|safe }}
+        </div>
+      </details>
+
+      <details class="collapse collapse-arrow border border-error/40 bg-base-100"
+               data-collapse-persist
+               data-collapse-key="principal-{{ principal.id }}-danger-zone">
+        <summary class="collapse-title min-h-0 px-4 py-3">
+          <div class="flex items-center justify-between gap-3 pr-6">
+            <div>
+              <h2 class="text-base font-black">Delete principal</h2>
+              <p class="text-xs text-base-content/60">Removes this principal and related credentials.</p>
+            </div>
+          </div>
+        </summary>
+        <div class="collapse-content px-4 pb-4">
+          <form method="post" action="/iam/principals/{{ principal.id }}/delete" onsubmit="return confirm('Delete principal {{ principal.name }}?')">
+            <button class="btn btn-error w-full" type="submit">Delete principal</button>
+          </form>
         </div>
       </details>
 

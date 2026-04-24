@@ -25,6 +25,11 @@ pub trait AccessKeyStore {
         secret_key: &str,
         principal_id: i64,
     ) -> Result<AccessKey, StoreError>;
+    async fn delete_access_key_for_principal(
+        &self,
+        principal_id: i64,
+        access_key: &str,
+    ) -> Result<(), StoreError>;
 }
 
 pub struct InMemoryAccessKeyStore {
@@ -90,5 +95,26 @@ impl AccessKeyStore for InMemoryAccessKeyStore {
         };
         keys.insert(access_key.to_string(), new_key.clone());
         Ok(new_key)
+    }
+
+    async fn delete_access_key_for_principal(
+        &self,
+        principal_id: i64,
+        access_key: &str,
+    ) -> Result<(), StoreError> {
+        let mut keys = self
+            .keys
+            .write()
+            .expect("in-memory access key store write lock should not be poisoned");
+
+        match keys.get(access_key) {
+            Some(key) if key.principal_id == principal_id => {
+                keys.remove(access_key);
+                Ok(())
+            }
+            _ => Err(StoreError::NotFound(format!(
+                "Access key {access_key} not found for principal {principal_id}"
+            ))),
+        }
     }
 }

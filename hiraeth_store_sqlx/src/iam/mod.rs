@@ -61,6 +61,16 @@ impl AccessKeyStore for SqliteIamStore {
             .insert_secret_key(access_key, secret_key, principal_id)
             .await
     }
+
+    async fn delete_access_key_for_principal(
+        &self,
+        principal_id: i64,
+        access_key: &str,
+    ) -> Result<(), hiraeth_store::StoreError> {
+        self.access_key_store
+            .delete_access_key_for_principal(principal_id, access_key)
+            .await
+    }
 }
 
 #[async_trait]
@@ -94,6 +104,10 @@ impl PrincipalStore for SqliteIamStore {
         self.principal_store.create_principal(principal).await
     }
 
+    async fn delete_principal(&self, principal_id: i64) -> Result<(), hiraeth_store::StoreError> {
+        self.principal_store.delete_principal(principal_id).await
+    }
+
     async fn delete_user(
         &self,
         account_id: &str,
@@ -111,6 +125,27 @@ impl PrincipalInlinePolicyStore for SqliteIamStore {
     ) -> Result<Vec<PrincipalInlinePolicy>, hiraeth_store::StoreError> {
         self.principal_inline_policy_store
             .get_inline_policies_for_principal(principal_id)
+            .await
+    }
+
+    async fn put_inline_policy(
+        &self,
+        principal_id: i64,
+        policy_name: &str,
+        policy_document: &str,
+    ) -> Result<PrincipalInlinePolicy, hiraeth_store::StoreError> {
+        self.principal_inline_policy_store
+            .put_inline_policy(principal_id, policy_name, policy_document)
+            .await
+    }
+
+    async fn delete_inline_policy(
+        &self,
+        principal_id: i64,
+        policy_name: &str,
+    ) -> Result<(), hiraeth_store::StoreError> {
+        self.principal_inline_policy_store
+            .delete_inline_policy(principal_id, policy_name)
             .await
     }
 }

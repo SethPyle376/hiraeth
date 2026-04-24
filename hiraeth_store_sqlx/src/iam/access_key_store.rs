@@ -78,6 +78,28 @@ impl AccessKeyStore for SqliteAccessKeyStore {
         .await
         .map_err(map_sqlx_error)
     }
+
+    async fn delete_access_key_for_principal(
+        &self,
+        principal_id: i64,
+        access_key: &str,
+    ) -> Result<(), StoreError> {
+        let result =
+            sqlx::query("DELETE FROM iam_access_keys WHERE principal_id = ? AND key_id = ?")
+                .bind(principal_id)
+                .bind(access_key)
+                .execute(&self.pool)
+                .await
+                .map_err(map_sqlx_error)?;
+
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound(format!(
+                "Access key {access_key} not found for principal {principal_id}"
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

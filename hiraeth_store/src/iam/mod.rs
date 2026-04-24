@@ -66,6 +66,16 @@ impl AccessKeyStore for InMemoryIamStore {
             .insert_secret_key(access_key, secret_key, principal_id)
             .await
     }
+
+    async fn delete_access_key_for_principal(
+        &self,
+        principal_id: i64,
+        access_key: &str,
+    ) -> Result<(), crate::StoreError> {
+        self.access_key_store
+            .delete_access_key_for_principal(principal_id, access_key)
+            .await
+    }
 }
 
 #[async_trait]
@@ -99,6 +109,10 @@ impl PrincipalStore for InMemoryIamStore {
         self.principal_store.create_principal(principal).await
     }
 
+    async fn delete_principal(&self, principal_id: i64) -> Result<(), crate::StoreError> {
+        self.principal_store.delete_principal(principal_id).await
+    }
+
     async fn delete_user(&self, account_id: &str, name: &str) -> Result<(), crate::StoreError> {
         self.principal_store.delete_user(account_id, name).await
     }
@@ -112,6 +126,27 @@ impl principal_inline_policy_store::PrincipalInlinePolicyStore for InMemoryIamSt
     ) -> Result<Vec<PrincipalInlinePolicy>, crate::StoreError> {
         self.principal_inline_policy_store
             .get_inline_policies_for_principal(principal_id)
+            .await
+    }
+
+    async fn put_inline_policy(
+        &self,
+        principal_id: i64,
+        policy_name: &str,
+        policy_document: &str,
+    ) -> Result<PrincipalInlinePolicy, crate::StoreError> {
+        self.principal_inline_policy_store
+            .put_inline_policy(principal_id, policy_name, policy_document)
+            .await
+    }
+
+    async fn delete_inline_policy(
+        &self,
+        principal_id: i64,
+        policy_name: &str,
+    ) -> Result<(), crate::StoreError> {
+        self.principal_inline_policy_store
+            .delete_inline_policy(principal_id, policy_name)
             .await
     }
 }

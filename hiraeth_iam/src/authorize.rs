@@ -183,6 +183,14 @@ mod tests {
         ) -> Result<AccessKey, hiraeth_store::StoreError> {
             unreachable!("authorization tests do not insert access keys")
         }
+
+        async fn delete_access_key_for_principal(
+            &self,
+            _principal_id: i64,
+            _access_key: &str,
+        ) -> Result<(), hiraeth_store::StoreError> {
+            unreachable!("authorization tests do not delete access keys")
+        }
     }
 
     #[async_trait]
@@ -222,6 +230,13 @@ mod tests {
             })
         }
 
+        async fn delete_principal(
+            &self,
+            _principal_id: i64,
+        ) -> Result<(), hiraeth_store::StoreError> {
+            unreachable!("authorization tests do not delete principals")
+        }
+
         async fn delete_user(
             &self,
             _account_id: &str,
@@ -243,6 +258,23 @@ mod tests {
                 .filter(|policy| policy.principal_id == principal_id)
                 .cloned()
                 .collect())
+        }
+
+        async fn put_inline_policy(
+            &self,
+            _principal_id: i64,
+            _policy_name: &str,
+            _policy_document: &str,
+        ) -> Result<PrincipalInlinePolicy, hiraeth_store::StoreError> {
+            unreachable!("authorization tests do not put inline policies")
+        }
+
+        async fn delete_inline_policy(
+            &self,
+            _principal_id: i64,
+            _policy_name: &str,
+        ) -> Result<(), hiraeth_store::StoreError> {
+            unreachable!("authorization tests do not delete inline policies")
         }
     }
 

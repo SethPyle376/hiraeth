@@ -93,6 +93,22 @@ impl PrincipalStore for SqlitePrincipalStore {
         .map_err(map_sqlx_error)
     }
 
+    async fn delete_principal(&self, principal_id: i64) -> Result<(), StoreError> {
+        let result = sqlx::query("DELETE FROM iam_principals WHERE id = ?")
+            .bind(principal_id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_error)?;
+
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound(format!(
+                "Principal {principal_id} not found"
+            )));
+        }
+
+        Ok(())
+    }
+
     async fn delete_user(&self, account_id: &str, name: &str) -> Result<(), StoreError> {
         let result = sqlx::query!(
             "DELETE FROM iam_principals WHERE kind = 'user' AND account_id = ? AND name = ?",
