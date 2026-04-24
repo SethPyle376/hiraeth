@@ -9,7 +9,7 @@ use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error},
+    action_support::{json_payload_format, parse_payload_error, render_result},
     queue_attribute_support::collect_queue_attributes,
 };
 use crate::error::SqsError;
@@ -67,10 +67,7 @@ where
         attributes_request: GetQueueAttributesRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_get_queue_attributes_typed(&request, store, attributes_request).await {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(error)),
-        }
+        render_result(handle_get_queue_attributes_typed(&request, store, attributes_request).await)
     }
 
     async fn resolve_authorization_typed(

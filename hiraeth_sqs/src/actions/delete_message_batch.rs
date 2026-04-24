@@ -6,7 +6,7 @@ use hiraeth_core::{
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error};
+use super::action_support::{json_payload_format, parse_payload_error, render_result};
 use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error};
 
 pub(crate) struct DeleteMessageBatchAction;
@@ -108,10 +108,7 @@ where
         delete_request: DeleteMessageBatchRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_delete_message_batch_typed(&request, store, delete_request).await {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(error)),
-        }
+        render_result(handle_delete_message_batch_typed(&request, store, delete_request).await)
     }
 
     async fn resolve_authorization_typed(

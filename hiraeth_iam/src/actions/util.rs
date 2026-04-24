@@ -1,7 +1,11 @@
 use chrono::SecondsFormat;
-use hiraeth_core::{AwsActionPayloadParseError, ServiceResponse};
+use hiraeth_core::{
+    ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, xml_response,
+};
+use hiraeth_store::IamStore;
 use hiraeth_store::iam::Principal;
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::error::IamError;
 
@@ -14,6 +18,26 @@ pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> ServiceR
     };
 
     ServiceResponse::from(error)
+}
+
+pub(super) fn render_result<E>(
+    result: Result<ServiceResponse, E>,
+) -> Result<ServiceResponse, ApiError>
+where
+    E: Into<ServiceResponse>,
+{
+    match result {
+        Ok(response) => Ok(response),
+        Err(error) => Ok(error.into()),
+    }
+}
+
+pub(super) fn iam_xml_response<T: Serialize>(body: &T) -> Result<ServiceResponse, IamError> {
+    xml_response(body).map_err(IamError::from)
+}
+
+pub(super) fn new_request_id() -> String {
+    Uuid::new_v4().to_string()
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -55,6 +79,70 @@ impl From<Principal> for IamUserXml {
                 .to_rfc3339_opts(SecondsFormat::Secs, true),
         }
     }
+}
+
+pub(super) async fn optional_target_user<S>(
+    request: &ResolvedRequest,
+    store: &S,
+    user_name: Option<&str>,
+) -> Result<Option<Principal>, IamError>
+where
+    S: IamStore + Send + Sync,
+{
+    let name = user_name.unwrap_or(&request.auth_context.principal.name);
+    store
+        .get_principal_by_identity(&request.auth_context.principal.account_id, "user", name)
+        .await
+        .map_err(IamError::from)
+}
+
+pub(super) async fn requested_or_signing_user<S>(
+    request: &ResolvedRequest,
+    store: &S,
+    user_name: Option<&str>,
+) -> Result<Principal, IamError>
+where
+    S: IamStore + Send + Sync,
+{
+    match user_name {
+        Some(user_name) if user_name.trim().is_empty() => Err(IamError::BadRequest(
+            "UserName must not be empty".to_string(),
+        )),
+        Some(user_name) => store
+            .get_principal_by_identity(
+                &request.auth_context.principal.account_id,
+                "user",
+                user_name,
+            )
+            .await
+            .map_err(IamError::from)?
+            .ok_or_else(|| IamError::NoSuchEntity(format!("User {user_name} does not exist"))),
+        None if request.auth_context.principal.kind == "user" => {
+            Ok(request.auth_context.principal.clone())
+        }
+        None => Err(IamError::BadRequest(
+            "UserName is required when the caller is not an IAM user".to_string(),
+        )),
+    }
+}
+
+pub(super) async fn existing_user_by_name<S>(
+    request: &ResolvedRequest,
+    store: &S,
+    user_name: &str,
+) -> Result<Principal, IamError>
+where
+    S: IamStore + Send + Sync,
+{
+    store
+        .get_principal_by_identity(
+            &request.auth_context.principal.account_id,
+            "user",
+            user_name,
+        )
+        .await
+        .map_err(IamError::from)?
+        .ok_or_else(|| IamError::NoSuchEntity(format!("User with name {user_name} does not exist")))
 }
 
 pub(super) fn user_arn(account_id: &str, path: &str, user_name: &str) -> String {

@@ -1,14 +1,16 @@
 use async_trait::async_trait;
 use hiraeth_core::{
     ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, xml_response,
+    TypedAwsAction, auth::AuthorizationCheck,
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
-    actions::util::{IAM_XMLNS, ResponseMetadata, parse_payload_error, user_arn},
+    actions::util::{
+        IAM_XMLNS, ResponseMetadata, existing_user_by_name, iam_xml_response, new_request_id,
+        parse_payload_error, render_result, response_metadata, user_arn,
+    },
     error::IamError,
 };
 
@@ -33,9 +35,7 @@ struct DeleteUserResponse {
 fn delete_user_response(request_id: impl Into<String>) -> DeleteUserResponse {
     DeleteUserResponse {
         xmlns: IAM_XMLNS,
-        response_metadata: ResponseMetadata {
-            request_id: request_id.into(),
-        },
+        response_metadata: response_metadata(request_id),
     }
 }
 
@@ -72,14 +72,7 @@ where
             .map_err(|e| ServiceResponse::from(IamError::from(e)));
 
         match result {
-            Ok(_) => {
-                match xml_response(&delete_user_response(Uuid::new_v4().to_string()))
-                    .map_err(IamError::from)
-                {
-                    Ok(response) => Ok(response),
-                    Err(error) => Ok(ServiceResponse::from(error)),
-                }
-            }
+            Ok(_) => render_result(iam_xml_response(&delete_user_response(new_request_id()))),
             Err(e) => Ok(e),
         }
     }
@@ -90,20 +83,9 @@ where
         delete_user_request: DeleteUserRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let principal = store
-            .get_principal_by_identity(
-                &request.auth_context.principal.account_id,
-                "user",
-                &delete_user_request.user_name,
-            )
+        let principal = existing_user_by_name(request, store, &delete_user_request.user_name)
             .await
-            .map_err(|e| ServiceResponse::from(IamError::from(e)))?
-            .ok_or_else(|| {
-                ServiceResponse::from(IamError::NoSuchEntity(format!(
-                    "User with name {} does not exist",
-                    delete_user_request.user_name
-                )))
-            })?;
+            .map_err(ServiceResponse::from)?;
 
         Ok(AuthorizationCheck {
             action: "iam:DeleteUser".to_string(),

@@ -2,18 +2,16 @@ use async_trait::async_trait;
 use chrono::SecondsFormat;
 use hiraeth_core::{
     ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
-    auth::AuthorizationCheck, xml_response,
+    auth::AuthorizationCheck,
 };
-use hiraeth_store::{
-    IamStore,
-    iam::{AccessKey, Principal},
-};
+use hiraeth_store::{IamStore, iam::AccessKey};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, parse_payload_error, response_metadata, user_arn,
+        IAM_XMLNS, ResponseMetadata, iam_xml_response, new_request_id, parse_payload_error,
+        render_result, requested_or_signing_user, response_metadata, user_arn,
     },
     error::IamError,
 };
@@ -78,7 +76,7 @@ where
         create_access_key_request: CreateAccessKeyRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        let target_user = match target_user(
+        let target_user = match requested_or_signing_user(
             &request,
             store,
             create_access_key_request.user_name.as_deref(),
@@ -100,13 +98,10 @@ where
             Err(error) => return Ok(ServiceResponse::from(error)),
         };
 
-        match xml_response(&create_access_key_response(
+        render_result(iam_xml_response(&create_access_key_response(
             iam_access_key_xml(&target_user.name, &created_access_key),
-            Uuid::new_v4().to_string(),
-        )) {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(IamError::from(error))),
-        }
+            new_request_id(),
+        )))
     }
 
     async fn resolve_authorization_typed(
@@ -115,7 +110,7 @@ where
         create_access_key_request: CreateAccessKeyRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let target_user = target_user(
+        let target_user = requested_or_signing_user(
             request,
             store,
             create_access_key_request.user_name.as_deref(),
@@ -132,36 +127,6 @@ where
             ),
             resource_policy: None,
         })
-    }
-}
-
-async fn target_user<S>(
-    request: &ResolvedRequest,
-    store: &S,
-    user_name: Option<&str>,
-) -> Result<Principal, IamError>
-where
-    S: IamStore + Send + Sync,
-{
-    match user_name {
-        Some(user_name) if user_name.trim().is_empty() => Err(IamError::BadRequest(
-            "UserName must not be empty".to_string(),
-        )),
-        Some(user_name) => store
-            .get_principal_by_identity(
-                &request.auth_context.principal.account_id,
-                "user",
-                user_name,
-            )
-            .await
-            .map_err(IamError::from)?
-            .ok_or_else(|| IamError::NoSuchEntity(format!("User {user_name} does not exist"))),
-        None if request.auth_context.principal.kind == "user" => {
-            Ok(request.auth_context.principal.clone())
-        }
-        None => Err(IamError::BadRequest(
-            "UserName is required when the caller is not an IAM user".to_string(),
-        )),
     }
 }
 
@@ -381,7 +346,8 @@ mod tests {
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
 
         assert_eq!(response.status_code, 404);
-        assert_eq!(body, "User missing does not exist");
+        assert!(body.contains("<Code>NoSuchEntity</Code>"));
+        assert!(body.contains("<Message>User missing does not exist</Message>"));
     }
 
     #[test]

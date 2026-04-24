@@ -7,7 +7,7 @@ use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error},
+    action_support::{json_payload_format, parse_payload_error, render_result},
     tag_support::validate_tag_keys,
 };
 use crate::error::SqsError;
@@ -61,10 +61,7 @@ where
         request_body: UntagQueueRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_untag_queue_typed(&request, store, request_body).await {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(error)),
-        }
+        render_result(handle_untag_queue_typed(&request, store, request_body).await)
     }
 
     async fn resolve_authorization_typed(

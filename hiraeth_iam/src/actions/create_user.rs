@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
     ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
-    auth::AuthorizationCheck, xml_response,
+    auth::AuthorizationCheck,
 };
 use hiraeth_store::{IamStore, iam::NewPrincipal};
 use serde::{Deserialize, Serialize};
@@ -10,8 +10,9 @@ use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, normalize_user_path,
-        parse_payload_error, response_metadata, user_arn,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, iam_xml_response,
+        new_request_id, normalize_user_path, parse_payload_error, render_result, response_metadata,
+        user_arn,
     },
     error::IamError,
 };
@@ -84,10 +85,10 @@ where
         };
 
         let user_xml = created_principal.into();
-        match xml_response(&create_user_response(user_xml, Uuid::new_v4().to_string())) {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(IamError::from(error))),
-        }
+        render_result(iam_xml_response(&create_user_response(
+            user_xml,
+            new_request_id(),
+        )))
     }
 
     async fn resolve_authorization_typed(

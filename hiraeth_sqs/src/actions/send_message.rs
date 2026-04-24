@@ -8,7 +8,7 @@ use hiraeth_core::{
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error};
+use super::action_support::{json_payload_format, parse_payload_error, render_result};
 use crate::{
     error::SqsError,
     util::{self, MessageAttributeValue},
@@ -166,10 +166,7 @@ where
         request_body: SendMessageRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_send_message_typed(&request, store, request_body).await {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(error)),
-        }
+        render_result(handle_send_message_typed(&request, store, request_body).await)
     }
 
     async fn resolve_authorization_typed(

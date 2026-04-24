@@ -1,15 +1,15 @@
 use async_trait::async_trait;
 use hiraeth_core::{
     ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
-    auth::AuthorizationCheck, xml_response,
+    auth::AuthorizationCheck,
 };
-use hiraeth_store::{IamStore, iam::Principal};
+use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, parse_payload_error, response_metadata, user_arn,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, iam_xml_response, new_request_id,
+        optional_target_user, parse_payload_error, render_result, response_metadata, user_arn,
     },
     error::IamError,
 };
@@ -60,27 +60,32 @@ where
         get_user_request: GetUserRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        let principal =
-            match target_user(&request, store, get_user_request.user_name.as_deref()).await {
-                Ok(Some(principal)) => principal,
-                Ok(None) => {
-                    return Ok(ServiceResponse::from(IamError::NoSuchEntity(format!(
-                        "User with name '{}' not found",
-                        get_user_request.user_name.unwrap_or_else(|| request
-                            .auth_context
-                            .principal
-                            .name
-                            .clone())
-                    ))));
-                }
-                Err(error) => return Ok(ServiceResponse::from(IamError::from(error))),
-            };
+        let principal = match optional_target_user(
+            &request,
+            store,
+            get_user_request.user_name.as_deref(),
+        )
+        .await
+        {
+            Ok(Some(principal)) => principal,
+            Ok(None) => {
+                return Ok(ServiceResponse::from(IamError::NoSuchEntity(format!(
+                    "User with name '{}' not found",
+                    get_user_request.user_name.unwrap_or_else(|| request
+                        .auth_context
+                        .principal
+                        .name
+                        .clone())
+                ))));
+            }
+            Err(error) => return Ok(ServiceResponse::from(error)),
+        };
 
         let user_xml = principal.into();
-        match xml_response(&get_user_response(user_xml, Uuid::new_v4().to_string())) {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(IamError::from(error))),
-        }
+        render_result(iam_xml_response(&get_user_response(
+            user_xml,
+            new_request_id(),
+        )))
     }
 
     async fn resolve_authorization_typed(
@@ -89,9 +94,8 @@ where
         get_user_request: GetUserRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let principal = target_user(request, store, get_user_request.user_name.as_deref())
+        let principal = optional_target_user(request, store, get_user_request.user_name.as_deref())
             .await
-            .map_err(IamError::from)
             .map_err(ServiceResponse::from)?
             .ok_or_else(|| {
                 ServiceResponse::from(IamError::NoSuchEntity(format!(
@@ -110,20 +114,6 @@ where
             resource_policy: None,
         })
     }
-}
-
-async fn target_user<S>(
-    request: &ResolvedRequest,
-    store: &S,
-    user_name: Option<&str>,
-) -> Result<Option<Principal>, hiraeth_store::StoreError>
-where
-    S: IamStore + Send + Sync,
-{
-    let name = user_name.unwrap_or(&request.auth_context.principal.name);
-    store
-        .get_principal_by_identity(&request.auth_context.principal.account_id, "user", name)
-        .await
 }
 
 fn get_user_response(user: IamUserXml, request_id: impl Into<String>) -> GetUserResponse {

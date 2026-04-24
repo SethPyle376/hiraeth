@@ -7,7 +7,7 @@ use hiraeth_core::{
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
-use super::action_support::{json_payload_format, parse_payload_error};
+use super::action_support::{json_payload_format, parse_payload_error, render_result};
 use crate::error::SqsError;
 
 pub(crate) struct ChangeMessageVisibilityAction;
@@ -75,10 +75,7 @@ where
         change_request: ChangeMessageVisibilityRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_change_message_visibility_typed(&request, store, change_request).await {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(error)),
-        }
+        render_result(handle_change_message_visibility_typed(&request, store, change_request).await)
     }
 
     async fn resolve_authorization_typed(

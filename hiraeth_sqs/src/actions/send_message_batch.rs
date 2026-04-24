@@ -10,7 +10,7 @@ use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error},
+    action_support::{json_payload_format, parse_payload_error, render_result},
     send_message::{resolve_delay_seconds, validate_message_body},
 };
 use crate::{
@@ -203,10 +203,7 @@ where
         request_body: SendMessageBatchRequest,
         store: &S,
     ) -> Result<ServiceResponse, ApiError> {
-        match handle_send_message_batch_typed(&request, store, request_body).await {
-            Ok(response) => Ok(response),
-            Err(error) => Ok(ServiceResponse::from(error)),
-        }
+        render_result(handle_send_message_batch_typed(&request, store, request_body).await)
     }
 
     async fn resolve_authorization_typed(
