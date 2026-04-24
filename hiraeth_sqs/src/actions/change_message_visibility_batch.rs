@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error, render_result},
+    action_support::{json_payload_format, parse_payload_error},
     change_message_visibility::validate_visibility_timeout,
 };
 use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error};
@@ -110,6 +110,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ChangeMessageVisibilityBatchRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "ChangeMessageVisibilityBatch"
@@ -119,7 +120,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -128,10 +129,8 @@ where
         request: ResolvedRequest,
         change_request: ChangeMessageVisibilityBatchRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(
-            handle_change_message_visibility_batch_typed(&request, store, change_request).await,
-        )
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_change_message_visibility_batch_typed(&request, store, change_request).await
     }
 
     async fn resolve_authorization_typed(
@@ -139,7 +138,7 @@ where
         request: &ResolvedRequest,
         _payload: ChangeMessageVisibilityBatchRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
     }
 }

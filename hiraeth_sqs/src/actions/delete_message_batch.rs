@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error, render_result};
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error};
 
 pub(crate) struct DeleteMessageBatchAction;
@@ -89,6 +89,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = DeleteMessageBatchRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "DeleteMessageBatch"
@@ -98,7 +99,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -107,8 +108,8 @@ where
         request: ResolvedRequest,
         delete_request: DeleteMessageBatchRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(handle_delete_message_batch_typed(&request, store, delete_request).await)
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_delete_message_batch_typed(&request, store, delete_request).await
     }
 
     async fn resolve_authorization_typed(
@@ -116,7 +117,7 @@ where
         request: &ResolvedRequest,
         _payload: DeleteMessageBatchRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:DeleteMessage", request, store).await
     }
 }

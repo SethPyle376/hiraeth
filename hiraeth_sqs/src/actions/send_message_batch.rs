@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use futures::StreamExt;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error, render_result},
+    action_support::{json_payload_format, parse_payload_error},
     send_message::{resolve_delay_seconds, validate_message_body},
 };
 use crate::{
@@ -184,6 +184,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = SendMessageBatchRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "SendMessageBatch"
@@ -193,7 +194,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -202,8 +203,8 @@ where
         request: ResolvedRequest,
         request_body: SendMessageBatchRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(handle_send_message_batch_typed(&request, store, request_body).await)
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_send_message_batch_typed(&request, store, request_body).await
     }
 
     async fn resolve_authorization_typed(
@@ -211,7 +212,7 @@ where
         request: &ResolvedRequest,
         _payload: SendMessageBatchRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
     }
 }

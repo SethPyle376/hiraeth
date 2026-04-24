@@ -3,13 +3,13 @@ use std::{cmp::min, collections::BTreeMap};
 use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error, render_result};
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::{error::SqsError, util};
 
 pub(crate) struct ReceiveMessageAction;
@@ -268,6 +268,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ReceiveMessageRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "ReceiveMessage"
@@ -277,7 +278,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -286,8 +287,8 @@ where
         request: ResolvedRequest,
         receive_request: ReceiveMessageRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(handle_receive_message_typed(&request, store, receive_request).await)
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_receive_message_typed(&request, store, receive_request).await
     }
 
     async fn resolve_authorization_typed(
@@ -295,7 +296,7 @@ where
         request: &ResolvedRequest,
         _payload: ReceiveMessageRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:ReceiveMessage", request, store).await
     }
 }

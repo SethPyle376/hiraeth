@@ -120,7 +120,7 @@ where
             }
         };
 
-        action.handle(request, &self.store).await
+        Ok(action.handle(request, &self.store).await)
     }
 
     async fn resolve_authorization(

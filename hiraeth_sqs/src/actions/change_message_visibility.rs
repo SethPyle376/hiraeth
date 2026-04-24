@@ -1,13 +1,13 @@
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, empty_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
-use super::action_support::{json_payload_format, parse_payload_error, render_result};
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct ChangeMessageVisibilityAction;
@@ -56,6 +56,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ChangeMessageVisibilityRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "ChangeMessageVisibility"
@@ -65,7 +66,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -74,8 +75,8 @@ where
         request: ResolvedRequest,
         change_request: ChangeMessageVisibilityRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(handle_change_message_visibility_typed(&request, store, change_request).await)
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_change_message_visibility_typed(&request, store, change_request).await
     }
 
     async fn resolve_authorization_typed(
@@ -83,7 +84,7 @@ where
         request: &ResolvedRequest,
         _payload: ChangeMessageVisibilityRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
     }
 }

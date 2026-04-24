@@ -1,4 +1,4 @@
-use hiraeth_core::{ResolvedRequest, ServiceResponse, auth::AuthorizationCheck, auth::Policy};
+use hiraeth_core::{ResolvedRequest, auth::AuthorizationCheck, auth::Policy};
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 
 use crate::{actions::GetQueueUrlRequest, error::SqsError, util};
@@ -66,10 +66,9 @@ pub(crate) async fn resolve_authorization<S: SqsStore>(
     authorization_action: &str,
     request: &ResolvedRequest,
     store: &S,
-) -> Result<AuthorizationCheck, ServiceResponse> {
-    let relevant_queue = get_relevant_queue_for_action(authorization_action, request, store)
-        .await
-        .map_err(ServiceResponse::from)?;
+) -> Result<AuthorizationCheck, SqsError> {
+    let relevant_queue =
+        get_relevant_queue_for_action(authorization_action, request, store).await?;
 
     let resource = relevant_queue
         .as_ref()

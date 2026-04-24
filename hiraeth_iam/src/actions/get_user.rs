@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
     auth::AuthorizationCheck,
 };
 use hiraeth_store::IamStore;
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions::util::{
         IAM_XMLNS, IamUserXml, ResponseMetadata, iam_xml_response, new_request_id,
-        optional_target_user, parse_payload_error, render_result, response_metadata, user_arn,
+        optional_target_user, parse_payload_error, response_metadata, user_arn,
     },
     error::IamError,
 };
@@ -45,12 +45,13 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = GetUserRequest;
+    type Error = IamError;
 
     fn name(&self) -> &'static str {
         "GetUser"
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
         parse_payload_error(error)
     }
 
@@ -59,33 +60,25 @@ where
         request: ResolvedRequest,
         get_user_request: GetUserRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        let principal = match optional_target_user(
-            &request,
-            store,
-            get_user_request.user_name.as_deref(),
-        )
-        .await
-        {
-            Ok(Some(principal)) => principal,
-            Ok(None) => {
-                return Ok(ServiceResponse::from(IamError::NoSuchEntity(format!(
-                    "User with name '{}' not found",
-                    get_user_request.user_name.unwrap_or_else(|| request
-                        .auth_context
-                        .principal
-                        .name
-                        .clone())
-                ))));
-            }
-            Err(error) => return Ok(ServiceResponse::from(error)),
-        };
+    ) -> Result<ServiceResponse, IamError> {
+        let principal =
+            match optional_target_user(&request, store, get_user_request.user_name.as_deref())
+                .await?
+            {
+                Some(principal) => principal,
+                None => {
+                    return Err(IamError::NoSuchEntity(format!(
+                        "User with name '{}' not found",
+                        get_user_request.user_name.unwrap_or_else(|| request
+                            .auth_context
+                            .principal
+                            .name
+                            .clone())
+                    )));
+                }
+            };
 
-        let user_xml = principal.into();
-        render_result(iam_xml_response(&get_user_response(
-            user_xml,
-            new_request_id(),
-        )))
+        iam_xml_response(&get_user_response(principal.into(), new_request_id()))
     }
 
     async fn resolve_authorization_typed(
@@ -93,19 +86,18 @@ where
         request: &ResolvedRequest,
         get_user_request: GetUserRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, IamError> {
         let principal = optional_target_user(request, store, get_user_request.user_name.as_deref())
-            .await
-            .map_err(ServiceResponse::from)?
+            .await?
             .ok_or_else(|| {
-                ServiceResponse::from(IamError::NoSuchEntity(format!(
+                IamError::NoSuchEntity(format!(
                     "User with name '{}' not found",
                     get_user_request.user_name.unwrap_or_else(|| request
                         .auth_context
                         .principal
                         .name
                         .clone())
-                )))
+                ))
             })?;
 
         Ok(AuthorizationCheck {
@@ -202,8 +194,7 @@ mod tests {
                 resolved_request(b"Action=GetUser&Version=2010-05-08&UserName=alice"),
                 &store(),
             )
-            .await
-            .expect("get user should return xml response");
+            .await;
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
 
@@ -222,8 +213,7 @@ mod tests {
                 resolved_request(b"Action=GetUser&Version=2010-05-08"),
                 &store(),
             )
-            .await
-            .expect("get user should return xml response");
+            .await;
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
 

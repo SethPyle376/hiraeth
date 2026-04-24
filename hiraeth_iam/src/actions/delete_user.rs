@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck,
 };
 use hiraeth_store::IamStore;
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions::util::{
         IAM_XMLNS, ResponseMetadata, existing_user_by_name, iam_xml_response, new_request_id,
-        parse_payload_error, render_result, response_metadata, user_arn,
+        parse_payload_error, response_metadata, user_arn,
     },
     error::IamError,
 };
@@ -45,6 +45,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = DeleteUserRequest;
+    type Error = IamError;
 
     fn name(&self) -> &'static str {
         "DeleteUser"
@@ -54,7 +55,7 @@ where
         AwsActionPayloadFormat::AwsQuery
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
         parse_payload_error(error)
     }
 
@@ -63,18 +64,13 @@ where
         request: ResolvedRequest,
         delete_request: DeleteUserRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
+    ) -> Result<ServiceResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
 
-        let result = store
+        store
             .delete_user(account_id, &delete_request.user_name)
             .await
-            .map_err(|e| ServiceResponse::from(IamError::from(e)));
-
-        match result {
-            Ok(_) => render_result(iam_xml_response(&delete_user_response(new_request_id()))),
-            Err(e) => Ok(e),
-        }
+            .map(|_| iam_xml_response(&delete_user_response(new_request_id())))?
     }
 
     async fn resolve_authorization_typed(
@@ -82,10 +78,9 @@ where
         request: &ResolvedRequest,
         delete_user_request: DeleteUserRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let principal = existing_user_by_name(request, store, &delete_user_request.user_name)
-            .await
-            .map_err(ServiceResponse::from)?;
+    ) -> Result<AuthorizationCheck, IamError> {
+        let principal =
+            existing_user_by_name(request, store, &delete_user_request.user_name).await?;
 
         Ok(AuthorizationCheck {
             action: "iam:DeleteUser".to_string(),
@@ -178,8 +173,7 @@ mod tests {
                 resolved_request(b"Action=DeleteUser&Version=2010-05-08&UserName=alice"),
                 &store,
             )
-            .await
-            .expect("delete user should return xml response");
+            .await;
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
 
@@ -221,8 +215,7 @@ mod tests {
                 resolved_request(b"Action=DeleteUser&Version=2010-05-08&UserName=missing"),
                 &store(),
             )
-            .await
-            .expect("delete user should render service response");
+            .await;
 
         assert_eq!(response.status_code, 404);
         assert!(

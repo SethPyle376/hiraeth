@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
     auth::AuthorizationCheck,
 };
 use hiraeth_store::{IamStore, iam::NewPrincipal};
@@ -11,8 +11,7 @@ use uuid::Uuid;
 use crate::{
     actions::util::{
         IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, iam_xml_response,
-        new_request_id, normalize_user_path, parse_payload_error, render_result, response_metadata,
-        user_arn,
+        new_request_id, normalize_user_path, parse_payload_error, response_metadata, user_arn,
     },
     error::IamError,
 };
@@ -51,12 +50,13 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = CreateUserRequest;
+    type Error = IamError;
 
     fn name(&self) -> &'static str {
         "CreateUser"
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
         parse_payload_error(error)
     }
 
@@ -65,11 +65,11 @@ where
         request: ResolvedRequest,
         create_user_request: CreateUserRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
+    ) -> Result<ServiceResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
 
         let path = normalize_user_path(&create_user_request.path);
-        let created_principal = match store
+        let created_principal = store
             .create_principal(NewPrincipal {
                 account_id: account_id.clone(),
                 kind: "user".to_string(),
@@ -77,18 +77,10 @@ where
                 path,
                 user_id: new_user_id(),
             })
-            .await
-            .map_err(IamError::from)
-        {
-            Ok(principal) => principal,
-            Err(error) => return Ok(ServiceResponse::from(error)),
-        };
+            .await?;
 
         let user_xml = created_principal.into();
-        render_result(iam_xml_response(&create_user_response(
-            user_xml,
-            new_request_id(),
-        )))
+        iam_xml_response(&create_user_response(user_xml, new_request_id()))
     }
 
     async fn resolve_authorization_typed(
@@ -96,7 +88,7 @@ where
         request: &ResolvedRequest,
         create_user_request: CreateUserRequest,
         _store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, IamError> {
         Ok(AuthorizationCheck {
             action: "iam:CreateUser".to_string(),
             resource: user_arn(
@@ -243,8 +235,7 @@ mod tests {
                 ),
                 &store(),
             )
-            .await
-            .expect("create user should return xml response");
+            .await;
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
 

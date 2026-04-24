@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error, render_result},
+    action_support::{json_payload_format, parse_payload_error},
     queue_attribute_support::collect_queue_attributes,
 };
 use crate::error::SqsError;
@@ -48,6 +48,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = GetQueueAttributesRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "GetQueueAttributes"
@@ -57,7 +58,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -66,8 +67,8 @@ where
         request: ResolvedRequest,
         attributes_request: GetQueueAttributesRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(handle_get_queue_attributes_typed(&request, store, attributes_request).await)
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_get_queue_attributes_typed(&request, store, attributes_request).await
     }
 
     async fn resolve_authorization_typed(
@@ -75,7 +76,7 @@ where
         request: &ResolvedRequest,
         _payload: GetQueueAttributesRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:GetQueueAttributes", request, store).await
     }
 }

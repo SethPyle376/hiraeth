@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error, render_result};
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::{
     error::SqsError,
     util::{self, MessageAttributeValue},
@@ -147,6 +147,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = SendMessageRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "SendMessage"
@@ -156,7 +157,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -165,8 +166,8 @@ where
         request: ResolvedRequest,
         request_body: SendMessageRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(handle_send_message_typed(&request, store, request_body).await)
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_send_message_typed(&request, store, request_body).await
     }
 
     async fn resolve_authorization_typed(
@@ -174,7 +175,7 @@ where
         request: &ResolvedRequest,
         _payload: SendMessageRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
     }
 }

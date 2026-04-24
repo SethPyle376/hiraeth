@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::SecondsFormat;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
     auth::AuthorizationCheck,
 };
 use hiraeth_store::{IamStore, iam::AccessKey};
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     actions::util::{
         IAM_XMLNS, ResponseMetadata, iam_xml_response, new_request_id, parse_payload_error,
-        render_result, requested_or_signing_user, response_metadata, user_arn,
+        requested_or_signing_user, response_metadata, user_arn,
     },
     error::IamError,
 };
@@ -61,12 +61,13 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = CreateAccessKeyRequest;
+    type Error = IamError;
 
     fn name(&self) -> &'static str {
         "CreateAccessKey"
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
         parse_payload_error(error)
     }
 
@@ -75,33 +76,24 @@ where
         request: ResolvedRequest,
         create_access_key_request: CreateAccessKeyRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        let target_user = match requested_or_signing_user(
+    ) -> Result<ServiceResponse, IamError> {
+        let target_user = requested_or_signing_user(
             &request,
             store,
             create_access_key_request.user_name.as_deref(),
         )
-        .await
-        {
-            Ok(target_user) => target_user,
-            Err(error) => return Ok(ServiceResponse::from(error)),
-        };
+        .await?;
 
         let access_key_id = new_access_key_id();
         let secret_access_key = new_secret_access_key();
-        let created_access_key = match store
+        let created_access_key = store
             .insert_secret_key(&access_key_id, &secret_access_key, target_user.id)
-            .await
-            .map_err(IamError::from)
-        {
-            Ok(access_key) => access_key,
-            Err(error) => return Ok(ServiceResponse::from(error)),
-        };
+            .await?;
 
-        render_result(iam_xml_response(&create_access_key_response(
+        iam_xml_response(&create_access_key_response(
             iam_access_key_xml(&target_user.name, &created_access_key),
             new_request_id(),
-        )))
+        ))
     }
 
     async fn resolve_authorization_typed(
@@ -109,14 +101,13 @@ where
         request: &ResolvedRequest,
         create_access_key_request: CreateAccessKeyRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, IamError> {
         let target_user = requested_or_signing_user(
             request,
             store,
             create_access_key_request.user_name.as_deref(),
         )
-        .await
-        .map_err(ServiceResponse::from)?;
+        .await?;
 
         Ok(AuthorizationCheck {
             action: "iam:CreateAccessKey".to_string(),
@@ -286,8 +277,7 @@ mod tests {
                 resolved_request(b"Action=CreateAccessKey&Version=2010-05-08&UserName=alice"),
                 &store,
             )
-            .await
-            .expect("create access key should return xml response");
+            .await;
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
         let alice = store
@@ -318,8 +308,7 @@ mod tests {
                 resolved_request(b"Action=CreateAccessKey&Version=2010-05-08"),
                 &store,
             )
-            .await
-            .expect("create access key should return xml response");
+            .await;
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
         let keys = store
@@ -340,8 +329,7 @@ mod tests {
                 resolved_request(b"Action=CreateAccessKey&Version=2010-05-08&UserName=missing"),
                 &store(),
             )
-            .await
-            .expect("missing user should return service response");
+            .await;
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
 

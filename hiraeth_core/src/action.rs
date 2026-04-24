@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 
 use crate::{
-    ApiError, AwsQueryParseError, RequestBodyParseError, ResolvedRequest, ServiceResponse,
+    AwsQueryParseError, RequestBodyParseError, ResolvedRequest, ServiceResponse,
     auth::AuthorizationCheck, parse_aws_query_request, parse_json_body,
 };
 
@@ -10,11 +10,7 @@ use crate::{
 pub trait AwsAction<S>: Send + Sync {
     fn name(&self) -> &'static str;
 
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        store: &S,
-    ) -> Result<ServiceResponse, ApiError>;
+    async fn handle(&self, request: ResolvedRequest, store: &S) -> ServiceResponse;
 
     async fn resolve_authorization(
         &self,
@@ -26,6 +22,7 @@ pub trait AwsAction<S>: Send + Sync {
 #[async_trait]
 pub trait TypedAwsAction<S>: Send + Sync {
     type Request: DeserializeOwned + Send;
+    type Error: Into<ServiceResponse> + Send;
 
     fn name(&self) -> &'static str;
 
@@ -33,21 +30,21 @@ pub trait TypedAwsAction<S>: Send + Sync {
         AwsActionPayloadFormat::AwsQuery
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse;
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error;
 
     async fn handle_typed(
         &self,
         request: ResolvedRequest,
         payload: Self::Request,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError>;
+    ) -> Result<ServiceResponse, Self::Error>;
 
     async fn resolve_authorization_typed(
         &self,
         request: &ResolvedRequest,
         payload: Self::Request,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse>;
+    ) -> Result<AuthorizationCheck, Self::Error>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,17 +79,16 @@ where
         self.action.name()
     }
 
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
+    async fn handle(&self, request: ResolvedRequest, store: &S) -> ServiceResponse {
         let payload = match parse_payload::<A::Request>(self.action.payload_format(), &request) {
             Ok(payload) => payload,
-            Err(error) => return Ok(self.action.parse_error(error)),
+            Err(error) => return self.action.parse_error(error).into(),
         };
 
-        self.action.handle_typed(request, payload, store).await
+        match self.action.handle_typed(request, payload, store).await {
+            Ok(response) => response,
+            Err(error) => error.into(),
+        }
     }
 
     async fn resolve_authorization(
@@ -101,11 +97,12 @@ where
         store: &S,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
         let payload = parse_payload::<A::Request>(self.action.payload_format(), request)
-            .map_err(|error| self.action.parse_error(error))?;
+            .map_err(|error| self.action.parse_error(error).into())?;
 
         self.action
             .resolve_authorization_typed(request, payload, store)
             .await
+            .map_err(Into::into)
     }
 }
 
@@ -179,11 +176,7 @@ mod tests {
             self.0
         }
 
-        async fn handle(
-            &self,
-            _request: ResolvedRequest,
-            _store: &(),
-        ) -> Result<ServiceResponse, crate::ApiError> {
+        async fn handle(&self, _request: ResolvedRequest, _store: &()) -> ServiceResponse {
             unreachable!("test action registry does not execute handlers")
         }
 

@@ -1,7 +1,5 @@
 use chrono::SecondsFormat;
-use hiraeth_core::{
-    ApiError, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, xml_response,
-};
+use hiraeth_core::{AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, xml_response};
 use hiraeth_store::IamStore;
 use hiraeth_store::iam::Principal;
 use serde::Serialize;
@@ -11,24 +9,10 @@ use crate::error::IamError;
 
 pub(super) const IAM_XMLNS: &str = "https://iam.amazonaws.com/doc/2010-05-08/";
 
-pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> ServiceResponse {
-    let error = match error {
+pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> IamError {
+    match error {
         AwsActionPayloadParseError::AwsQuery(error) => IamError::from(error),
         AwsActionPayloadParseError::Json(error) => IamError::BadRequest(error.to_string()),
-    };
-
-    ServiceResponse::from(error)
-}
-
-pub(super) fn render_result<E>(
-    result: Result<ServiceResponse, E>,
-) -> Result<ServiceResponse, ApiError>
-where
-    E: Into<ServiceResponse>,
-{
-    match result {
-        Ok(response) => Ok(response),
-        Err(error) => Ok(error.into()),
     }
 }
 

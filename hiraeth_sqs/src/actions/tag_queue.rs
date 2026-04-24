@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, empty_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error, render_result},
+    action_support::{json_payload_format, parse_payload_error},
     tag_support::validate_tags,
 };
 use crate::error::SqsError;
@@ -51,6 +51,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = TagQueueRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "TagQueue"
@@ -60,7 +61,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -69,8 +70,8 @@ where
         request: ResolvedRequest,
         request_body: TagQueueRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(handle_tag_queue_typed(&request, store, request_body).await)
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_tag_queue_typed(&request, store, request_body).await
     }
 
     async fn resolve_authorization_typed(
@@ -78,7 +79,7 @@ where
         request: &ResolvedRequest,
         _payload: TagQueueRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:TagQueue", request, store).await
     }
 }

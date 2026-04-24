@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
     TypedAwsAction, auth::AuthorizationCheck, json_response,
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error, render_result};
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct ListQueuesAction;
@@ -88,6 +88,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ListQueuesRequest;
+    type Error = SqsError;
 
     fn name(&self) -> &'static str {
         "ListQueues"
@@ -97,7 +98,7 @@ where
         json_payload_format()
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> ServiceResponse {
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
@@ -106,8 +107,8 @@ where
         request: ResolvedRequest,
         request_body: ListQueuesRequest,
         store: &S,
-    ) -> Result<ServiceResponse, ApiError> {
-        render_result(handle_list_queues_typed(&request, store, request_body).await)
+    ) -> Result<ServiceResponse, SqsError> {
+        handle_list_queues_typed(&request, store, request_body).await
     }
 
     async fn resolve_authorization_typed(
@@ -115,7 +116,7 @@ where
         request: &ResolvedRequest,
         _payload: ListQueuesRequest,
         store: &S,
-    ) -> Result<AuthorizationCheck, ServiceResponse> {
+    ) -> Result<AuthorizationCheck, SqsError> {
         crate::auth::resolve_authorization("sqs:ListQueues", request, store).await
     }
 }
