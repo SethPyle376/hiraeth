@@ -1,5 +1,9 @@
 use askama::Template;
 
+use crate::iam::{
+    IamPrincipalAccessKeyView, IamPrincipalDetailView, IamPrincipalInlinePolicyView,
+    IamPrincipalSummary,
+};
 use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
 
 #[derive(Template)]
@@ -15,8 +19,54 @@ pub(crate) struct ErrorTemplate<'a> {
 }
 
 #[derive(Template)]
+#[template(path = "iam/dashboard.html")]
+pub(crate) struct IamDashboardTemplate<'a> {
+    pub(crate) page_header_html: &'a str,
+    pub(crate) stats_html: &'a str,
+    pub(crate) empty_state_html: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) create_error: &'a str,
+    pub(crate) has_create_error: bool,
+    pub(crate) create_account_id: &'a str,
+    pub(crate) create_kind: &'a str,
+    pub(crate) create_name: &'a str,
+    pub(crate) create_path: &'a str,
+    pub(crate) principal_count: usize,
+    pub(crate) principals: &'a [IamPrincipalSummary],
+    pub(crate) has_principals: bool,
+}
+
+#[derive(Template)]
+#[template(path = "iam/principal_detail.html")]
+pub(crate) struct IamPrincipalDetailTemplate<'a> {
+    pub(crate) action_card_html: &'a str,
+    pub(crate) summary_cards_html: &'a str,
+    pub(crate) metadata_list_html: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) access_key_error: &'a str,
+    pub(crate) has_access_key_error: bool,
+    pub(crate) policy_error: &'a str,
+    pub(crate) has_policy_error: bool,
+    pub(crate) policy_name: &'a str,
+    pub(crate) policy_document: &'a str,
+    pub(crate) policy_panel_open: bool,
+    pub(crate) principal: &'a IamPrincipalDetailView,
+    pub(crate) access_keys: &'a [IamPrincipalAccessKeyView],
+    pub(crate) inline_policies: &'a [IamPrincipalInlinePolicyView],
+    pub(crate) has_access_keys: bool,
+    pub(crate) has_inline_policies: bool,
+}
+
+#[derive(Template)]
 #[template(path = "sqs/dashboard.html")]
 pub(crate) struct SqsDashboardTemplate<'a> {
+    pub(crate) page_header_html: &'a str,
+    pub(crate) dashboard_stats_html: &'a str,
+    pub(crate) empty_state_html: &'a str,
     pub(crate) region: &'a str,
     pub(crate) account_id: &'a str,
     pub(crate) prefix: &'a str,
@@ -32,15 +82,12 @@ pub(crate) struct SqsDashboardTemplate<'a> {
     pub(crate) create_account_id: &'a str,
     pub(crate) queues: &'a [QueueSummary],
     pub(crate) has_queues: bool,
-    pub(crate) total_queues: usize,
-    pub(crate) total_messages: i64,
-    pub(crate) visible_messages: i64,
-    pub(crate) delayed_messages: i64,
 }
 
 #[derive(Template)]
 #[template(path = "sqs/queues.html")]
 pub(crate) struct SqsQueuesTemplate<'a> {
+    pub(crate) empty_state_html: &'a str,
     pub(crate) region: &'a str,
     pub(crate) account_id: &'a str,
     pub(crate) prefix: &'a str,
@@ -61,6 +108,8 @@ pub(crate) struct SqsQueuesTemplate<'a> {
 #[derive(Template)]
 #[template(path = "sqs/queue_detail.html")]
 pub(crate) struct SqsQueueDetailTemplate<'a> {
+    pub(crate) action_card_html: &'a str,
+    pub(crate) metadata_list_html: &'a str,
     pub(crate) queue_id: i64,
     pub(crate) queue: &'a hiraeth_store::sqs::SqsQueue,
     pub(crate) queue_arn: &'a str,
@@ -88,17 +137,13 @@ pub(crate) struct SqsQueueDetailTemplate<'a> {
 #[derive(Template)]
 #[template(path = "sqs/fragments/dashboard_stats.html")]
 pub(crate) struct SqsDashboardStatsTemplate<'a> {
-    pub(crate) region: &'a str,
-    pub(crate) account_id: &'a str,
-    pub(crate) total_queues: usize,
-    pub(crate) total_messages: i64,
-    pub(crate) visible_messages: i64,
-    pub(crate) delayed_messages: i64,
+    pub(crate) stats_cards_html: &'a str,
 }
 
 #[derive(Template)]
 #[template(path = "sqs/fragments/queue_list.html")]
 pub(crate) struct QueueListTemplate<'a> {
+    pub(crate) empty_state_html: &'a str,
     pub(crate) queues: &'a [QueueSummary],
     pub(crate) has_queues: bool,
 }
@@ -122,8 +167,11 @@ pub(crate) struct QueueMessageListTemplate<'a> {
 #[cfg(test)]
 mod tests {
     use askama::Template;
+    use chrono::NaiveDate;
 
-    use super::QueueListTemplate;
+    use super::{IamDashboardTemplate, QueueListTemplate};
+    use crate::components::EmptyState;
+    use crate::iam::IamPrincipalSummary;
     use crate::sqs::QueueSummary;
 
     #[test]
@@ -140,6 +188,7 @@ mod tests {
         }];
 
         let html = QueueListTemplate {
+            empty_state_html: "",
             queues: &queues,
             has_queues: true,
         }
@@ -149,5 +198,53 @@ mod tests {
         assert!(html.contains("orders"));
         assert!(html.contains("billing"));
         assert!(!html.contains("<orders&billing>"));
+    }
+
+    #[test]
+    fn iam_dashboard_template_escapes_principal_names() {
+        let principals = vec![IamPrincipalSummary {
+            id: 1,
+            account_id: "000000000000".to_string(),
+            kind: "user".to_string(),
+            name: "<test&admin>".to_string(),
+            created_at: NaiveDate::from_ymd_opt(2026, 4, 21)
+                .expect("date should be valid")
+                .and_hms_opt(12, 0, 0)
+                .expect("time should be valid")
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string(),
+            access_key_count: 1,
+            inline_policy_count: 2,
+        }];
+        let empty_state = EmptyState {
+            title: "No principals".to_string(),
+            message: "Seed some IAM data.".to_string(),
+        }
+        .render()
+        .expect("empty state should render");
+
+        let html = IamDashboardTemplate {
+            page_header_html: "",
+            stats_html: "",
+            empty_state_html: &empty_state,
+            feedback_message: "",
+            feedback_class: "",
+            has_feedback: false,
+            create_error: "",
+            has_create_error: false,
+            create_account_id: "000000000000",
+            create_kind: "user",
+            create_name: "",
+            create_path: "/",
+            principal_count: principals.len(),
+            principals: &principals,
+            has_principals: true,
+        }
+        .render()
+        .expect("iam dashboard template should render");
+
+        assert!(html.contains("test"));
+        assert!(html.contains("admin"));
+        assert!(!html.contains("<test&admin>"));
     }
 }

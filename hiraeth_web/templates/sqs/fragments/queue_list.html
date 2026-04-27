@@ -36,12 +36,5 @@
   </table>
 </div>
 {% else %}
-<div class="card border border-dashed border-base-300 bg-base-100/70">
-  <div class="card-body items-center py-12 text-center">
-    <h2 class="card-title">No queues found</h2>
-    <p class="max-w-md text-base-content/70">
-      Create a queue through the AWS emulator, or adjust the account, region, or prefix filter.
-    </p>
-  </div>
-</div>
+{{ empty_state_html|safe }}
 {% endif %}

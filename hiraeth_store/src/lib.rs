@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-mod iam;
+pub mod iam;
 
 pub mod access_key_store;
 pub mod principal;

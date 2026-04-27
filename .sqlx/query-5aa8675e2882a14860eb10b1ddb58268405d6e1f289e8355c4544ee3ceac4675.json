@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT key_id, secret_key, principal_id, created_at FROM iam_access_keys WHERE key_id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "key_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "secret_key",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "principal_id",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5aa8675e2882a14860eb10b1ddb58268405d6e1f289e8355c4544ee3ceac4675"
+}

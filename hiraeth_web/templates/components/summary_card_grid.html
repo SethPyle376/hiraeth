@@ -1,0 +1,11 @@
+<div class="{{ grid.grid_class }}">
+  {% for card in grid.cards %}
+  <div class="card border border-base-300 bg-base-100">
+    <div class="card-body">
+      <div class="text-sm text-base-content/60">{{ card.title }}</div>
+      <div class="text-3xl font-black {{ card.value_class }}">{{ card.value }}</div>
+      <div class="text-sm text-base-content/50">{{ card.description }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>

@@ -9,7 +9,7 @@
       <p class="text-xs font-semibold uppercase tracking-[0.35em] text-primary">SQS</p>
       <h1 class="mt-2 text-4xl font-black tracking-tight md:text-5xl">Queues</h1>
       <p class="mt-2 text-sm leading-6 text-base-content/70">
-        Filter queues by account, region, and optional name prefix. Results are read directly from the emulator store.
+        Filter queues by account, region, and optional name prefix. Results reflect the current service state.
       </p>
     </div>
     <a class="btn btn-ghost" href="/sqs">Back to SQS</a>
@@ -31,7 +31,7 @@
         <input type="hidden" name="return_to" value="{{ return_to }}">
         <div>
           <h2 class="card-title text-xl">Create queue</h2>
-          <p class="text-sm text-base-content/60">Creates a queue with default Hiraeth SQS attributes.</p>
+          <p class="text-sm text-base-content/60">Create a queue in the selected account and region.</p>
         </div>
         {% if has_create_error %}
         <div class="alert alert-error flex items-center justify-between gap-3 py-2 text-sm">

@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 mod sqs;
 pub use sqs::*;
+mod iam;
+pub use iam::*;
 
 pub const DEFAULT_REGION: &str = "us-east-1";
 pub const TEST_ACCESS_KEY_ID: &str = "test";
@@ -77,7 +79,7 @@ pub async fn create_store(temp_dir: &TempDir) -> anyhow::Result<SqlxStore> {
 }
 
 pub fn create_app(store: SqlxStore, auth_mode: AuthorizationMode) -> Arc<App> {
-    Arc::new(App::with_auth_mode(store, auth_mode))
+    Arc::new(App::new(store, auth_mode))
 }
 
 pub async fn bind_listener() -> anyhow::Result<TcpListener> {
@@ -95,12 +97,27 @@ pub fn spawn_listener(listener: TcpListener, app: Arc<App>) -> JoinHandle<()> {
 }
 
 pub async fn sdk_config(endpoint_url: &str, region: &str) -> SdkConfig {
+    sdk_config_with_credentials(
+        endpoint_url,
+        region,
+        TEST_ACCESS_KEY_ID,
+        TEST_SECRET_ACCESS_KEY,
+    )
+    .await
+}
+
+pub async fn sdk_config_with_credentials(
+    endpoint_url: &str,
+    region: &str,
+    access_key_id: &str,
+    secret_access_key: &str,
+) -> SdkConfig {
     aws_config::defaults(BehaviorVersion::latest())
         .region(Region::new(region.to_owned()))
         .endpoint_url(endpoint_url.to_owned())
         .credentials_provider(Credentials::new(
-            TEST_ACCESS_KEY_ID,
-            TEST_SECRET_ACCESS_KEY,
+            access_key_id,
+            secret_access_key,
             None,
             None,
             "hiraeth-integration-tests",
