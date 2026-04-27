@@ -1,10 +1,14 @@
 use async_trait::async_trait;
 
 mod access_key_store;
+mod managed_policy_store;
 mod principal;
 mod principal_inline_policy_store;
 
 pub use access_key_store::{AccessKey, AccessKeyStore, InMemoryAccessKeyStore};
+pub use managed_policy_store::{
+    InMemoryManagedPolicyStore, ManagedPolicy, ManagedPolicyStore, NewManagedPolicy,
+};
 pub use principal::{InMemoryPrincipalStore, NewPrincipal, Principal, PrincipalStore};
 pub use principal_inline_policy_store::{
     InMemoryPrincipalInlinePolicyStore, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
@@ -14,6 +18,7 @@ pub struct InMemoryIamStore {
     pub access_key_store: InMemoryAccessKeyStore,
     pub principal_store: InMemoryPrincipalStore,
     pub principal_inline_policy_store: InMemoryPrincipalInlinePolicyStore,
+    pub managed_policy_store: InMemoryManagedPolicyStore,
 }
 
 impl InMemoryIamStore {
@@ -21,6 +26,7 @@ impl InMemoryIamStore {
         access_keys: impl IntoIterator<Item = AccessKey>,
         principals: impl IntoIterator<Item = Principal>,
         principal_inline_policies: impl IntoIterator<Item = PrincipalInlinePolicy>,
+        managed_policies: impl IntoIterator<Item = ManagedPolicy>,
     ) -> Self {
         Self {
             access_key_store: InMemoryAccessKeyStore::new(access_keys),
@@ -28,13 +34,14 @@ impl InMemoryIamStore {
             principal_inline_policy_store: InMemoryPrincipalInlinePolicyStore::new(
                 principal_inline_policies,
             ),
+            managed_policy_store: InMemoryManagedPolicyStore::new(managed_policies),
         }
     }
 }
 
 impl Default for InMemoryIamStore {
     fn default() -> Self {
-        Self::new([], [], [])
+        Self::new([], [], [], [])
     }
 }
 
@@ -151,6 +158,24 @@ impl principal_inline_policy_store::PrincipalInlinePolicyStore for InMemoryIamSt
     }
 }
 
-pub trait IamStore: AccessKeyStore + PrincipalStore + PrincipalInlinePolicyStore {}
+#[async_trait]
+impl managed_policy_store::ManagedPolicyStore for InMemoryIamStore {
+    async fn insert_managed_policy(
+        &self,
+        policy: NewManagedPolicy,
+    ) -> Result<ManagedPolicy, crate::StoreError> {
+        self.managed_policy_store
+            .insert_managed_policy(policy)
+            .await
+    }
+}
 
-impl<T> IamStore for T where T: AccessKeyStore + PrincipalStore + PrincipalInlinePolicyStore {}
+pub trait IamStore:
+    AccessKeyStore + PrincipalStore + PrincipalInlinePolicyStore + ManagedPolicyStore
+{
+}
+
+impl<T> IamStore for T where
+    T: AccessKeyStore + PrincipalStore + PrincipalInlinePolicyStore + ManagedPolicyStore
+{
+}

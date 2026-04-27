@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                INSERT INTO iam_managed_policies (account_id, policy_name, policy_path, policy_document, created_at, updated_at)\n                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)\n                RETURNING id, account_id, policy_name, policy_path, policy_document, created_at, updated_at\n                ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "account_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_path",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_document",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bdcdd49413eaebbd46348bdbf28516995482cf5c53d7704226f4555c23f7340e"
+}

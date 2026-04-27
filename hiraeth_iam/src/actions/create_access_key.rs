@@ -202,6 +202,7 @@ mod tests {
                 principal(2, "alice", "/engineering/"),
             ],
             [],
+            [],
         )
     }
 

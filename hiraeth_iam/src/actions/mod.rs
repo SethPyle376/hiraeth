@@ -1,4 +1,5 @@
 mod create_access_key;
+mod create_policy;
 mod create_user;
 mod delete_user;
 mod get_user;
@@ -8,8 +9,8 @@ use hiraeth_core::AwsActionRegistry;
 use hiraeth_store::IamStore;
 
 use crate::actions::{
-    create_access_key::CreateAccessKeyAction, create_user::CreateUserAction,
-    delete_user::DeleteUserAction, get_user::GetUserAction,
+    create_access_key::CreateAccessKeyAction, create_policy::CreatePolicyAction,
+    create_user::CreateUserAction, delete_user::DeleteUserAction, get_user::GetUserAction,
 };
 
 pub(crate) fn registry<S>() -> AwsActionRegistry<S>
@@ -21,5 +22,6 @@ where
     registry.register_typed(CreateUserAction);
     registry.register_typed(GetUserAction);
     registry.register_typed(DeleteUserAction);
+    registry.register_typed(CreatePolicyAction);
     registry
 }

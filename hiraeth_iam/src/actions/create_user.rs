@@ -151,6 +151,7 @@ mod tests {
                     .naive_utc(),
             }],
             [],
+            [],
         )
     }
 

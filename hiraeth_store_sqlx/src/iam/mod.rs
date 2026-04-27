@@ -1,24 +1,42 @@
 use async_trait::async_trait;
 
 mod access_key_store;
+mod managed_policy_store;
 mod principal;
 mod principal_inline_policy_store;
 
 pub use access_key_store::SqliteAccessKeyStore;
 pub use principal::SqlitePrincipalStore;
 
-use hiraeth_store::iam::{
-    AccessKey, AccessKeyStore, NewPrincipal, Principal, PrincipalInlinePolicy,
-    PrincipalInlinePolicyStore, PrincipalStore,
+use hiraeth_store::{
+    StoreError,
+    iam::{
+        AccessKey, AccessKeyStore, ManagedPolicy, ManagedPolicyStore, NewManagedPolicy,
+        NewPrincipal, Principal, PrincipalInlinePolicy, PrincipalInlinePolicyStore, PrincipalStore,
+    },
 };
 
-use crate::iam::principal_inline_policy_store::SqlitePrincipalInlinePolicyStore;
+use crate::iam::{
+    managed_policy_store::SqliteManagedPolicyStore,
+    principal_inline_policy_store::SqlitePrincipalInlinePolicyStore,
+};
+
+pub(crate) fn map_sqlx_error(err: sqlx::Error) -> StoreError {
+    if let sqlx::Error::Database(database_error) = &err
+        && database_error.is_unique_violation()
+    {
+        return StoreError::Conflict(database_error.message().to_string());
+    }
+
+    StoreError::StorageFailure(err.to_string())
+}
 
 #[derive(Clone)]
 pub struct SqliteIamStore {
     pub access_key_store: SqliteAccessKeyStore,
     pub principal_store: SqlitePrincipalStore,
     pub principal_inline_policy_store: SqlitePrincipalInlinePolicyStore,
+    pub managed_policy_store: SqliteManagedPolicyStore,
     _pool: sqlx::SqlitePool,
 }
 
@@ -28,6 +46,7 @@ impl SqliteIamStore {
             access_key_store: SqliteAccessKeyStore::new(pool),
             principal_store: SqlitePrincipalStore::new(pool),
             principal_inline_policy_store: SqlitePrincipalInlinePolicyStore::new(pool),
+            managed_policy_store: SqliteManagedPolicyStore::new(pool),
             _pool: pool.clone(),
         }
     }
@@ -146,6 +165,18 @@ impl PrincipalInlinePolicyStore for SqliteIamStore {
     ) -> Result<(), hiraeth_store::StoreError> {
         self.principal_inline_policy_store
             .delete_inline_policy(principal_id, policy_name)
+            .await
+    }
+}
+
+#[async_trait]
+impl ManagedPolicyStore for SqliteIamStore {
+    async fn insert_managed_policy(
+        &self,
+        policy: NewManagedPolicy,
+    ) -> Result<ManagedPolicy, hiraeth_store::StoreError> {
+        self.managed_policy_store
+            .insert_managed_policy(policy)
             .await
     }
 }

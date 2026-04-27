@@ -4,6 +4,8 @@ use hiraeth_store::{
     iam::{NewPrincipal, Principal, PrincipalStore},
 };
 
+use crate::iam::map_sqlx_error;
+
 #[derive(Clone)]
 pub struct SqlitePrincipalStore {
     pool: sqlx::SqlitePool,
@@ -13,16 +15,6 @@ impl SqlitePrincipalStore {
     pub fn new(pool: &sqlx::SqlitePool) -> Self {
         Self { pool: pool.clone() }
     }
-}
-
-fn map_sqlx_error(err: sqlx::Error) -> StoreError {
-    if let sqlx::Error::Database(database_error) = &err
-        && database_error.is_unique_violation()
-    {
-        return StoreError::Conflict(database_error.message().to_string());
-    }
-
-    StoreError::StorageFailure(err.to_string())
 }
 
 #[async_trait]
