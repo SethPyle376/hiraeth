@@ -22,48 +22,66 @@ where
         check: &AuthorizationCheck,
     ) -> AuthorizationResult {
         let resource_principal = policy_principal_from_request(request);
-        let identity_policy_result = match evaluate_principal_inline_policies(
+        let identity_policy_result = evaluate_principal_inline_policies(
             &self.store,
             request.auth_context.principal.id,
             &check.resource,
             &check.action,
         )
         .await
-        {
-            Ok(result) => result,
-            Err(error) => {
-                tracing::error!(
-                    principal_id = request.auth_context.principal.id,
-                    resource = %check.resource,
-                    action = %check.action,
-                    "failed to evaluate inline policies: {error}"
-                );
-                PolicyEvalResult::Denied
-            }
-        };
+        .unwrap_or_else(|error| {
+            tracing::error!(
+                principal_id = request.auth_context.principal.id,
+                resource = %check.resource,
+                action = %check.action,
+                "failed to evaluate inline policies: {error}"
+            );
+            PolicyEvalResult::Denied
+        });
+
+        let managed_policy_result = evaluate_managed_policies(
+            &self.store,
+            request.auth_context.principal.id,
+            &check.resource,
+            &check.action,
+        )
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!(
+                principal_id = request.auth_context.principal.id,
+                resource = %check.resource,
+                action = %check.action,
+                "failed to evaluate managed policies: {error}"
+            );
+            PolicyEvalResult::Denied
+        });
+
         let resource_policy_result = match (&resource_principal, check.resource_policy.as_ref()) {
             (Some(principal), Some(policy)) => {
                 evaluate_resource_policy(principal, &check.resource, &check.action, policy)
             }
             _ => PolicyEvalResult::NotApplicable,
         };
-        let policy_result =
-            combine_policy_results([identity_policy_result, resource_policy_result]);
+        let policy_result = combine_policy_results([
+            identity_policy_result,
+            managed_policy_result,
+            resource_policy_result,
+        ]);
 
-        let authn_result = match policy_result {
+        let authz_result = match policy_result {
             PolicyEvalResult::Allowed => AuthorizationResult::Allow,
             PolicyEvalResult::Denied | PolicyEvalResult::NotApplicable => AuthorizationResult::Deny,
         };
 
         match self.mode {
-            AuthorizationMode::Enforce => authn_result,
+            AuthorizationMode::Enforce => authz_result,
             AuthorizationMode::Audit => {
                 tracing::info!(
                     "Audit authz: principal={:?}, resource={}, action={}, result={:?}",
                     resource_principal.as_ref(),
                     check.resource,
                     check.action,
-                    authn_result
+                    authz_result
                 );
                 AuthorizationResult::Allow // allow the request but log the result
             }
@@ -113,6 +131,34 @@ async fn evaluate_principal_inline_policies<S: IamStore + Send + Sync>(
                 .map_err(|error| {
                     format!(
                         "invalid policy document for inline policy {}: {}",
+                        policy.policy_name, error
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(combine_policy_results(policy_results))
+}
+
+async fn evaluate_managed_policies<S: IamStore + Send + Sync>(
+    store: &S,
+    principal_id: i64,
+    resource: &str,
+    action: &str,
+) -> Result<PolicyEvalResult, String> {
+    let policies = store
+        .get_managed_policies_attached_to_principal(principal_id)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let policy_results = policies
+        .into_iter()
+        .map(|policy| {
+            serde_json::from_str::<Policy>(&policy.policy_document)
+                .map(|policy_document| evaluate_identity_policy(resource, action, &policy_document))
+                .map_err(|error| {
+                    format!(
+                        "invalid policy document for managed policy {}: {}",
                         policy.policy_name, error
                     )
                 })
@@ -289,6 +335,45 @@ mod tests {
             policy: NewManagedPolicy,
         ) -> Result<ManagedPolicy, StoreError> {
             todo!()
+        }
+
+        async fn get_managed_policy(
+            &self,
+            _account_id: &str,
+            _policy_name: &str,
+        ) -> Result<Option<ManagedPolicy>, StoreError> {
+            Ok(None)
+        }
+
+        async fn attach_policy_to_principal(
+            &self,
+            _policy_id: i64,
+            _principal_id: i64,
+        ) -> Result<(), StoreError> {
+            unreachable!("authorization tests do not attach managed policies")
+        }
+
+        async fn detach_policy_from_principal(
+            &self,
+            _policy_id: i64,
+            _principal_id: i64,
+        ) -> Result<(), StoreError> {
+            unreachable!("authorization tests do not detach managed policies")
+        }
+
+        async fn delete_managed_policy(
+            &self,
+            _account_id: &str,
+            _policy_name: &str,
+        ) -> Result<(), StoreError> {
+            unreachable!("authorization tests do not delete managed policies")
+        }
+
+        async fn get_managed_policies_attached_to_principal(
+            &self,
+            _principal_id: i64,
+        ) -> Result<Vec<ManagedPolicy>, StoreError> {
+            unreachable!("authorization tests do not get managed policies attached to principal")
         }
     }
 

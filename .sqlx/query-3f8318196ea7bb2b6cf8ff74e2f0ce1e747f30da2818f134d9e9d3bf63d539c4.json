@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO iam_user_policy_attachments (policy_id, user_id, created_at)\n            VALUES (?, ?, CURRENT_TIMESTAMP)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "3f8318196ea7bb2b6cf8ff74e2f0ce1e747f30da2818f134d9e9d3bf63d539c4"
+}

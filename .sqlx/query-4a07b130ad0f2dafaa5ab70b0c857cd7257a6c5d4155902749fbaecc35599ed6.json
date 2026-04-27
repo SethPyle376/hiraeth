@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                SELECT mp.id, mp.policy_id, mp.account_id, mp.policy_name, mp.policy_path, mp.policy_document, mp.created_at, mp.updated_at\n                FROM iam_managed_policies mp\n                JOIN iam_user_policy_attachments a ON a.policy_id = mp.id\n                WHERE a.user_id = ?\n                ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "policy_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_path",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_document",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4a07b130ad0f2dafaa5ab70b0c857cd7257a6c5d4155902749fbaecc35599ed6"
+}

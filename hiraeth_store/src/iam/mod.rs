@@ -14,6 +14,8 @@ pub use principal_inline_policy_store::{
     InMemoryPrincipalInlinePolicyStore, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
 };
 
+use crate::iam::managed_policy_store::ManagedPolicyPrincipalAttachment;
+
 pub struct InMemoryIamStore {
     pub access_key_store: InMemoryAccessKeyStore,
     pub principal_store: InMemoryPrincipalStore,
@@ -27,6 +29,7 @@ impl InMemoryIamStore {
         principals: impl IntoIterator<Item = Principal>,
         principal_inline_policies: impl IntoIterator<Item = PrincipalInlinePolicy>,
         managed_policies: impl IntoIterator<Item = ManagedPolicy>,
+        managed_policy_attachments: impl IntoIterator<Item = ManagedPolicyPrincipalAttachment>,
     ) -> Self {
         Self {
             access_key_store: InMemoryAccessKeyStore::new(access_keys),
@@ -34,14 +37,17 @@ impl InMemoryIamStore {
             principal_inline_policy_store: InMemoryPrincipalInlinePolicyStore::new(
                 principal_inline_policies,
             ),
-            managed_policy_store: InMemoryManagedPolicyStore::new(managed_policies),
+            managed_policy_store: InMemoryManagedPolicyStore::new(
+                managed_policies,
+                managed_policy_attachments,
+            ),
         }
     }
 }
 
 impl Default for InMemoryIamStore {
     fn default() -> Self {
-        Self::new([], [], [], [])
+        Self::new([], [], [], [], [])
     }
 }
 
@@ -159,13 +165,62 @@ impl principal_inline_policy_store::PrincipalInlinePolicyStore for InMemoryIamSt
 }
 
 #[async_trait]
-impl managed_policy_store::ManagedPolicyStore for InMemoryIamStore {
+impl ManagedPolicyStore for InMemoryIamStore {
     async fn insert_managed_policy(
         &self,
         policy: NewManagedPolicy,
     ) -> Result<ManagedPolicy, crate::StoreError> {
         self.managed_policy_store
             .insert_managed_policy(policy)
+            .await
+    }
+
+    async fn get_managed_policy(
+        &self,
+        account_id: &str,
+        policy_name: &str,
+    ) -> Result<Option<ManagedPolicy>, crate::StoreError> {
+        self.managed_policy_store
+            .get_managed_policy(account_id, policy_name)
+            .await
+    }
+
+    async fn attach_policy_to_principal(
+        &self,
+        policy_id: i64,
+        principal_id: i64,
+    ) -> Result<(), crate::StoreError> {
+        self.managed_policy_store
+            .attach_policy_to_principal(policy_id, principal_id)
+            .await
+    }
+
+    async fn detach_policy_from_principal(
+        &self,
+        policy_id: i64,
+        principal_id: i64,
+    ) -> Result<(), crate::StoreError> {
+        self.managed_policy_store
+            .detach_policy_from_principal(policy_id, principal_id)
+            .await
+    }
+
+    async fn delete_managed_policy(
+        &self,
+        account_id: &str,
+        policy_name: &str,
+    ) -> Result<(), crate::StoreError> {
+        self.managed_policy_store
+            .delete_managed_policy(account_id, policy_name)
+            .await
+    }
+
+    async fn get_managed_policies_attached_to_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<ManagedPolicy>, crate::StoreError> {
+        self.managed_policy_store
+            .get_managed_policies_attached_to_principal(principal_id)
             .await
     }
 }

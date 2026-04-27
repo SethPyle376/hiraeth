@@ -190,6 +190,25 @@ pub(super) fn policy_arn(account_id: &str, path: &str, policy_name: &str) -> Str
     )
 }
 
+pub(super) fn parse_policy_arn(arn: &str) -> Result<(String, String), IamError> {
+    let parts: Vec<&str> = arn.split(':').collect();
+    if parts.len() != 6 || parts[0] != "arn" || parts[1] != "aws" || parts[2] != "iam" {
+        return Err(IamError::BadRequest(format!("Invalid ARN format: {arn}")));
+    }
+
+    let account_id = parts[4].to_string();
+    let resource = parts[5];
+    let resource_parts: Vec<&str> = resource.split('/').collect();
+    if resource_parts.len() < 2 || resource_parts[0] != "policy" {
+        return Err(IamError::BadRequest(format!(
+            "Invalid user ARN format: {arn}"
+        )));
+    }
+
+    let policy_name = resource_parts[resource_parts.len() - 1].to_string();
+    Ok((account_id, policy_name))
+}
+
 pub(super) fn normalize_user_path(path: &str) -> String {
     let trimmed = path.trim();
     if trimmed.is_empty() || trimmed == "/" {

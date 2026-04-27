@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            DELETE FROM iam_user_policy_attachments\n            WHERE policy_id = ? AND user_id = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "b65240e571440e586e710d796767209d18c4b856b60a8853459cfdebec0d9217"
+}

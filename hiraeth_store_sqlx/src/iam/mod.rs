@@ -179,6 +179,55 @@ impl ManagedPolicyStore for SqliteIamStore {
             .insert_managed_policy(policy)
             .await
     }
+
+    async fn get_managed_policy(
+        &self,
+        account_id: &str,
+        policy_name: &str,
+    ) -> Result<Option<ManagedPolicy>, hiraeth_store::StoreError> {
+        self.managed_policy_store
+            .get_managed_policy(account_id, policy_name)
+            .await
+    }
+
+    async fn attach_policy_to_principal(
+        &self,
+        policy_id: i64,
+        principal_id: i64,
+    ) -> Result<(), hiraeth_store::StoreError> {
+        self.managed_policy_store
+            .attach_policy_to_principal(policy_id, principal_id)
+            .await
+    }
+
+    async fn detach_policy_from_principal(
+        &self,
+        policy_id: i64,
+        principal_id: i64,
+    ) -> Result<(), hiraeth_store::StoreError> {
+        self.managed_policy_store
+            .detach_policy_from_principal(policy_id, principal_id)
+            .await
+    }
+
+    async fn delete_managed_policy(
+        &self,
+        account_id: &str,
+        policy_name: &str,
+    ) -> Result<(), hiraeth_store::StoreError> {
+        self.managed_policy_store
+            .delete_managed_policy(account_id, policy_name)
+            .await
+    }
+
+    async fn get_managed_policies_attached_to_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<ManagedPolicy>, hiraeth_store::StoreError> {
+        self.managed_policy_store
+            .get_managed_policies_attached_to_principal(principal_id)
+            .await
+    }
 }
 
 #[cfg(test)]

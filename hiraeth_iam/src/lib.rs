@@ -201,7 +201,7 @@ mod tests {
     async fn resolve_identity_hydrates_principal_into_resolved_request() {
         let iam = IamService::new(
             AuthorizationMode::Audit,
-            InMemoryIamStore::new([access_key(42)], [principal(42)], [], []),
+            InMemoryIamStore::new([access_key(42)], [principal(42)], [], [], []),
         );
 
         let resolved = iam
@@ -224,7 +224,7 @@ mod tests {
     async fn resolve_identity_returns_not_found_when_principal_is_missing() {
         let iam = IamService::new(
             AuthorizationMode::Audit,
-            InMemoryIamStore::new([access_key(42)], [], [], []),
+            InMemoryIamStore::new([access_key(42)], [], [], [], []),
         );
 
         let error = iam
@@ -264,7 +264,7 @@ mod tests {
     async fn iam_service_claims_iam_requests() {
         let iam = IamService::new(
             AuthorizationMode::Audit,
-            InMemoryIamStore::new([access_key(1)], [principal(1)], [], []),
+            InMemoryIamStore::new([access_key(1)], [principal(1)], [], [], []),
         );
 
         assert!(iam.can_handle(&iam_request(
@@ -276,7 +276,7 @@ mod tests {
     async fn resolve_authorization_builds_iam_action_from_query_request() {
         let iam = IamService::new(
             AuthorizationMode::Audit,
-            InMemoryIamStore::new([access_key(1)], [principal(1)], [], []),
+            InMemoryIamStore::new([access_key(1)], [principal(1)], [], [], []),
         );
 
         let check = iam
@@ -295,7 +295,7 @@ mod tests {
     async fn handle_request_returns_created_user_xml_for_create_user() {
         let iam = IamService::new(
             AuthorizationMode::Audit,
-            InMemoryIamStore::new([access_key(1)], [principal(1)], [], []),
+            InMemoryIamStore::new([access_key(1)], [principal(1)], [], [], []),
         );
 
         let response = iam

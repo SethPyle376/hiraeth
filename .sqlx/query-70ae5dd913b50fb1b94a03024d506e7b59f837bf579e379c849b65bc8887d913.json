@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                SELECT id, policy_id, account_id, policy_name, policy_path, policy_document, created_at, updated_at\n                FROM iam_managed_policies\n                WHERE account_id = ? AND policy_name = ?\n                ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "policy_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_path",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_document",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 7,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "70ae5dd913b50fb1b94a03024d506e7b59f837bf579e379c849b65bc8887d913"
+}

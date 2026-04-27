@@ -23,22 +23,64 @@ pub struct NewManagedPolicy {
     pub policy_document: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagedPolicyPrincipalAttachment {
+    pub id: i64,
+    pub policy_id: i64,
+    pub principal_id: i64,
+    pub created_at: chrono::NaiveDateTime,
+}
+
 #[async_trait::async_trait]
 pub trait ManagedPolicyStore {
     async fn insert_managed_policy(
         &self,
         policy: NewManagedPolicy,
     ) -> Result<ManagedPolicy, StoreError>;
+
+    async fn get_managed_policy(
+        &self,
+        account_id: &str,
+        policy_name: &str,
+    ) -> Result<Option<ManagedPolicy>, StoreError>;
+
+    async fn attach_policy_to_principal(
+        &self,
+        policy_id: i64,
+        principal_id: i64,
+    ) -> Result<(), StoreError>;
+
+    async fn detach_policy_from_principal(
+        &self,
+        policy_id: i64,
+        principal_id: i64,
+    ) -> Result<(), StoreError>;
+
+    async fn delete_managed_policy(
+        &self,
+        account_id: &str,
+        policy_name: &str,
+    ) -> Result<(), StoreError>;
+
+    async fn get_managed_policies_attached_to_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<ManagedPolicy>, StoreError>;
 }
 
 pub struct InMemoryManagedPolicyStore {
     policies: RwLock<HashMap<i64, ManagedPolicy>>,
+    attachments: RwLock<Vec<ManagedPolicyPrincipalAttachment>>,
 }
 
 impl InMemoryManagedPolicyStore {
-    pub fn new(policies: impl IntoIterator<Item = ManagedPolicy>) -> Self {
+    pub fn new(
+        policies: impl IntoIterator<Item = ManagedPolicy>,
+        attachments: impl IntoIterator<Item = ManagedPolicyPrincipalAttachment>,
+    ) -> Self {
         Self {
             policies: RwLock::new(policies.into_iter().map(|p| (p.id, p)).collect()),
+            attachments: RwLock::new(attachments.into_iter().collect()),
         }
     }
 }
@@ -67,5 +109,105 @@ impl ManagedPolicyStore for InMemoryManagedPolicyStore {
         };
         policies.insert(new_id, new_policy.clone());
         Ok(new_policy)
+    }
+
+    async fn get_managed_policy(
+        &self,
+        account_id: &str,
+        policy_name: &str,
+    ) -> Result<Option<ManagedPolicy>, StoreError> {
+        let policies = self
+            .policies
+            .read()
+            .expect("in-memory managed policy store read lock should not be poisoned");
+        Ok(policies
+            .values()
+            .find(|p| p.account_id == account_id && p.policy_name == policy_name)
+            .cloned())
+    }
+
+    async fn attach_policy_to_principal(
+        &self,
+        policy_id: i64,
+        principal_id: i64,
+    ) -> Result<(), StoreError> {
+        let mut attachments = self
+            .attachments
+            .write()
+            .expect("in-memory managed policy store write lock should not be poisoned");
+        let new_id = attachments
+            .iter()
+            .map(|a| a.id)
+            .max()
+            .map_or(1, |max_id| max_id + 1);
+        let now = chrono::Utc::now().naive_utc();
+        attachments.push(ManagedPolicyPrincipalAttachment {
+            id: new_id,
+            policy_id,
+            principal_id,
+            created_at: now,
+        });
+        Ok(())
+    }
+
+    async fn detach_policy_from_principal(
+        &self,
+        policy_id: i64,
+        principal_id: i64,
+    ) -> Result<(), StoreError> {
+        let mut attachments = self
+            .attachments
+            .write()
+            .expect("in-memory managed policy store write lock should not be poisoned");
+        attachments.retain(|a| !(a.policy_id == policy_id && a.principal_id == principal_id));
+        Ok(())
+    }
+
+    async fn delete_managed_policy(
+        &self,
+        account_id: &str,
+        policy_name: &str,
+    ) -> Result<(), StoreError> {
+        let mut policies = self
+            .policies
+            .write()
+            .expect("in-memory managed policy store write lock should not be poisoned");
+        if let Some(policy) = policies
+            .values()
+            .find(|p| p.account_id == account_id && p.policy_name == policy_name)
+            .cloned()
+        {
+            policies.remove(&policy.id);
+            let mut attachments = self
+                .attachments
+                .write()
+                .expect("in-memory managed policy store write lock should not be poisoned");
+            attachments.retain(|a| a.policy_id != policy.id);
+        }
+        Ok(())
+    }
+
+    async fn get_managed_policies_attached_to_principal(
+        &self,
+        principal_id: i64,
+    ) -> Result<Vec<ManagedPolicy>, StoreError> {
+        let attachments = self
+            .attachments
+            .read()
+            .expect("in-memory managed policy store read lock should not be poisoned");
+        let policies = self
+            .policies
+            .read()
+            .expect("in-memory managed policy store read lock should not be poisoned");
+        let attached_policy_ids: Vec<i64> = attachments
+            .iter()
+            .filter(|a| a.principal_id == principal_id)
+            .map(|a| a.policy_id)
+            .collect();
+        Ok(policies
+            .values()
+            .filter(|p| attached_policy_ids.contains(&p.id))
+            .cloned()
+            .collect())
     }
 }
