@@ -1,7 +1,8 @@
 use chrono::SecondsFormat;
+use hiraeth_core::auth::Policy;
 use hiraeth_core::{AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, xml_response};
 use hiraeth_store::IamStore;
-use hiraeth_store::iam::Principal;
+use hiraeth_store::iam::{ManagedPolicy, Principal};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -22,6 +23,10 @@ pub(super) fn iam_xml_response<T: Serialize>(body: &T) -> Result<ServiceResponse
 
 pub(super) fn new_request_id() -> String {
     Uuid::new_v4().to_string()
+}
+
+pub(super) fn new_id() -> String {
+    format!("AIDA{}", Uuid::new_v4().simple().to_string().to_uppercase())
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -61,6 +66,48 @@ impl From<Principal> for IamUserXml {
                 .created_at
                 .and_utc()
                 .to_rfc3339_opts(SecondsFormat::Secs, true),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) struct IamPolicyXml {
+    pub path: Option<String>,
+    pub policy_name: Option<String>,
+    pub default_version_id: Option<String>,
+    pub policy_id: Option<String>,
+    pub arn: Option<String>,
+    pub attachments_count: Option<i64>,
+    pub create_date: Option<String>,
+    pub update_date: Option<String>,
+}
+
+impl From<ManagedPolicy> for IamPolicyXml {
+    fn from(policy: ManagedPolicy) -> Self {
+        IamPolicyXml {
+            path: policy.policy_path.clone(),
+            policy_name: Some(policy.policy_name.clone()),
+            default_version_id: None,
+            policy_id: Some(policy.policy_id.clone()),
+            arn: Some(policy_arn(
+                &policy.account_id,
+                &policy.policy_path.unwrap_or("".to_string()).as_ref(),
+                &policy.policy_name,
+            )),
+            attachments_count: None,
+            create_date: Some(
+                policy
+                    .created_at
+                    .and_utc()
+                    .to_rfc3339_opts(SecondsFormat::Secs, true),
+            ),
+            update_date: Some(
+                policy
+                    .updated_at
+                    .and_utc()
+                    .to_rfc3339_opts(SecondsFormat::Secs, true),
+            ),
         }
     }
 }
@@ -132,6 +179,13 @@ where
 pub(super) fn user_arn(account_id: &str, path: &str, user_name: &str) -> String {
     format!(
         "arn:aws:iam::{account_id}:user{}{user_name}",
+        normalize_user_path(path)
+    )
+}
+
+pub(super) fn policy_arn(account_id: &str, path: &str, policy_name: &str) -> String {
+    format!(
+        "arn:aws:iam::{account_id}:user{}{policy_name}",
         normalize_user_path(path)
     )
 }

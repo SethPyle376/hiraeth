@@ -1,5 +1,6 @@
 CREATE TABLE iam_managed_policies (
   id INTEGER PRIMARY KEY NOT NULL,
+  policy_id TEXT NOT NULL UNIQUE,
   account_id TEXT NOT NULL,
   policy_name TEXT NOT NULL,
   policy_path TEXT NOT NULL DEFAULT '/',

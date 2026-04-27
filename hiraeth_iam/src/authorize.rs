@@ -145,9 +145,13 @@ mod tests {
     };
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::{AuthorizationResult, Authorizer};
-    use hiraeth_store::iam::{
-        AccessKey, AccessKeyStore, NewPrincipal, Principal, PrincipalInlinePolicy,
-        PrincipalInlinePolicyStore, PrincipalStore,
+    use hiraeth_store::{
+        StoreError,
+        iam::{
+            AccessKey, AccessKeyStore, ManagedPolicy, ManagedPolicyStore, NewManagedPolicy,
+            NewPrincipal, Principal, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
+            PrincipalStore,
+        },
     };
 
     use crate::{AuthorizationMode, IamService};
@@ -275,6 +279,16 @@ mod tests {
             _policy_name: &str,
         ) -> Result<(), hiraeth_store::StoreError> {
             unreachable!("authorization tests do not delete inline policies")
+        }
+    }
+
+    #[async_trait]
+    impl ManagedPolicyStore for TestIamStore {
+        async fn insert_managed_policy(
+            &self,
+            policy: NewManagedPolicy,
+        ) -> Result<ManagedPolicy, StoreError> {
+            todo!()
         }
     }
 

@@ -5,9 +5,13 @@ use hiraeth_core::{
 };
 use hiraeth_store::{IamStore, iam::NewManagedPolicy};
 use serde::{Deserialize, Deserializer, Serialize};
+use uuid::Uuid;
 
 use crate::{
-    actions::util::{iam_xml_response, parse_payload_error},
+    actions::util::{
+        IAM_XMLNS, IamPolicyXml, ResponseMetadata, iam_xml_response, new_id, parse_payload_error,
+        response_metadata,
+    },
     error::IamError,
 };
 
@@ -23,7 +27,18 @@ pub(crate) struct CreatePolicyRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct CreatePolicyResponse {}
+struct CreatePolicyResponse {
+    #[serde(rename = "@xmlns")]
+    xmlns: &'static str,
+    create_policy_result: CreatePolicyResult,
+    response_metadata: ResponseMetadata,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct CreatePolicyResult {
+    policy: IamPolicyXml,
+}
 
 #[async_trait]
 impl<S> TypedAwsAction<S> for CreatePolicyAction
@@ -51,13 +66,20 @@ where
         let created_policy = store
             .insert_managed_policy(NewManagedPolicy {
                 account_id,
+                policy_id: new_id(),
                 policy_name: create_policy_request.policy_name.clone(),
                 policy_path: create_policy_request.path.clone(),
                 policy_document: create_policy_request.policy_document.clone(),
             })
             .await?;
 
-        iam_xml_response(&CreatePolicyResponse {})
+        iam_xml_response(&CreatePolicyResponse {
+            xmlns: IAM_XMLNS,
+            create_policy_result: CreatePolicyResult {
+                policy: created_policy.into(),
+            },
+            response_metadata: response_metadata(Uuid::new_v4().to_string()),
+        })
     }
 
     async fn resolve_authorization_typed(

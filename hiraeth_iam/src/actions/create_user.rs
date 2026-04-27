@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, iam_xml_response,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, iam_xml_response, new_id,
         new_request_id, normalize_user_path, parse_payload_error, response_metadata, user_arn,
     },
     error::IamError,
@@ -75,7 +75,7 @@ where
                 kind: "user".to_string(),
                 name: create_user_request.user_name,
                 path,
-                user_id: new_user_id(),
+                user_id: new_id(),
             })
             .await?;
 
@@ -101,10 +101,6 @@ where
     }
 }
 
-fn new_user_id() -> String {
-    format!("AIDA{}", Uuid::new_v4().simple().to_string().to_uppercase())
-}
-
 fn create_user_response(user: IamUserXml, request_id: impl Into<String>) -> CreateUserResponse {
     CreateUserResponse {
         xmlns: IAM_XMLNS,
@@ -125,7 +121,9 @@ mod tests {
         iam::{AccessKey, InMemoryIamStore, Principal},
     };
 
-    use super::{CreateUserAction, IamUserXml, create_user_response, new_user_id};
+    use crate::actions::util::new_id;
+
+    use super::{CreateUserAction, IamUserXml, create_user_response};
 
     fn store() -> InMemoryIamStore {
         InMemoryIamStore::new(
@@ -284,7 +282,7 @@ mod tests {
 
     #[test]
     fn new_user_id_uses_aida_prefix() {
-        let user_id = new_user_id();
+        let user_id = new_id();
 
         assert!(user_id.starts_with("AIDA"));
         assert_eq!(user_id.len(), 36);

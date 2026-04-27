@@ -5,6 +5,7 @@ use crate::StoreError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagedPolicy {
     pub id: i64,
+    pub policy_id: String,
     pub account_id: String,
     pub policy_name: String,
     pub policy_path: Option<String>,
@@ -15,6 +16,7 @@ pub struct ManagedPolicy {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewManagedPolicy {
+    pub policy_id: String,
     pub account_id: String,
     pub policy_name: String,
     pub policy_path: Option<String>,
@@ -55,6 +57,7 @@ impl ManagedPolicyStore for InMemoryManagedPolicyStore {
         let now = chrono::Utc::now().naive_utc();
         let new_policy = ManagedPolicy {
             id: new_id,
+            policy_id: policy.policy_id,
             account_id: policy.account_id,
             policy_name: policy.policy_name,
             policy_path: policy.policy_path,

@@ -26,10 +26,11 @@ impl ManagedPolicyStore for SqliteManagedPolicyStore {
         sqlx::query_as!(
                 ManagedPolicy,
                 r#"
-                INSERT INTO iam_managed_policies (account_id, policy_name, policy_path, policy_document, created_at, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                RETURNING id, account_id, policy_name, policy_path, policy_document, created_at, updated_at
+                INSERT INTO iam_managed_policies (policy_id, account_id, policy_name, policy_path, policy_document, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id, policy_id, account_id, policy_name, policy_path, policy_document, created_at, updated_at
                 "#,
+                policy.policy_id,
                 policy.account_id,
                 policy.policy_name,
                 policy.policy_path,
