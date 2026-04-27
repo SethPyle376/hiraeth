@@ -79,8 +79,10 @@ where
             })
             .await?;
 
-        let user_xml = created_principal.into();
-        iam_xml_response(&create_user_response(user_xml, new_request_id()))
+        iam_xml_response(&create_user_response(
+            created_principal.into(),
+            new_request_id(),
+        ))
     }
 
     async fn resolve_authorization_typed(
