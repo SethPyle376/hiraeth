@@ -30,85 +30,172 @@
 
   {{ summary_cards_html|safe }}
 
-  <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
-    <section class="card border border-base-300 bg-base-100">
-      <div class="card-body">
-        <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 class="card-title text-xl">Inline policies</h2>
-            <p class="text-sm text-base-content/60">Review policy documents and expand details as needed.</p>
-          </div>
-          <div class="badge badge-outline">{{ principal.inline_policy_count }} total</div>
-        </div>
-
-        <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35"
-                 data-collapse-persist
-                 data-collapse-key="principal-{{ principal.id }}-set-inline-policy"
-                 {% if policy_panel_open %}open{% endif %}>
-          <summary class="collapse-title min-h-0 px-4 py-3">
-            <div class="flex items-center justify-between gap-3 pr-6">
-              <div>
-                <h3 class="font-black">Set inline policy</h3>
-                <p class="text-xs text-base-content/60">Create or replace a policy document by name.</p>
-              </div>
-              <span class="badge badge-outline">Action</span>
+  <div class="grid gap-5 lg:grid-cols-4">
+    <div class="space-y-5 lg:col-span-3">
+      <section class="card border border-base-300 bg-base-100">
+        <div class="card-body">
+          <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 class="card-title text-xl">Inline policies</h2>
+              <p class="text-sm text-base-content/60">Review policy documents and expand details as needed.</p>
             </div>
-          </summary>
-          <div class="collapse-content px-4 pb-4">
-            {% if has_policy_error %}
-            <div class="alert alert-error mb-3 py-2 text-sm">{{ policy_error }}</div>
-            {% endif %}
-            <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/inline-policies" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
-              <label class="block">
-                <span class="mb-1 block text-sm text-base-content/70">Policy name</span>
-                <input class="input input-bordered w-full font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin" required>
-              </label>
-              <label class="block">
-                <span class="mb-1 block text-sm text-base-content/70">Policy document</span>
-                <textarea class="textarea textarea-bordered min-h-48 w-full font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
-              </label>
-              <button class="btn btn-primary w-full" type="submit">Save inline policy</button>
-            </form>
+            <div class="badge badge-outline">{{ principal.inline_policy_count }} total</div>
           </div>
-        </details>
 
-        {% if has_inline_policies %}
-        <div class="space-y-2">
-          {% for policy in inline_policies %}
-          <details class="collapse collapse-arrow rounded border border-base-300 bg-base-200/35"
+          <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35"
                    data-collapse-persist
-                   data-collapse-key="principal-{{ principal.id }}-inline-policy-{{ policy.policy_name }}"
-                   {% if loop.first %}open{% endif %}>
+                   data-collapse-key="principal-{{ principal.id }}-set-inline-policy"
+                   {% if policy_panel_open %}open{% endif %}>
             <summary class="collapse-title min-h-0 px-4 py-3">
-              <div class="min-w-0 pr-6">
-                <div class="truncate font-semibold text-base-content">{{ policy.policy_name }}</div>
-                <div class="mt-1 text-xs text-base-content/50">
-                  Created {{ policy.created_at }} · Updated {{ policy.updated_at }}
+              <div class="flex items-center justify-between gap-3 pr-6">
+                <div>
+                  <h3 class="font-black">Set inline policy</h3>
+                  <p class="text-xs text-base-content/60">Create or replace a policy document by name.</p>
                 </div>
+                <span class="badge badge-outline">Action</span>
               </div>
             </summary>
-            <div class="collapse-content border-t border-base-300 px-4 pb-4 pt-4">
-              <pre class="overflow-x-auto rounded bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
-              <form class="mt-3 text-right" method="post" action="/iam/principals/{{ principal.id }}/inline-policies/delete" onsubmit="return confirm('Delete inline policy {{ policy.policy_name }}?')">
-                <input type="hidden" name="policy_name" value="{{ policy.policy_name }}">
-                <button class="btn btn-error btn-sm" type="submit">Delete policy</button>
+            <div class="collapse-content px-4 pb-4">
+              {% if has_policy_error %}
+              <div class="alert alert-error mb-3 py-2 text-sm">{{ policy_error }}</div>
+              {% endif %}
+              <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/inline-policies" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
+                <label class="block">
+                  <span class="mb-1 block text-sm text-base-content/70">Policy name</span>
+                  <input class="input input-bordered w-full font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin" required>
+                </label>
+                <label class="block">
+                  <span class="mb-1 block text-sm text-base-content/70">Policy document</span>
+                  <textarea class="textarea textarea-bordered min-h-48 w-full font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
+                </label>
+                <button class="btn btn-primary w-full" type="submit">Save inline policy</button>
               </form>
             </div>
           </details>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="card border border-dashed border-base-300 bg-base-100/70">
-          <div class="card-body items-center py-10 text-center">
-            <h2 class="card-title">No inline policies</h2>
-            <p class="max-w-md text-base-content/70">
-              No inline policies are currently assigned to this principal.
-            </p>
+
+          {% if has_inline_policies %}
+          <div class="space-y-2">
+            {% for policy in inline_policies %}
+            <details class="collapse collapse-arrow rounded border border-base-300 bg-base-200/35"
+                     data-collapse-persist
+                     data-collapse-key="principal-{{ principal.id }}-inline-policy-{{ policy.policy_name }}"
+                     {% if loop.first %}open{% endif %}>
+              <summary class="collapse-title min-h-0 px-4 py-3">
+                <div class="min-w-0 pr-6">
+                  <div class="truncate font-semibold text-base-content">{{ policy.policy_name }}</div>
+                  <div class="mt-1 text-xs text-base-content/50">
+                    Created {{ policy.created_at }} · Updated {{ policy.updated_at }}
+                  </div>
+                </div>
+              </summary>
+              <div class="collapse-content border-t border-base-300 px-4 pb-4 pt-4">
+                <pre class="overflow-x-auto rounded bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
+                <form class="mt-3 text-right" method="post" action="/iam/principals/{{ principal.id }}/inline-policies/delete" onsubmit="return confirm('Delete inline policy {{ policy.policy_name }}?')">
+                  <input type="hidden" name="policy_name" value="{{ policy.policy_name }}">
+                  <button class="btn btn-error btn-sm" type="submit">Delete policy</button>
+                </form>
+              </div>
+            </details>
+            {% endfor %}
           </div>
+          {% else %}
+          <div class="card border border-dashed border-base-300 bg-base-100/70">
+            <div class="card-body items-center py-10 text-center">
+              <h2 class="card-title">No inline policies</h2>
+              <p class="max-w-md text-base-content/70">
+                No inline policies are currently assigned to this principal.
+              </p>
+            </div>
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
-      </div>
-    </section>
+      </section>
+
+      <section class="card border border-base-300 bg-base-100">
+        <div class="card-body">
+          <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 class="card-title text-xl">Attached managed policies</h2>
+              <p class="text-sm text-base-content/60">Reusable policy documents attached to this principal.</p>
+            </div>
+            <div class="badge badge-outline">{{ principal.managed_policy_count }} total</div>
+          </div>
+
+          <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35"
+                   data-collapse-persist
+                   data-collapse-key="principal-{{ principal.id }}-attach-managed-policy">
+            <summary class="collapse-title min-h-0 px-4 py-3">
+              <div class="flex items-center justify-between gap-3 pr-6">
+                <div>
+                  <h3 class="font-black">Attach managed policy</h3>
+                  <p class="text-xs text-base-content/60">Attach an existing policy from this account.</p>
+                </div>
+                <span class="badge badge-outline">Action</span>
+              </div>
+            </summary>
+            <div class="collapse-content px-4 pb-4">
+              {% if has_attach_policy_error %}
+              <div class="alert alert-error mb-3 py-2 text-sm">{{ attach_policy_error }}</div>
+              {% endif %}
+              {% if has_policy_attach_options %}
+              <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/managed-policies/attach" onsubmit="return hiraethDisableSubmit(this, 'Attaching...')">
+                <label class="block">
+                  <span class="mb-1 block text-sm text-base-content/70">Managed policy</span>
+                  <select class="select select-bordered w-full font-mono" name="policy_id" required>
+                    {% for policy in policy_attach_options %}
+                    <option value="{{ policy.id }}">{{ policy.label }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <button class="btn btn-primary w-full" type="submit">Attach policy</button>
+              </form>
+              {% else %}
+              <p class="text-sm text-base-content/60">No unattached managed policies are available for this account.</p>
+              {% endif %}
+            </div>
+          </details>
+
+          {% if has_attached_policies %}
+          <div class="space-y-2">
+            {% for policy in attached_policies %}
+            <details class="collapse collapse-arrow rounded border border-base-300 bg-base-200/35"
+                     data-collapse-persist
+                     data-collapse-key="principal-{{ principal.id }}-managed-policy-{{ policy.id }}">
+              <summary class="collapse-title min-h-0 px-4 py-3">
+                <div class="min-w-0 pr-6">
+                  <div class="truncate font-semibold text-base-content">{{ policy.policy_name }}</div>
+                  <div class="mt-1 break-all font-mono text-xs text-base-content/50">{{ policy.arn }}</div>
+                </div>
+              </summary>
+              <div class="collapse-content border-t border-base-300 px-4 pb-4 pt-4">
+                <div class="mb-3 flex flex-wrap gap-2 text-xs text-base-content/60">
+                  <span class="badge badge-outline">{{ policy.policy_path }}</span>
+                  <span class="badge badge-outline">{{ policy.account_id }}</span>
+                  <span class="badge badge-outline">Updated {{ policy.updated_at }}</span>
+                </div>
+                <pre class="overflow-x-auto rounded bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
+                <div class="mt-3 flex flex-wrap justify-end gap-2">
+                  <a class="btn btn-outline btn-sm" href="/iam/policies/{{ policy.id }}">Open policy</a>
+                  <form method="post" action="/iam/principals/{{ principal.id }}/managed-policies/detach" onsubmit="return hiraethConfirmSubmit(this, 'Detach {{ policy.policy_name }} from {{ principal.name }}?', 'Detaching...')">
+                    <input type="hidden" name="policy_id" value="{{ policy.id }}">
+                    <button class="btn btn-error btn-sm" type="submit">Detach</button>
+                  </form>
+                </div>
+              </div>
+            </details>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="card border border-dashed border-base-300 bg-base-100/70">
+            <div class="card-body items-center py-10 text-center">
+              <h2 class="card-title">No managed policies</h2>
+              <p class="max-w-md text-base-content/70">Attach managed policies to reuse permissions across principals.</p>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
 
     <aside class="space-y-3">
       <details class="collapse collapse-arrow border border-base-300 bg-base-100"

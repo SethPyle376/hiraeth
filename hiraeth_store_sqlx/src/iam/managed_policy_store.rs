@@ -63,6 +63,42 @@ impl ManagedPolicyStore for SqliteManagedPolicyStore {
             .map_err(map_sqlx_error)
     }
 
+    async fn list_managed_policies(&self) -> Result<Vec<ManagedPolicy>, StoreError> {
+        sqlx::query_as!(
+            ManagedPolicy,
+            r#"
+            SELECT id, policy_id, account_id, policy_name, policy_path, policy_document, created_at, updated_at
+            FROM iam_managed_policies
+            ORDER BY account_id, policy_path, policy_name
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)
+    }
+
+    async fn update_managed_policy_document(
+        &self,
+        policy_id: i64,
+        policy_document: &str,
+    ) -> Result<ManagedPolicy, StoreError> {
+        sqlx::query_as!(
+            ManagedPolicy,
+            r#"
+            UPDATE iam_managed_policies
+            SET policy_document = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            RETURNING id, policy_id, account_id, policy_name, policy_path, policy_document, created_at, updated_at
+            "#,
+            policy_document,
+            policy_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?
+        .ok_or_else(|| StoreError::NotFound(format!("Managed policy not found: {policy_id}")))
+    }
+
     async fn attach_policy_to_principal(
         &self,
         policy_id: i64,
@@ -267,6 +303,106 @@ mod tests {
             .expect("lookup should succeed");
         assert!(team_a.is_none());
         assert!(team_b.is_some());
+    }
+
+    #[tokio::test]
+    async fn list_managed_policies_orders_by_account_path_and_name() {
+        let (_temp_dir, pool) = test_pool().await;
+        let store = SqliteManagedPolicyStore::new(&pool);
+
+        for (policy_id, account_id, policy_path, policy_name) in [
+            ("AIDAPOLICY00000031", "222222222222", "/team-b/", "write"),
+            ("AIDAPOLICY00000032", "111111111111", "/team-b/", "read"),
+            ("AIDAPOLICY00000033", "111111111111", "/team-a/", "write"),
+            ("AIDAPOLICY00000034", "111111111111", "/team-a/", "read"),
+        ] {
+            store
+                .insert_managed_policy(NewManagedPolicy {
+                    policy_id: policy_id.to_string(),
+                    account_id: account_id.to_string(),
+                    policy_name: policy_name.to_string(),
+                    policy_path: Some(policy_path.to_string()),
+                    policy_document: r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+                })
+                .await
+                .expect("insert should succeed");
+        }
+
+        let policies = store
+            .list_managed_policies()
+            .await
+            .expect("list should succeed");
+        let policy_keys = policies
+            .iter()
+            .map(|policy| {
+                format!(
+                    "{}:{}:{}",
+                    policy.account_id,
+                    policy.policy_path.as_deref().unwrap_or("/"),
+                    policy.policy_name
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            policy_keys,
+            vec![
+                "111111111111:/team-a/:read",
+                "111111111111:/team-a/:write",
+                "111111111111:/team-b/:read",
+                "222222222222:/team-b/:write",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn update_managed_policy_document_updates_only_matching_policy() {
+        let (_temp_dir, pool) = test_pool().await;
+        let store = SqliteManagedPolicyStore::new(&pool);
+
+        let target = store
+            .insert_managed_policy(NewManagedPolicy {
+                policy_id: "AIDAPOLICY00000041".to_string(),
+                account_id: "123456789012".to_string(),
+                policy_name: "orders-readonly".to_string(),
+                policy_path: Some("/".to_string()),
+                policy_document: r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+            })
+            .await
+            .expect("insert should succeed");
+        let untouched = store
+            .insert_managed_policy(NewManagedPolicy {
+                policy_id: "AIDAPOLICY00000042".to_string(),
+                account_id: "123456789012".to_string(),
+                policy_name: "orders-write".to_string(),
+                policy_path: Some("/".to_string()),
+                policy_document: r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+            })
+            .await
+            .expect("insert should succeed");
+
+        let updated = store
+            .update_managed_policy_document(
+                target.id,
+                r#"{"Version":"2012-10-17","Statement":[{"Effect":"Allow"}]}"#,
+            )
+            .await
+            .expect("update should succeed");
+        let untouched = store
+            .get_managed_policy(
+                &untouched.account_id,
+                &untouched.policy_name,
+                untouched.policy_path.as_deref().unwrap_or("/"),
+            )
+            .await
+            .expect("lookup should succeed")
+            .expect("policy should exist");
+
+        assert!(updated.policy_document.contains(r#""Effect":"Allow""#));
+        assert_eq!(
+            untouched.policy_document,
+            r#"{"Version":"2012-10-17","Statement":[]}"#
+        );
     }
 
     #[tokio::test]

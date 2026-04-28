@@ -186,6 +186,20 @@ impl ManagedPolicyStore for InMemoryIamStore {
             .await
     }
 
+    async fn list_managed_policies(&self) -> Result<Vec<ManagedPolicy>, crate::StoreError> {
+        self.managed_policy_store.list_managed_policies().await
+    }
+
+    async fn update_managed_policy_document(
+        &self,
+        policy_id: i64,
+        policy_document: &str,
+    ) -> Result<ManagedPolicy, crate::StoreError> {
+        self.managed_policy_store
+            .update_managed_policy_document(policy_id, policy_document)
+            .await
+    }
+
     async fn attach_policy_to_principal(
         &self,
         policy_id: i64,

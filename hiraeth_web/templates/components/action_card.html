@@ -9,7 +9,7 @@
           {% when None %}
             {% match action.form_action %}
               {% when Some with (form_action) %}
-              <form method="post" action="{{ form_action }}"{% match action.onsubmit %}{% when Some with (onsubmit) %} onsubmit="{{ onsubmit }}"{% when None %}{% endmatch %}>
+              <form class="contents" method="post" action="{{ form_action }}"{% match action.onsubmit %}{% when Some with (onsubmit) %} onsubmit="{{ onsubmit }}"{% when None %}{% endmatch %}>
                 <button class="{{ action.button_class }}" type="submit">{{ action.label }}</button>
               </form>
               {% when None %}

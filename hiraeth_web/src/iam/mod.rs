@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use askama::Template;
 use axum::{
@@ -9,7 +9,10 @@ use axum::{
 };
 use hiraeth_store::{
     StoreError,
-    iam::{AccessKeyStore, NewPrincipal, PrincipalInlinePolicyStore, PrincipalStore},
+    iam::{
+        AccessKeyStore, ManagedPolicy, ManagedPolicyStore, NewManagedPolicy, NewPrincipal,
+        Principal, PrincipalInlinePolicyStore, PrincipalStore,
+    },
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -21,13 +24,14 @@ use crate::{
         PageHeader, StatBlock, StatBlockGrid, SummaryCard, SummaryCardGrid,
     },
     error::WebError,
-    templates::{IamDashboardTemplate, IamPrincipalDetailTemplate},
+    templates::{IamDashboardTemplate, IamManagedPolicyDetailTemplate, IamPrincipalDetailTemplate},
 };
 
 pub(crate) struct IamDashboardStats {
     pub(crate) principal_count: usize,
     pub(crate) access_key_count: usize,
     pub(crate) inline_policy_count: usize,
+    pub(crate) managed_policy_count: usize,
     pub(crate) account_count: usize,
 }
 
@@ -47,6 +51,16 @@ struct IamDashboardParams {
     create_name: Option<String>,
     #[serde(default)]
     create_path: Option<String>,
+    #[serde(default)]
+    policy_error: Option<String>,
+    #[serde(default)]
+    policy_account_id: Option<String>,
+    #[serde(default)]
+    policy_name: Option<String>,
+    #[serde(default)]
+    policy_path: Option<String>,
+    #[serde(default)]
+    policy_document: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -65,6 +79,24 @@ struct IamPrincipalDetailParams {
     policy_document: Option<String>,
     #[serde(default)]
     policy_open: Option<String>,
+    #[serde(default)]
+    attach_policy_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IamManagedPolicyDetailParams {
+    #[serde(default)]
+    feedback: Option<String>,
+    #[serde(default)]
+    feedback_kind: Option<String>,
+    #[serde(default)]
+    policy_error: Option<String>,
+    #[serde(default)]
+    policy_document: Option<String>,
+    #[serde(default)]
+    policy_open: Option<String>,
+    #[serde(default)]
+    attach_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -95,6 +127,31 @@ struct InlinePolicyForm {
     policy_document: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct ManagedPolicyForm {
+    account_id: String,
+    policy_name: String,
+    path: String,
+    #[serde(default)]
+    policy_document: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ManagedPolicyDocumentForm {
+    #[serde(default)]
+    policy_document: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PolicyAttachmentForm {
+    principal_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PrincipalPolicyAttachmentForm {
+    policy_id: i64,
+}
+
 pub(crate) struct IamPrincipalSummary {
     pub(crate) id: i64,
     pub(crate) account_id: String,
@@ -103,6 +160,7 @@ pub(crate) struct IamPrincipalSummary {
     pub(crate) created_at: String,
     pub(crate) access_key_count: usize,
     pub(crate) inline_policy_count: usize,
+    pub(crate) managed_policy_count: usize,
 }
 
 pub(crate) struct IamPrincipalDetailView {
@@ -113,6 +171,7 @@ pub(crate) struct IamPrincipalDetailView {
     pub(crate) created_at: String,
     pub(crate) access_key_count: usize,
     pub(crate) inline_policy_count: usize,
+    pub(crate) managed_policy_count: usize,
 }
 
 pub(crate) struct IamPrincipalAccessKeyView {
@@ -127,6 +186,43 @@ pub(crate) struct IamPrincipalInlinePolicyView {
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     pub(crate) pretty_document: String,
+}
+
+pub(crate) struct IamManagedPolicySummary {
+    pub(crate) id: i64,
+    pub(crate) account_id: String,
+    pub(crate) policy_name: String,
+    pub(crate) policy_path: String,
+    pub(crate) arn: String,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) attachment_count: usize,
+    pub(crate) pretty_document: String,
+}
+
+pub(crate) struct IamManagedPolicyDetailView {
+    pub(crate) id: i64,
+    pub(crate) policy_id: String,
+    pub(crate) account_id: String,
+    pub(crate) policy_name: String,
+    pub(crate) policy_path: String,
+    pub(crate) arn: String,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) attachment_count: usize,
+    pub(crate) pretty_document: String,
+}
+
+pub(crate) struct IamManagedPolicyPrincipalView {
+    pub(crate) id: i64,
+    pub(crate) account_id: String,
+    pub(crate) kind: String,
+    pub(crate) name: String,
+}
+
+pub(crate) struct IamPolicyAttachOption {
+    pub(crate) id: i64,
+    pub(crate) label: String,
 }
 
 struct PageFeedback {
@@ -152,11 +248,28 @@ struct InlinePolicyFields {
     open_panel: bool,
 }
 
+struct ManagedPolicyFields {
+    error: String,
+    has_error: bool,
+    account_id: String,
+    policy_name: String,
+    path: String,
+    policy_document: String,
+    open_panel: bool,
+}
+
 pub fn router() -> Router<WebState> {
     Router::new()
         .route("/", get(dashboard))
         .route("/principals", get(dashboard))
+        .route("/policies", get(dashboard))
         .route("/principals/create", post(create_principal))
+        .route("/policies/create", post(create_managed_policy))
+        .route("/policies/{policy_id}", get(managed_policy_detail))
+        .route("/policies/{policy_id}", post(update_managed_policy))
+        .route("/policies/{policy_id}/delete", post(delete_managed_policy))
+        .route("/policies/{policy_id}/attach", post(attach_policy))
+        .route("/policies/{policy_id}/detach", post(detach_policy))
         .route("/principals/{principal_id}", get(principal_detail))
         .route("/principals/{principal_id}/delete", post(delete_principal))
         .route(
@@ -175,6 +288,14 @@ pub fn router() -> Router<WebState> {
             "/principals/{principal_id}/inline-policies/delete",
             post(delete_inline_policy),
         )
+        .route(
+            "/principals/{principal_id}/managed-policies/attach",
+            post(attach_policy_to_principal),
+        )
+        .route(
+            "/principals/{principal_id}/managed-policies/detach",
+            post(detach_policy_from_principal),
+        )
 }
 
 async fn dashboard(
@@ -182,12 +303,14 @@ async fn dashboard(
     Query(params): Query<IamDashboardParams>,
 ) -> Result<Html<String>, WebError> {
     let principals = load_principal_summaries(&state).await?;
-    let stats = dashboard_stats(&principals);
+    let managed_policies = load_managed_policy_summaries(&state).await?;
+    let stats = dashboard_stats(&principals, &managed_policies);
     let page_header_html = dashboard_page_header()?;
     let stats_html = dashboard_stats_html(&stats)?;
     let empty_state_html = principal_empty_state_html()?;
     let feedback = feedback_from_params(&params.feedback_kind, &params.feedback);
     let create_fields = create_principal_fields(&params);
+    let policy_fields = managed_policy_fields(&params);
     let template = IamDashboardTemplate {
         page_header_html: &page_header_html,
         stats_html: &stats_html,
@@ -204,6 +327,16 @@ async fn dashboard(
         principal_count: principals.len(),
         principals: &principals,
         has_principals: !principals.is_empty(),
+        managed_policy_count: managed_policies.len(),
+        managed_policies: &managed_policies,
+        has_managed_policies: !managed_policies.is_empty(),
+        policy_error: &policy_fields.error,
+        has_policy_error: policy_fields.has_error,
+        policy_account_id: &policy_fields.account_id,
+        policy_name: &policy_fields.policy_name,
+        policy_path: &policy_fields.path,
+        policy_document: &policy_fields.policy_document,
+        policy_panel_open: policy_fields.open_panel,
     };
 
     Ok(Html(template.render()?))
@@ -227,6 +360,11 @@ async fn principal_detail(
         .iam_store
         .get_inline_policies_for_principal(principal_id)
         .await?;
+    let attached_policies = state
+        .iam_store
+        .get_managed_policies_attached_to_principal(principal_id)
+        .await?;
+    let managed_policy_counts = managed_policy_attachment_counts(&state).await?;
 
     let access_key_views = access_keys
         .into_iter()
@@ -247,6 +385,29 @@ async fn principal_detail(
         })
         .collect::<Vec<_>>();
     inline_policy_views.sort_by(|left, right| left.policy_name.cmp(&right.policy_name));
+    let mut attached_policy_views = attached_policies
+        .iter()
+        .map(|policy| managed_policy_summary_view(policy, &managed_policy_counts))
+        .collect::<Vec<_>>();
+    attached_policy_views.sort_by(|left, right| left.policy_name.cmp(&right.policy_name));
+    let attached_policy_ids = attached_policies
+        .iter()
+        .map(|policy| policy.id)
+        .collect::<BTreeSet<_>>();
+    let mut policy_attach_options = state
+        .iam_store
+        .list_managed_policies()
+        .await?
+        .into_iter()
+        .filter(|policy| {
+            policy.account_id == principal.account_id && !attached_policy_ids.contains(&policy.id)
+        })
+        .map(|policy| IamPolicyAttachOption {
+            id: policy.id,
+            label: managed_policy_label(&policy),
+        })
+        .collect::<Vec<_>>();
+    policy_attach_options.sort_by(|left, right| left.label.cmp(&right.label));
 
     let principal_view = IamPrincipalDetailView {
         id: principal.id,
@@ -256,6 +417,7 @@ async fn principal_detail(
         created_at: format_timestamp(principal.created_at),
         access_key_count: access_key_views.len(),
         inline_policy_count: inline_policy_views.len(),
+        managed_policy_count: attached_policy_views.len(),
     };
     let action_card_html = principal_action_card_html(principal_id)?;
     let summary_cards_html = principal_summary_cards_html(&principal_view)?;
@@ -263,6 +425,7 @@ async fn principal_detail(
     let feedback = feedback_from_params(&params.feedback_kind, &params.feedback);
     let policy_fields = inline_policy_fields(&params);
     let access_key_error = params.access_key_error.clone().unwrap_or_default();
+    let attach_policy_error = params.attach_policy_error.clone().unwrap_or_default();
 
     let template = IamPrincipalDetailTemplate {
         action_card_html: &action_card_html,
@@ -275,14 +438,20 @@ async fn principal_detail(
         has_access_key_error: !access_key_error.is_empty(),
         policy_error: &policy_fields.error,
         has_policy_error: policy_fields.has_error,
+        attach_policy_error: &attach_policy_error,
+        has_attach_policy_error: !attach_policy_error.is_empty(),
         policy_name: &policy_fields.policy_name,
         policy_document: &policy_fields.policy_document,
         policy_panel_open: policy_fields.open_panel,
         principal: &principal_view,
         access_keys: &access_key_views,
         inline_policies: &inline_policy_views,
+        attached_policies: &attached_policy_views,
+        policy_attach_options: &policy_attach_options,
         has_access_keys: !access_key_views.is_empty(),
         has_inline_policies: !inline_policy_views.is_empty(),
+        has_attached_policies: !attached_policy_views.is_empty(),
+        has_policy_attach_options: !policy_attach_options.is_empty(),
     };
 
     Ok(Html(template.render()?))
@@ -471,6 +640,266 @@ async fn delete_inline_policy(
     ))
 }
 
+async fn create_managed_policy(
+    State(state): State<WebState>,
+    Form(form): Form<ManagedPolicyForm>,
+) -> Result<Redirect, WebError> {
+    let account_id = form.account_id.trim();
+    let policy_name = form.policy_name.trim();
+    let policy_path = normalize_path(&form.path);
+
+    if let Err(error) = validate_required("Account ID", account_id)
+        .and_then(|_| validate_required("Policy name", policy_name))
+        .and_then(|_| validate_required("Policy document", &form.policy_document))
+    {
+        return Ok(managed_policy_error_redirect(&form, error.message()));
+    }
+
+    let policy_document = match normalize_policy_document(&form.policy_document) {
+        Ok(policy_document) => policy_document,
+        Err(error) => return Ok(managed_policy_error_redirect(&form, error.message())),
+    };
+
+    match state
+        .iam_store
+        .insert_managed_policy(NewManagedPolicy {
+            policy_id: new_managed_policy_id(),
+            account_id: account_id.to_string(),
+            policy_name: policy_name.to_string(),
+            policy_path: Some(policy_path),
+            policy_document,
+        })
+        .await
+    {
+        Ok(policy) => Ok(feedback_redirect(
+            managed_policy_detail_path(policy.id),
+            "success",
+            &format!("Created managed policy {policy_name}."),
+        )),
+        Err(StoreError::Conflict(message)) => Ok(managed_policy_error_redirect(&form, &message)),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn managed_policy_detail(
+    State(state): State<WebState>,
+    Path(policy_id): Path<i64>,
+    Query(params): Query<IamManagedPolicyDetailParams>,
+) -> Result<Html<String>, WebError> {
+    let policy = load_managed_policy_by_id(&state, policy_id).await?;
+    let principals = state.iam_store.list_principals().await?;
+    let attached_principals = load_attached_principals_for_policy(&state, &principals, policy_id)
+        .await?
+        .into_iter()
+        .map(principal_view)
+        .collect::<Vec<_>>();
+    let attached_principal_ids = attached_principals
+        .iter()
+        .map(|principal| principal.id)
+        .collect::<BTreeSet<_>>();
+    let attach_options = principals
+        .into_iter()
+        .filter(|principal| {
+            principal.account_id == policy.account_id
+                && !attached_principal_ids.contains(&principal.id)
+        })
+        .map(principal_view)
+        .collect::<Vec<_>>();
+
+    let policy_view = managed_policy_detail_view(&policy, attached_principals.len());
+    let action_card_html = managed_policy_action_card_html(policy_id)?;
+    let metadata_list_html = managed_policy_metadata_list_html(&policy_view)?;
+    let feedback = feedback_from_params(&params.feedback_kind, &params.feedback);
+    let policy_document_error = params.policy_error.clone().unwrap_or_default();
+    let attach_error = params.attach_error.clone().unwrap_or_default();
+    let policy_error = if policy_document_error.is_empty() {
+        attach_error
+    } else {
+        policy_document_error
+    };
+    let policy_document = params
+        .policy_document
+        .clone()
+        .unwrap_or_else(|| policy_view.pretty_document.clone());
+    let policy_panel_open = !policy_error.is_empty() || params.policy_open.as_deref() == Some("1");
+
+    let template = IamManagedPolicyDetailTemplate {
+        action_card_html: &action_card_html,
+        metadata_list_html: &metadata_list_html,
+        feedback_message: &feedback.message,
+        feedback_class: feedback.alert_class,
+        has_feedback: feedback.has_message,
+        policy_error: &policy_error,
+        has_policy_error: !policy_error.is_empty(),
+        policy_document: &policy_document,
+        policy_panel_open,
+        policy: &policy_view,
+        attached_principals: &attached_principals,
+        attach_options: &attach_options,
+        has_attached_principals: !attached_principals.is_empty(),
+        has_attach_options: !attach_options.is_empty(),
+    };
+
+    Ok(Html(template.render()?))
+}
+
+async fn update_managed_policy(
+    State(state): State<WebState>,
+    Path(policy_id): Path<i64>,
+    Form(form): Form<ManagedPolicyDocumentForm>,
+) -> Result<Redirect, WebError> {
+    load_managed_policy_by_id(&state, policy_id).await?;
+
+    if let Err(error) = validate_required("Policy document", &form.policy_document) {
+        return Ok(managed_policy_document_error_redirect(
+            policy_id,
+            &form.policy_document,
+            error.message(),
+        ));
+    }
+
+    let policy_document = match normalize_policy_document(&form.policy_document) {
+        Ok(policy_document) => policy_document,
+        Err(error) => {
+            return Ok(managed_policy_document_error_redirect(
+                policy_id,
+                &form.policy_document,
+                error.message(),
+            ));
+        }
+    };
+
+    state
+        .iam_store
+        .update_managed_policy_document(policy_id, &policy_document)
+        .await?;
+
+    Ok(feedback_redirect(
+        managed_policy_detail_path(policy_id),
+        "success",
+        "Updated managed policy document.",
+    ))
+}
+
+async fn delete_managed_policy(
+    State(state): State<WebState>,
+    Path(policy_id): Path<i64>,
+) -> Result<Redirect, WebError> {
+    let policy = load_managed_policy_by_id(&state, policy_id).await?;
+    let policy_path = policy.policy_path.as_deref().unwrap_or("/");
+    state
+        .iam_store
+        .delete_managed_policy(&policy.account_id, &policy.policy_name, policy_path)
+        .await?;
+
+    Ok(feedback_redirect(
+        "/iam".to_string(),
+        "success",
+        &format!("Deleted managed policy {}.", policy.policy_name),
+    ))
+}
+
+async fn attach_policy(
+    State(state): State<WebState>,
+    Path(policy_id): Path<i64>,
+    Form(form): Form<PolicyAttachmentForm>,
+) -> Result<Redirect, WebError> {
+    let policy = load_managed_policy_by_id(&state, policy_id).await?;
+    let principal = load_principal(&state, form.principal_id).await?;
+    if principal.account_id != policy.account_id {
+        return Ok(managed_policy_attach_error_redirect(
+            policy_id,
+            "Principal and managed policy must be in the same account",
+        ));
+    }
+
+    match state
+        .iam_store
+        .attach_policy_to_principal(policy_id, form.principal_id)
+        .await
+    {
+        Ok(_) => Ok(feedback_redirect(
+            managed_policy_detail_path(policy_id),
+            "success",
+            "Attached managed policy.",
+        )),
+        Err(StoreError::Conflict(message)) => {
+            Ok(managed_policy_attach_error_redirect(policy_id, &message))
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn detach_policy(
+    State(state): State<WebState>,
+    Path(policy_id): Path<i64>,
+    Form(form): Form<PolicyAttachmentForm>,
+) -> Result<Redirect, WebError> {
+    load_managed_policy_by_id(&state, policy_id).await?;
+    load_principal(&state, form.principal_id).await?;
+    state
+        .iam_store
+        .detach_policy_from_principal(policy_id, form.principal_id)
+        .await?;
+
+    Ok(feedback_redirect(
+        managed_policy_detail_path(policy_id),
+        "success",
+        "Detached managed policy.",
+    ))
+}
+
+async fn attach_policy_to_principal(
+    State(state): State<WebState>,
+    Path(principal_id): Path<i64>,
+    Form(form): Form<PrincipalPolicyAttachmentForm>,
+) -> Result<Redirect, WebError> {
+    let principal = load_principal(&state, principal_id).await?;
+    let policy = load_managed_policy_by_id(&state, form.policy_id).await?;
+    if principal.account_id != policy.account_id {
+        return Ok(principal_policy_attach_error_redirect(
+            principal_id,
+            "Principal and managed policy must be in the same account",
+        ));
+    }
+
+    match state
+        .iam_store
+        .attach_policy_to_principal(form.policy_id, principal_id)
+        .await
+    {
+        Ok(_) => Ok(feedback_redirect(
+            principal_detail_path(principal_id),
+            "success",
+            "Attached managed policy.",
+        )),
+        Err(StoreError::Conflict(message)) => Ok(principal_policy_attach_error_redirect(
+            principal_id,
+            &message,
+        )),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn detach_policy_from_principal(
+    State(state): State<WebState>,
+    Path(principal_id): Path<i64>,
+    Form(form): Form<PrincipalPolicyAttachmentForm>,
+) -> Result<Redirect, WebError> {
+    load_principal(&state, principal_id).await?;
+    load_managed_policy_by_id(&state, form.policy_id).await?;
+    state
+        .iam_store
+        .detach_policy_from_principal(form.policy_id, principal_id)
+        .await?;
+
+    Ok(feedback_redirect(
+        principal_detail_path(principal_id),
+        "success",
+        "Detached managed policy.",
+    ))
+}
+
 async fn load_principal_summaries(state: &WebState) -> Result<Vec<IamPrincipalSummary>, WebError> {
     let principals = state.iam_store.list_principals().await?;
     let mut summaries = Vec::with_capacity(principals.len());
@@ -484,6 +913,10 @@ async fn load_principal_summaries(state: &WebState) -> Result<Vec<IamPrincipalSu
             .iam_store
             .get_inline_policies_for_principal(principal.id)
             .await?;
+        let managed_policies = state
+            .iam_store
+            .get_managed_policies_attached_to_principal(principal.id)
+            .await?;
 
         summaries.push(IamPrincipalSummary {
             id: principal.id,
@@ -493,13 +926,54 @@ async fn load_principal_summaries(state: &WebState) -> Result<Vec<IamPrincipalSu
             created_at: format_timestamp(principal.created_at),
             access_key_count: access_keys.len(),
             inline_policy_count: inline_policies.len(),
+            managed_policy_count: managed_policies.len(),
         });
     }
 
     Ok(summaries)
 }
 
-fn dashboard_stats(principals: &[IamPrincipalSummary]) -> IamDashboardStats {
+async fn load_managed_policy_summaries(
+    state: &WebState,
+) -> Result<Vec<IamManagedPolicySummary>, WebError> {
+    let attachment_counts = managed_policy_attachment_counts(state).await?;
+    let mut policies = state
+        .iam_store
+        .list_managed_policies()
+        .await?
+        .into_iter()
+        .map(|policy| managed_policy_summary_view(&policy, &attachment_counts))
+        .collect::<Vec<_>>();
+    policies.sort_by(|left, right| {
+        left.account_id
+            .cmp(&right.account_id)
+            .then_with(|| left.policy_path.cmp(&right.policy_path))
+            .then_with(|| left.policy_name.cmp(&right.policy_name))
+    });
+    Ok(policies)
+}
+
+async fn managed_policy_attachment_counts(
+    state: &WebState,
+) -> Result<BTreeMap<i64, usize>, WebError> {
+    let principals = state.iam_store.list_principals().await?;
+    let mut counts = BTreeMap::new();
+    for principal in principals {
+        for policy in state
+            .iam_store
+            .get_managed_policies_attached_to_principal(principal.id)
+            .await?
+        {
+            *counts.entry(policy.id).or_insert(0) += 1;
+        }
+    }
+    Ok(counts)
+}
+
+fn dashboard_stats(
+    principals: &[IamPrincipalSummary],
+    managed_policies: &[IamManagedPolicySummary],
+) -> IamDashboardStats {
     IamDashboardStats {
         principal_count: principals.len(),
         access_key_count: principals
@@ -510,12 +984,51 @@ fn dashboard_stats(principals: &[IamPrincipalSummary]) -> IamDashboardStats {
             .iter()
             .map(|principal| principal.inline_policy_count)
             .sum(),
+        managed_policy_count: managed_policies.len(),
         account_count: principals
             .iter()
             .map(|principal| principal.account_id.as_str())
+            .chain(
+                managed_policies
+                    .iter()
+                    .map(|policy| policy.account_id.as_str()),
+            )
             .collect::<BTreeSet<_>>()
             .len(),
     }
+}
+
+async fn load_managed_policy_by_id(
+    state: &WebState,
+    policy_id: i64,
+) -> Result<ManagedPolicy, WebError> {
+    state
+        .iam_store
+        .list_managed_policies()
+        .await?
+        .into_iter()
+        .find(|policy| policy.id == policy_id)
+        .ok_or_else(|| {
+            StoreError::NotFound(format!("Managed policy not found: {policy_id}")).into()
+        })
+}
+
+async fn load_attached_principals_for_policy(
+    state: &WebState,
+    principals: &[Principal],
+    policy_id: i64,
+) -> Result<Vec<Principal>, WebError> {
+    let mut attached_principals = Vec::new();
+    for principal in principals {
+        let policies = state
+            .iam_store
+            .get_managed_policies_attached_to_principal(principal.id)
+            .await?;
+        if policies.iter().any(|policy| policy.id == policy_id) {
+            attached_principals.push(principal.clone());
+        }
+    }
+    Ok(attached_principals)
 }
 
 async fn load_principal(
@@ -587,6 +1100,32 @@ fn inline_policy_fields(params: &IamPrincipalDetailParams) -> InlinePolicyFields
     }
 }
 
+fn managed_policy_fields(params: &IamDashboardParams) -> ManagedPolicyFields {
+    let error = params.policy_error.clone().unwrap_or_default();
+    let open_panel = !error.is_empty();
+
+    ManagedPolicyFields {
+        has_error: !error.is_empty(),
+        error,
+        account_id: params
+            .policy_account_id
+            .clone()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "000000000000".to_string()),
+        policy_name: params.policy_name.clone().unwrap_or_default(),
+        path: params
+            .policy_path
+            .clone()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "/".to_string()),
+        policy_document: params
+            .policy_document
+            .clone()
+            .unwrap_or_else(default_policy_document),
+        open_panel,
+    }
+}
+
 fn create_principal_error_redirect(form: &CreatePrincipalForm, message: &str) -> Redirect {
     Redirect::to(&append_query_params(
         "/iam".to_string(),
@@ -622,8 +1161,56 @@ fn inline_policy_error_redirect(
     ))
 }
 
+fn managed_policy_error_redirect(form: &ManagedPolicyForm, message: &str) -> Redirect {
+    Redirect::to(&append_query_params(
+        "/iam".to_string(),
+        &[
+            ("policy_error", message),
+            ("policy_account_id", form.account_id.trim()),
+            ("policy_name", form.policy_name.trim()),
+            ("policy_path", form.path.trim()),
+            ("policy_document", form.policy_document.as_str()),
+        ],
+    ))
+}
+
+fn managed_policy_document_error_redirect(
+    policy_id: i64,
+    policy_document: &str,
+    message: &str,
+) -> Redirect {
+    Redirect::to(&append_query_params(
+        append_query_params(
+            managed_policy_detail_path(policy_id),
+            &[("policy_open", "1")],
+        ),
+        &[
+            ("policy_error", message),
+            ("policy_document", policy_document),
+        ],
+    ))
+}
+
+fn managed_policy_attach_error_redirect(policy_id: i64, message: &str) -> Redirect {
+    Redirect::to(&append_query_params(
+        managed_policy_detail_path(policy_id),
+        &[("attach_error", message)],
+    ))
+}
+
+fn principal_policy_attach_error_redirect(principal_id: i64, message: &str) -> Redirect {
+    Redirect::to(&append_query_params(
+        principal_detail_path(principal_id),
+        &[("attach_policy_error", message)],
+    ))
+}
+
 fn principal_detail_path(principal_id: i64) -> String {
     format!("/iam/principals/{principal_id}")
+}
+
+fn managed_policy_detail_path(policy_id: i64) -> String {
+    format!("/iam/policies/{policy_id}")
 }
 
 fn principal_policy_path(principal_id: i64) -> String {
@@ -713,6 +1300,11 @@ fn new_access_key_id() -> String {
     format!("AKIA{}", &random[..16])
 }
 
+fn new_managed_policy_id() -> String {
+    let random = Uuid::new_v4().simple().to_string().to_uppercase();
+    format!("ANPA{}", &random[..16])
+}
+
 fn new_secret_access_key() -> String {
     let random = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
     random[..40].to_string()
@@ -733,11 +1325,10 @@ fn dashboard_page_header() -> Result<String, askama::Error> {
         eyebrow: "Service Dashboard".to_string(),
         title: "IAM".to_string(),
         description: "Review principals, access keys, and inline identity policies for the current environment.".to_string(),
-        actions: vec![HeaderAction::link(
-            "Add principal",
-            "#add-principal",
-            "btn btn-primary",
-        )],
+        actions: vec![
+            HeaderAction::link("Add principal", "#add-principal", "btn btn-primary"),
+            HeaderAction::link("Add policy", "#add-managed-policy", "btn btn-outline"),
+        ],
     }
     .render()
 }
@@ -759,10 +1350,10 @@ fn dashboard_stats_html(stats: &IamDashboardStats) -> Result<String, askama::Err
                 description: "credentials assigned to principals".to_string(),
             },
             StatBlock {
-                title: "Inline policies".to_string(),
-                value: stats.inline_policy_count.to_string(),
+                title: "Policies".to_string(),
+                value: (stats.inline_policy_count + stats.managed_policy_count).to_string(),
                 value_class: "text-accent",
-                description: "attached policy documents".to_string(),
+                description: "inline and managed documents".to_string(),
             },
             StatBlock {
                 title: "Accounts".to_string(),
@@ -779,7 +1370,7 @@ fn principal_summary_cards_html(
     principal: &IamPrincipalDetailView,
 ) -> Result<String, askama::Error> {
     SummaryCardGrid {
-        grid_class: "mb-6 grid gap-3 md:grid-cols-3",
+        grid_class: "mb-6 grid gap-3 md:grid-cols-4",
         cards: vec![
             SummaryCard {
                 title: "Access keys".to_string(),
@@ -794,11 +1385,39 @@ fn principal_summary_cards_html(
                 description: "policy documents".to_string(),
             },
             SummaryCard {
+                title: "Managed policies".to_string(),
+                value: principal.managed_policy_count.to_string(),
+                value_class: "text-primary",
+                description: "attached reusable policies".to_string(),
+            },
+            SummaryCard {
                 title: "Account scope".to_string(),
                 value: principal.account_id.clone(),
                 value_class: "text-primary text-xl font-mono",
                 description: format!("{} principal", principal.kind),
             },
+        ],
+    }
+    .render()
+}
+
+fn managed_policy_action_card_html(policy_id: i64) -> Result<String, askama::Error> {
+    ActionCard {
+        title: "Policy actions".to_string(),
+        grid_class: "grid-cols-2",
+        actions: vec![
+            ActionCardAction::link("Back", "/iam", "btn btn-ghost w-full"),
+            ActionCardAction::link(
+                "Reload",
+                managed_policy_detail_path(policy_id),
+                "btn btn-outline w-full",
+            ),
+            ActionCardAction::post(
+                "Delete",
+                format!("/iam/policies/{policy_id}/delete"),
+                "btn btn-error col-span-2 w-full",
+                Some("return hiraethConfirmSubmit(this, 'Delete this managed policy?', 'Deleting...')".to_string()),
+            ),
         ],
     }
     .render()
@@ -861,6 +1480,113 @@ fn principal_empty_state_html() -> Result<String, askama::Error> {
         message: "Once IAM identities are seeded or created, they will show up here.".to_string(),
     }
     .render()
+}
+
+fn managed_policy_summary_view(
+    policy: &ManagedPolicy,
+    attachment_counts: &BTreeMap<i64, usize>,
+) -> IamManagedPolicySummary {
+    IamManagedPolicySummary {
+        id: policy.id,
+        account_id: policy.account_id.clone(),
+        policy_name: policy.policy_name.clone(),
+        policy_path: policy.policy_path.as_deref().unwrap_or("/").to_string(),
+        arn: managed_policy_arn(policy),
+        created_at: format_timestamp(policy.created_at),
+        updated_at: format_timestamp(policy.updated_at),
+        attachment_count: attachment_counts.get(&policy.id).copied().unwrap_or(0),
+        pretty_document: prettify_json(&policy.policy_document),
+    }
+}
+
+fn managed_policy_detail_view(
+    policy: &ManagedPolicy,
+    attachment_count: usize,
+) -> IamManagedPolicyDetailView {
+    IamManagedPolicyDetailView {
+        id: policy.id,
+        policy_id: policy.policy_id.clone(),
+        account_id: policy.account_id.clone(),
+        policy_name: policy.policy_name.clone(),
+        policy_path: policy.policy_path.as_deref().unwrap_or("/").to_string(),
+        arn: managed_policy_arn(policy),
+        created_at: format_timestamp(policy.created_at),
+        updated_at: format_timestamp(policy.updated_at),
+        attachment_count,
+        pretty_document: prettify_json(&policy.policy_document),
+    }
+}
+
+fn principal_view(principal: Principal) -> IamManagedPolicyPrincipalView {
+    IamManagedPolicyPrincipalView {
+        id: principal.id,
+        account_id: principal.account_id,
+        kind: principal.kind,
+        name: principal.name,
+    }
+}
+
+fn managed_policy_metadata_list_html(
+    policy: &IamManagedPolicyDetailView,
+) -> Result<String, askama::Error> {
+    MetadataList {
+        entries: vec![
+            MetadataEntry {
+                label: "Name".to_string(),
+                value: policy.policy_name.clone(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Path".to_string(),
+                value: policy.policy_path.clone(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Policy ID".to_string(),
+                value: policy.policy_id.clone(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "ARN".to_string(),
+                value: policy.arn.clone(),
+                value_class: "font-mono break-all",
+            },
+            MetadataEntry {
+                label: "Created".to_string(),
+                value: policy.created_at.clone(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Updated".to_string(),
+                value: policy.updated_at.clone(),
+                value_class: "font-mono",
+            },
+        ],
+    }
+    .render()
+}
+
+fn managed_policy_arn(policy: &ManagedPolicy) -> String {
+    let path = policy.policy_path.as_deref().unwrap_or("/");
+    format!(
+        "arn:aws:iam::{}:policy/{}{}",
+        policy.account_id,
+        path.trim_matches('/'),
+        if path == "/" {
+            policy.policy_name.clone()
+        } else {
+            format!("/{}", policy.policy_name)
+        }
+    )
+}
+
+fn managed_policy_label(policy: &ManagedPolicy) -> String {
+    format!(
+        "{}{} ({})",
+        policy.policy_path.as_deref().unwrap_or("/"),
+        policy.policy_name,
+        policy.account_id
+    )
 }
 
 fn format_timestamp(value: chrono::NaiveDateTime) -> String {

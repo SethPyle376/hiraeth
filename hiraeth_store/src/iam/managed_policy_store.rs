@@ -45,6 +45,14 @@ pub trait ManagedPolicyStore {
         policy_path: &str,
     ) -> Result<Option<ManagedPolicy>, StoreError>;
 
+    async fn list_managed_policies(&self) -> Result<Vec<ManagedPolicy>, StoreError>;
+
+    async fn update_managed_policy_document(
+        &self,
+        policy_id: i64,
+        policy_document: &str,
+    ) -> Result<ManagedPolicy, StoreError>;
+
     async fn attach_policy_to_principal(
         &self,
         policy_id: i64,
@@ -131,6 +139,43 @@ impl ManagedPolicyStore for InMemoryManagedPolicyStore {
                     && p.policy_path.as_deref().unwrap_or("/") == policy_path
             })
             .cloned())
+    }
+
+    async fn list_managed_policies(&self) -> Result<Vec<ManagedPolicy>, StoreError> {
+        let policies = self
+            .policies
+            .read()
+            .expect("in-memory managed policy store read lock should not be poisoned");
+        let mut policies = policies.values().cloned().collect::<Vec<_>>();
+        policies.sort_by(|left, right| {
+            left.account_id
+                .cmp(&right.account_id)
+                .then_with(|| {
+                    left.policy_path
+                        .as_deref()
+                        .unwrap_or("/")
+                        .cmp(right.policy_path.as_deref().unwrap_or("/"))
+                })
+                .then_with(|| left.policy_name.cmp(&right.policy_name))
+        });
+        Ok(policies)
+    }
+
+    async fn update_managed_policy_document(
+        &self,
+        policy_id: i64,
+        policy_document: &str,
+    ) -> Result<ManagedPolicy, StoreError> {
+        let mut policies = self
+            .policies
+            .write()
+            .expect("in-memory managed policy store write lock should not be poisoned");
+        let policy = policies.get_mut(&policy_id).ok_or_else(|| {
+            StoreError::NotFound(format!("Managed policy not found: {policy_id}"))
+        })?;
+        policy.policy_document = policy_document.to_string();
+        policy.updated_at = chrono::Utc::now().naive_utc();
+        Ok(policy.clone())
     }
 
     async fn attach_policy_to_principal(

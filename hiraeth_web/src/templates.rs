@@ -1,8 +1,9 @@
 use askama::Template;
 
 use crate::iam::{
-    IamPrincipalAccessKeyView, IamPrincipalDetailView, IamPrincipalInlinePolicyView,
-    IamPrincipalSummary,
+    IamManagedPolicyDetailView, IamManagedPolicyPrincipalView, IamManagedPolicySummary,
+    IamPolicyAttachOption, IamPrincipalAccessKeyView, IamPrincipalDetailView,
+    IamPrincipalInlinePolicyView, IamPrincipalSummary,
 };
 use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
 
@@ -36,6 +37,16 @@ pub(crate) struct IamDashboardTemplate<'a> {
     pub(crate) principal_count: usize,
     pub(crate) principals: &'a [IamPrincipalSummary],
     pub(crate) has_principals: bool,
+    pub(crate) managed_policy_count: usize,
+    pub(crate) managed_policies: &'a [IamManagedPolicySummary],
+    pub(crate) has_managed_policies: bool,
+    pub(crate) policy_error: &'a str,
+    pub(crate) has_policy_error: bool,
+    pub(crate) policy_account_id: &'a str,
+    pub(crate) policy_name: &'a str,
+    pub(crate) policy_path: &'a str,
+    pub(crate) policy_document: &'a str,
+    pub(crate) policy_panel_open: bool,
 }
 
 #[derive(Template)]
@@ -51,14 +62,39 @@ pub(crate) struct IamPrincipalDetailTemplate<'a> {
     pub(crate) has_access_key_error: bool,
     pub(crate) policy_error: &'a str,
     pub(crate) has_policy_error: bool,
+    pub(crate) attach_policy_error: &'a str,
+    pub(crate) has_attach_policy_error: bool,
     pub(crate) policy_name: &'a str,
     pub(crate) policy_document: &'a str,
     pub(crate) policy_panel_open: bool,
     pub(crate) principal: &'a IamPrincipalDetailView,
     pub(crate) access_keys: &'a [IamPrincipalAccessKeyView],
     pub(crate) inline_policies: &'a [IamPrincipalInlinePolicyView],
+    pub(crate) attached_policies: &'a [IamManagedPolicySummary],
+    pub(crate) policy_attach_options: &'a [IamPolicyAttachOption],
     pub(crate) has_access_keys: bool,
     pub(crate) has_inline_policies: bool,
+    pub(crate) has_attached_policies: bool,
+    pub(crate) has_policy_attach_options: bool,
+}
+
+#[derive(Template)]
+#[template(path = "iam/managed_policy_detail.html")]
+pub(crate) struct IamManagedPolicyDetailTemplate<'a> {
+    pub(crate) action_card_html: &'a str,
+    pub(crate) metadata_list_html: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) policy_error: &'a str,
+    pub(crate) has_policy_error: bool,
+    pub(crate) policy_document: &'a str,
+    pub(crate) policy_panel_open: bool,
+    pub(crate) policy: &'a IamManagedPolicyDetailView,
+    pub(crate) attached_principals: &'a [IamManagedPolicyPrincipalView],
+    pub(crate) attach_options: &'a [IamManagedPolicyPrincipalView],
+    pub(crate) has_attached_principals: bool,
+    pub(crate) has_attach_options: bool,
 }
 
 #[derive(Template)]
@@ -171,7 +207,7 @@ mod tests {
 
     use super::{IamDashboardTemplate, QueueListTemplate};
     use crate::components::EmptyState;
-    use crate::iam::IamPrincipalSummary;
+    use crate::iam::{IamManagedPolicySummary, IamPrincipalSummary};
     use crate::sqs::QueueSummary;
 
     #[test]
@@ -215,7 +251,9 @@ mod tests {
                 .to_string(),
             access_key_count: 1,
             inline_policy_count: 2,
+            managed_policy_count: 1,
         }];
+        let managed_policies = Vec::<IamManagedPolicySummary>::new();
         let empty_state = EmptyState {
             title: "No principals".to_string(),
             message: "Seed some IAM data.".to_string(),
@@ -239,6 +277,16 @@ mod tests {
             principal_count: principals.len(),
             principals: &principals,
             has_principals: true,
+            managed_policy_count: managed_policies.len(),
+            managed_policies: &managed_policies,
+            has_managed_policies: false,
+            policy_error: "",
+            has_policy_error: false,
+            policy_account_id: "000000000000",
+            policy_name: "",
+            policy_path: "/",
+            policy_document: "{}",
+            policy_panel_open: false,
         }
         .render()
         .expect("iam dashboard template should render");
