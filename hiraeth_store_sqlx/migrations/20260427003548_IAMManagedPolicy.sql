@@ -7,9 +7,8 @@ CREATE TABLE iam_managed_policies (
   policy_document TEXT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(account_id, policy_name)
+  UNIQUE(account_id, policy_name, policy_path)
 );
 
 CREATE INDEX iam_managed_policies_id_idx
   ON iam_managed_policies(id);
-

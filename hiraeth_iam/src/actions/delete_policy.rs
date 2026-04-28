@@ -53,8 +53,18 @@ where
         store: &S,
     ) -> Result<ServiceResponse, IamError> {
         let policy_arn = util::parse_policy_arn(&delete_request.policy_arn)?;
+        if policy_arn.account_id != request.auth_context.principal.account_id {
+            return Err(IamError::NoSuchEntity(format!(
+                "Policy {} does not exist",
+                delete_request.policy_arn
+            )));
+        }
         store
-            .delete_managed_policy(&policy_arn.0, &policy_arn.1)
+            .delete_managed_policy(
+                &policy_arn.account_id,
+                &policy_arn.policy_name,
+                &policy_arn.policy_path,
+            )
             .await?;
 
         iam_xml_response(&DeletePolicyResponse {

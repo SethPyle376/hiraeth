@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            DELETE FROM iam_managed_policies\n            WHERE account_id = ? AND policy_name = ? AND policy_path = ?\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1b8a787d608d1b1469ee2644deded2a24196fc025c3f9b6488ea29293c93bf2e"
+}

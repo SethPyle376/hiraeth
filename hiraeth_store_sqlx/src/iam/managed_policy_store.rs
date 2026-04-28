@@ -45,16 +45,18 @@ impl ManagedPolicyStore for SqliteManagedPolicyStore {
         &self,
         account_id: &str,
         policy_name: &str,
+        policy_path: &str,
     ) -> Result<Option<ManagedPolicy>, StoreError> {
         sqlx::query_as!(
                 ManagedPolicy,
                 r#"
                 SELECT id, policy_id, account_id, policy_name, policy_path, policy_document, created_at, updated_at
                 FROM iam_managed_policies
-                WHERE account_id = ? AND policy_name = ?
+                WHERE account_id = ? AND policy_name = ? AND policy_path = ?
                 "#,
                 account_id,
-                policy_name
+                policy_name,
+                policy_path
             )
             .fetch_optional(&self.pool)
             .await
@@ -111,14 +113,16 @@ impl ManagedPolicyStore for SqliteManagedPolicyStore {
         &self,
         account_id: &str,
         policy_name: &str,
+        policy_path: &str,
     ) -> Result<(), StoreError> {
         let result = sqlx::query!(
             r#"
             DELETE FROM iam_managed_policies
-            WHERE account_id = ? AND policy_name = ?
+            WHERE account_id = ? AND policy_name = ? AND policy_path = ?
             "#,
             account_id,
-            policy_name
+            policy_name,
+            policy_path
         )
         .execute(&self.pool)
         .await
@@ -126,8 +130,8 @@ impl ManagedPolicyStore for SqliteManagedPolicyStore {
 
         if result.rows_affected() == 0 {
             Err(StoreError::NotFound(format!(
-                "Managed policy {} not found for account {}",
-                policy_name, account_id
+                "Managed policy {} (path {}) not found for account {}",
+                policy_name, policy_path, account_id
             )))
         } else {
             Ok(())

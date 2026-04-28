@@ -42,6 +42,7 @@ pub trait ManagedPolicyStore {
         &self,
         account_id: &str,
         policy_name: &str,
+        policy_path: &str,
     ) -> Result<Option<ManagedPolicy>, StoreError>;
 
     async fn attach_policy_to_principal(
@@ -60,6 +61,7 @@ pub trait ManagedPolicyStore {
         &self,
         account_id: &str,
         policy_name: &str,
+        policy_path: &str,
     ) -> Result<(), StoreError>;
 
     async fn get_managed_policies_attached_to_principal(
@@ -115,6 +117,7 @@ impl ManagedPolicyStore for InMemoryManagedPolicyStore {
         &self,
         account_id: &str,
         policy_name: &str,
+        policy_path: &str,
     ) -> Result<Option<ManagedPolicy>, StoreError> {
         let policies = self
             .policies
@@ -122,7 +125,11 @@ impl ManagedPolicyStore for InMemoryManagedPolicyStore {
             .expect("in-memory managed policy store read lock should not be poisoned");
         Ok(policies
             .values()
-            .find(|p| p.account_id == account_id && p.policy_name == policy_name)
+            .find(|p| {
+                p.account_id == account_id
+                    && p.policy_name == policy_name
+                    && p.policy_path.as_deref().unwrap_or("/") == policy_path
+            })
             .cloned())
     }
 
@@ -167,6 +174,7 @@ impl ManagedPolicyStore for InMemoryManagedPolicyStore {
         &self,
         account_id: &str,
         policy_name: &str,
+        policy_path: &str,
     ) -> Result<(), StoreError> {
         let mut policies = self
             .policies
@@ -174,7 +182,11 @@ impl ManagedPolicyStore for InMemoryManagedPolicyStore {
             .expect("in-memory managed policy store write lock should not be poisoned");
         if let Some(policy) = policies
             .values()
-            .find(|p| p.account_id == account_id && p.policy_name == policy_name)
+            .find(|p| {
+                p.account_id == account_id
+                    && p.policy_name == policy_name
+                    && p.policy_path.as_deref().unwrap_or("/") == policy_path
+            })
             .cloned()
         {
             policies.remove(&policy.id);

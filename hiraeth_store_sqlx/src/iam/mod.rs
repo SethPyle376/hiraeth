@@ -184,9 +184,10 @@ impl ManagedPolicyStore for SqliteIamStore {
         &self,
         account_id: &str,
         policy_name: &str,
+        policy_path: &str,
     ) -> Result<Option<ManagedPolicy>, hiraeth_store::StoreError> {
         self.managed_policy_store
-            .get_managed_policy(account_id, policy_name)
+            .get_managed_policy(account_id, policy_name, policy_path)
             .await
     }
 
@@ -214,9 +215,10 @@ impl ManagedPolicyStore for SqliteIamStore {
         &self,
         account_id: &str,
         policy_name: &str,
+        policy_path: &str,
     ) -> Result<(), hiraeth_store::StoreError> {
         self.managed_policy_store
-            .delete_managed_policy(account_id, policy_name)
+            .delete_managed_policy(account_id, policy_name, policy_path)
             .await
     }
 

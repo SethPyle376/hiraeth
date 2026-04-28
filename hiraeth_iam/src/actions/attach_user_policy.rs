@@ -62,9 +62,15 @@ where
             })?;
 
         let arn = parse_policy_arn(&attach_policy_request.policy_arn)?;
+        if arn.account_id != *account_id {
+            return Err(IamError::NoSuchEntity(format!(
+                "Policy {} does not exist",
+                attach_policy_request.policy_arn
+            )));
+        }
 
         let policy = store
-            .get_managed_policy(account_id, &arn.1)
+            .get_managed_policy(&arn.account_id, &arn.policy_name, &arn.policy_path)
             .await?
             .ok_or_else(|| {
                 IamError::NoSuchEntity(format!(

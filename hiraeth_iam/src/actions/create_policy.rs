@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamPolicyXml, ResponseMetadata, iam_xml_response, new_id, parse_payload_error,
-        response_metadata,
+        IAM_XMLNS, IamPolicyXml, ResponseMetadata, iam_xml_response, new_id, normalize_policy_path,
+        parse_payload_error, response_metadata,
     },
     error::IamError,
 };
@@ -63,12 +63,13 @@ where
         store: &S,
     ) -> Result<ServiceResponse, IamError> {
         let account_id = request.auth_context.principal.account_id.clone();
+        let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
         let created_policy = store
             .insert_managed_policy(NewManagedPolicy {
                 account_id,
                 policy_id: new_id(),
                 policy_name: create_policy_request.policy_name.clone(),
-                policy_path: create_policy_request.path.clone(),
+                policy_path: Some(policy_path),
                 policy_document: create_policy_request.policy_document.clone(),
             })
             .await?;
@@ -88,11 +89,14 @@ where
         create_policy_request: CreatePolicyRequest,
         _store: &S,
     ) -> Result<AuthorizationCheck, IamError> {
+        let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
         Ok(AuthorizationCheck {
             action: "iam:CreatePolicy".to_string(),
             resource: format!(
-                "arn:aws:iam::{}:policy/{}",
-                request.auth_context.principal.account_id, create_policy_request.policy_name
+                "arn:aws:iam::{}:policy{}{}",
+                request.auth_context.principal.account_id,
+                policy_path,
+                create_policy_request.policy_name
             ),
             resource_policy: None,
         })

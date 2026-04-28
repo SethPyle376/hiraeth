@@ -12,6 +12,13 @@ use crate::error::IamError;
 
 pub(super) const IAM_XMLNS: &str = "https://iam.amazonaws.com/doc/2010-05-08/";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PolicyArn {
+    pub account_id: String,
+    pub policy_path: String,
+    pub policy_name: String,
+}
+
 pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> IamError {
     match error {
         AwsActionPayloadParseError::AwsQuery(error) => IamError::from(error),
@@ -87,14 +94,15 @@ pub(crate) struct IamPolicyXml {
 
 impl From<ManagedPolicy> for IamPolicyXml {
     fn from(policy: ManagedPolicy) -> Self {
+        let policy_path = normalize_policy_path(policy.policy_path.as_deref());
         IamPolicyXml {
-            path: policy.policy_path.clone(),
+            path: Some(policy_path.clone()),
             policy_name: Some(policy.policy_name.clone()),
             default_version_id: None,
             policy_id: Some(policy.policy_id.clone()),
             arn: Some(arn_util::policy_arn(
                 &policy.account_id,
-                &policy.policy_path.unwrap_or("".to_string()).as_ref(),
+                &policy_path,
                 &policy.policy_name,
             )),
             attachments_count: None,
@@ -178,7 +186,7 @@ where
         .ok_or_else(|| IamError::NoSuchEntity(format!("User with name {user_name} does not exist")))
 }
 
-pub(super) fn parse_policy_arn(arn: &str) -> Result<(String, String), IamError> {
+pub(super) fn parse_policy_arn(arn: &str) -> Result<PolicyArn, IamError> {
     let parts: Vec<&str> = arn.split(':').collect();
     if parts.len() != 6 || parts[0] != "arn" || parts[1] != "aws" || parts[2] != "iam" {
         return Err(IamError::BadRequest(format!("Invalid ARN format: {arn}")));
@@ -189,14 +197,51 @@ pub(super) fn parse_policy_arn(arn: &str) -> Result<(String, String), IamError> 
     let resource_parts: Vec<&str> = resource.split('/').collect();
     if resource_parts.len() < 2 || resource_parts[0] != "policy" {
         return Err(IamError::BadRequest(format!(
-            "Invalid user ARN format: {arn}"
+            "Invalid policy ARN format: {arn}"
         )));
     }
 
-    let policy_name = resource_parts[resource_parts.len() - 1].to_string();
-    Ok((account_id, policy_name))
+    let policy_name = resource_parts[resource_parts.len() - 1];
+    if policy_name.is_empty() {
+        return Err(IamError::BadRequest(format!(
+            "Invalid policy ARN format: {arn}"
+        )));
+    }
+    let policy_path = if resource_parts.len() == 2 {
+        "/".to_string()
+    } else {
+        format!(
+            "/{}/",
+            resource_parts[1..resource_parts.len() - 1].join("/")
+        )
+    };
+
+    Ok(PolicyArn {
+        account_id,
+        policy_path,
+        policy_name: policy_name.to_string(),
+    })
 }
 
 pub(super) fn default_user_path() -> String {
     "/".to_string()
+}
+
+pub(super) fn normalize_policy_path(path: Option<&str>) -> String {
+    match path {
+        Some(path) if !path.trim().is_empty() => {
+            let trimmed = path.trim();
+            let with_leading = if trimmed.starts_with('/') {
+                trimmed.to_string()
+            } else {
+                format!("/{trimmed}")
+            };
+            if with_leading.ends_with('/') {
+                with_leading
+            } else {
+                format!("{with_leading}/")
+            }
+        }
+        _ => "/".to_string(),
+    }
 }

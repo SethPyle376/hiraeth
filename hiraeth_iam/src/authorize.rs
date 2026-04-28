@@ -341,6 +341,7 @@ mod tests {
             &self,
             _account_id: &str,
             _policy_name: &str,
+            _policy_path: &str,
         ) -> Result<Option<ManagedPolicy>, StoreError> {
             Ok(None)
         }
@@ -365,6 +366,7 @@ mod tests {
             &self,
             _account_id: &str,
             _policy_name: &str,
+            _policy_path: &str,
         ) -> Result<(), StoreError> {
             unreachable!("authorization tests do not delete managed policies")
         }
