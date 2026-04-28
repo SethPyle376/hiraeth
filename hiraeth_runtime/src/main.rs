@@ -16,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(config = ?config, "starting Hiraeth");
 
     let store = SqlxStore::new(&config.database_url).await?;
-    let app = std::sync::Arc::new(App::with_auth_mode(
+    let app = std::sync::Arc::new(App::new(
         store.clone(),
         AuthorizationMode::from(config.auth_mode.clone()),
     ));
@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
             serve::serve(aws_addr, app),
             hiraeth_web::serve(
                 web_addr,
-                hiraeth_web::WebState::new(store.sqs_store.clone())
+                hiraeth_web::WebState::new(store.iam_store.clone(), store.sqs_store.clone())
                     .with_aws_endpoint_url(aws_endpoint_url)
             )
         )?;

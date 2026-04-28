@@ -14,6 +14,7 @@ hiraeth_router = { path = "../hiraeth_router" }
 hiraeth_sqs = { path = "../hiraeth_sqs" }
 hiraeth_store = { path = "../hiraeth_store" }
 hiraeth_store_sqlx = { path = "../hiraeth_store_sqlx" }
+hiraeth_sts = { path = "../hiraeth_sts" }
 hiraeth_web = { path = "../hiraeth_web" }
 http = { version = "1.4" }
 http-body-util = "0.1"

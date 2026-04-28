@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use hiraeth_auth::ResolvedRequest;
-use hiraeth_core::{ServiceResponse, auth::AuthorizationCheck};
+use hiraeth_core::{ResolvedRequest, ServiceResponse, auth::AuthorizationCheck};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthorizationResult {

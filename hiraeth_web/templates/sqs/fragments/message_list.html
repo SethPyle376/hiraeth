@@ -9,7 +9,7 @@
       <div>
         <h2 class="card-title text-xl">Recent messages</h2>
         <p class="text-sm text-base-content/60">
-          Showing up to {{ message_limit }} stored messages, newest first. Receiving through the AWS API may hide messages with a visibility timeout.
+          Showing up to {{ message_limit }} stored messages, newest first. Messages that are currently in flight may not appear until they become available again.
         </p>
       </div>
       <form id="message-limit-form" class="join self-start lg:self-auto" method="get" action="/sqs/queues/{{ queue_id }}">
@@ -29,6 +29,8 @@
               <span class="font-mono text-xs text-base-content/50">{{ message.message_id }}</span>
             </div>
             <details id="message-details-{{ message.message_id }}"
+                     data-collapse-persist
+                     data-collapse-key="queue-{{ queue_id }}-message-{{ message.message_id }}"
                      class="collapse collapse-arrow mt-2 rounded border border-base-300 bg-base-100/80"
                      hx-preserve>
               <summary class="collapse-title min-h-0 py-2.5 font-mono text-sm font-bold">
@@ -138,7 +140,7 @@
     {% else %}
     <div class="mt-5 rounded border border-dashed border-base-300 bg-base-200/50 p-10 text-center">
       <h3 class="text-xl font-bold">No messages in this queue</h3>
-      <p class="mt-2 text-base-content/60">Send a message through the emulator, then refresh this page to inspect the stored payload and metadata.</p>
+      <p class="mt-2 text-base-content/60">Send a message, then refresh this page to review the stored payload and related metadata.</p>
     </div>
     {% endif %}
   </div>

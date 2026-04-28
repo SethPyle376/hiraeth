@@ -3,16 +3,20 @@ use aws_sdk_sqs::types::QueueAttributeName;
 use hiraeth_iam::AuthorizationMode;
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use hiraeth_store_sqlx::SqlxStore;
+use sqlx::SqlitePool;
 
 mod common;
 
 use common::{
-    DEFAULT_REGION, queue_name, sqs_test_server, sqs_test_server_with_auth_mode, string_attribute,
+    DEFAULT_REGION, queue_name, sdk_config_with_credentials, sqs_test_server,
+    sqs_test_server_with_auth_mode, string_attribute,
 };
 
 use crate::common::batch_entry;
 
 const TEST_ACCOUNT_ID: &str = "000000000000";
+const LIMITED_ACCESS_KEY_ID: &str = "limited-test";
+const LIMITED_SECRET_ACCESS_KEY: &str = "limited-test-secret";
 
 #[tokio::test]
 async fn create_queue_then_get_queue_url() -> anyhow::Result<()> {
@@ -360,10 +364,24 @@ async fn enforce_mode_denies_send_message_without_matching_queue_policy() -> any
     let server = sqs_test_server_with_auth_mode(AuthorizationMode::Enforce).await?;
     let queue_name = queue_name("authz-deny");
     seed_queue(server.server.db_url(), &queue_name, "{}").await?;
+    seed_unprivileged_user(
+        server.server.db_url(),
+        "limited-test-user",
+        LIMITED_ACCESS_KEY_ID,
+        LIMITED_SECRET_ACCESS_KEY,
+    )
+    .await?;
     let queue_url = queue_url(server.server.endpoint_url(), &queue_name);
+    let sdk_config = sdk_config_with_credentials(
+        server.server.endpoint_url(),
+        DEFAULT_REGION,
+        LIMITED_ACCESS_KEY_ID,
+        LIMITED_SECRET_ACCESS_KEY,
+    )
+    .await;
+    let limited_client = aws_sdk_sqs::Client::new(&sdk_config);
 
-    let result = server
-        .client
+    let result = limited_client
         .send_message()
         .queue_url(queue_url)
         .message_body("denied in enforce mode")
@@ -453,6 +471,46 @@ async fn seed_queue(db_url: &str, queue_name: &str, policy: &str) -> anyhow::Res
         .create_queue(queue)
         .await
         .context("seed queue should be created")?;
+
+    Ok(())
+}
+
+async fn seed_unprivileged_user(
+    db_url: &str,
+    user_name: &str,
+    access_key_id: &str,
+    secret_access_key: &str,
+) -> anyhow::Result<()> {
+    let pool = SqlitePool::connect(db_url)
+        .await
+        .context("sqlite pool should open for iam user seeding")?;
+    let user_id = format!(
+        "AIDA{}",
+        uuid::Uuid::new_v4().simple().to_string().to_uppercase()
+    );
+
+    let principal_id = sqlx::query!(
+        "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
+        TEST_ACCOUNT_ID,
+        "user",
+        user_name,
+        "/",
+        user_id
+    )
+    .execute(&pool)
+    .await
+    .context("principal should insert for authz deny test")?
+    .last_insert_rowid();
+
+    sqlx::query!(
+        "INSERT INTO iam_access_keys (key_id, secret_key, principal_id) VALUES (?, ?, ?)",
+        access_key_id,
+        secret_access_key,
+        principal_id
+    )
+    .execute(&pool)
+    .await
+    .context("access key should insert for authz deny test")?;
 
     Ok(())
 }

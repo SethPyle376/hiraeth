@@ -2,6 +2,57 @@
 
 All notable changes to Hiraeth will be documented in this file.
 
+## 0.2.0 - 2026-04-28
+
+IAM identity-policy slice and expanded local administration UI.
+
+### Added
+
+- IAM Query API support for local user and policy workflows:
+  - `CreateAccessKey`
+  - `CreatePolicy`
+  - `CreateUser`
+  - `DeletePolicy`
+  - `DeleteUser`
+  - `GetUser`
+  - `PutUserPolicy`
+  - `AttachUserPolicy`
+  - `DetachUserPolicy`
+- STS `GetCallerIdentity` support for SDK and CLI checks against the local
+  endpoint.
+- SQLite-backed IAM users, access keys, inline user policies, managed policies,
+  and managed policy attachments.
+- Identity policy evaluation for inline and attached managed user policies.
+- IAM admin UI for reviewing principals, access keys, inline policies, managed
+  policies, and policy attachments.
+- Web UI controls for creating/deleting principals, creating/deleting access
+  keys, setting inline policies, creating/deleting managed policies, editing
+  managed policy documents, and attaching/detaching managed policies.
+- Documentation for current IAM API support and known IAM limitations.
+
+### Changed
+
+- Authorization now combines SQS queue resource policies with IAM identity
+  policies where supported.
+- The seeded local `test` user now has an inline account-admin policy for a
+  smoother first-run local workflow.
+- Web UI assets are vendored and built into the binary instead of loaded from a
+  CDN.
+- First-party web assets now revalidate instead of using immutable caching with
+  non-fingerprinted URLs.
+- Web UI layout and shared components were refined for SQS and IAM detail
+  pages.
+
+### Known Gaps
+
+- IAM support is intentionally partial. Roles, groups, managed policy versions,
+  policy listing APIs, policy retrieval APIs, and assume-role flows are not
+  implemented yet.
+- Policy evaluation supports the current local identity/resource-policy needs,
+  but AWS IAM condition keys and full cross-policy semantics are not complete.
+- STS support is limited to `GetCallerIdentity` and currently assumes the
+  authenticated principal is a local user.
+
 ## 0.1.2 - 2026-04-20
 
 Resource-policy authorization slice for local SQS testing.

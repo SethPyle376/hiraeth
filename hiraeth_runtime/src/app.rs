@@ -3,29 +3,31 @@ use hiraeth_iam::{AuthorizationMode, IamService};
 use hiraeth_router::ServiceRouter;
 use hiraeth_sqs::SqsService;
 use hiraeth_store_sqlx::SqlxStore;
+use hiraeth_sts::StsService;
 
 use crate::request::{self, AppRequestOutcome};
 
 pub struct App {
-    store: SqlxStore,
+    iam: IamService<hiraeth_store_sqlx::SqliteIamStore>,
     router: ServiceRouter,
 }
 
 impl App {
-    pub fn new(store: SqlxStore) -> Self {
-        Self::with_auth_mode(store, AuthorizationMode::Audit)
-    }
-
-    pub fn with_auth_mode(store: SqlxStore, auth_mode: AuthorizationMode) -> Self {
-        let iam = IamService::new(auth_mode, store.iam_store.clone());
-        let mut router = ServiceRouter::new(Box::new(iam.clone()));
-        router.register_service(Box::new(iam));
+    pub fn new(store: SqlxStore, auth_mode: AuthorizationMode) -> Self {
+        let iam_store = store.iam_store.clone();
+        let iam = IamService::new(auth_mode.clone(), iam_store.clone());
+        let mut router = ServiceRouter::new(Box::new(IamService::new(
+            auth_mode.clone(),
+            iam_store.clone(),
+        )));
+        router.register_service(Box::new(IamService::new(auth_mode, iam_store)));
         router.register_service(Box::new(SqsService::new(store.sqs_store.clone())));
+        router.register_service(Box::new(StsService::new(store.iam_store.clone())));
 
-        Self { store, router }
+        Self { iam, router }
     }
 
     pub async fn handle_request(&self, incoming_request: IncomingRequest) -> AppRequestOutcome {
-        request::resolve_and_route(incoming_request, &self.store, &self.router).await
+        request::resolve_and_route(incoming_request, &self.iam, &self.router).await
     }
 }

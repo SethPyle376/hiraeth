@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT *\n            FROM iam_principal_inline_policies\n            WHERE principal_id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "principal_id",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "policy_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy_document",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 4,
+        "type_info": "Datetime"
+      },
+      {
+        "name": "updated_at",
+        "ordinal": 5,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4343aa3a2c8ab5c1a3409395c6d46eea19a32dc3218170dd80f925f2d9b5f82f"
+}

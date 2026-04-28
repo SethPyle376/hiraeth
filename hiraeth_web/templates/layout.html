@@ -3,186 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Hiraeth local AWS emulator admin UI">
+    <meta name="description" content="Hiraeth administration UI for AWS-compatible services">
     <title>{% block title %}Hiraeth{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    <script>
-      function hiraethDisableSubmit(form, label) {
-        const button = form.querySelector('button[type="submit"]');
-        if (button) {
-          button.disabled = true;
-          if (label) {
-            button.textContent = label;
-          }
-        }
-        return true;
-      }
-
-      function hiraethConfirmSubmit(form, message, label) {
-        if (!confirm(message)) {
-          return false;
-        }
-        return hiraethDisableSubmit(form, label);
-      }
-
-      function hiraethDismissBanner(button, paramsToClear) {
-        const banner = button.closest('.alert');
-        if (banner) {
-          banner.remove();
-        }
-
-        if (!window.history.replaceState || !paramsToClear) {
-          return;
-        }
-
-        const url = new URL(window.location.href);
-        paramsToClear.forEach((param) => url.searchParams.delete(param));
-        const nextUrl = `${url.pathname}${url.search}${url.hash}`;
-        window.history.replaceState({}, '', nextUrl);
-      }
-
-      async function hiraethCopyText(button) {
-        const value = button.dataset.copyValue;
-        if (!value) {
-          return;
-        }
-
-        try {
-          if (navigator.clipboard && window.isSecureContext) {
-            await navigator.clipboard.writeText(value);
-          } else {
-            const textarea = document.createElement('textarea');
-            textarea.value = value;
-            textarea.setAttribute('readonly', '');
-            textarea.style.position = 'fixed';
-            textarea.style.left = '-9999px';
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            textarea.remove();
-          }
-
-          const original = button.dataset.originalLabel || button.textContent;
-          button.dataset.originalLabel = original;
-          button.textContent = 'Copied';
-          window.setTimeout(() => {
-            button.textContent = button.dataset.originalLabel;
-          }, 1200);
-        } catch (error) {
-          console.error('Failed to copy text', error);
-          button.textContent = 'Copy failed';
-        }
-      }
-    </script>
-    <style>
-      [data-theme="gruvbox"] {
-        color-scheme: dark;
-        --color-base-100: #282828;
-        --color-base-200: #1d2021;
-        --color-base-300: #3c3836;
-        --color-base-content: #ebdbb2;
-        --color-primary: #fabd2f;
-        --color-primary-content: #1d2021;
-        --color-secondary: #b8bb26;
-        --color-secondary-content: #1d2021;
-        --color-accent: #83a598;
-        --color-accent-content: #1d2021;
-        --color-neutral: #504945;
-        --color-neutral-content: #fbf1c7;
-        --color-info: #8ec07c;
-        --color-info-content: #1d2021;
-        --color-success: #b8bb26;
-        --color-success-content: #1d2021;
-        --color-warning: #fe8019;
-        --color-warning-content: #1d2021;
-        --color-error: #fb4934;
-        --color-error-content: #1d2021;
-        --radius-selector: 0.35rem;
-        --radius-field: 0.35rem;
-        --radius-box: 0.45rem;
-        --border: 1px;
-        --depth: 1;
-        --noise: 0;
-      }
-
-      body::before {
-        content: "";
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        background:
-          radial-gradient(circle at top left, rgba(250, 189, 47, 0.16), transparent 28rem),
-          radial-gradient(circle at bottom right, rgba(131, 165, 152, 0.14), transparent 26rem);
-      }
-
-      .text-balance {
-        text-wrap: balance;
-      }
-
-      .card,
-      .stats,
-      .alert {
-        box-shadow: 0 1px 0 rgba(251, 241, 199, 0.05), 0 12px 28px rgba(29, 32, 33, 0.18);
-      }
-
-      .card-body {
-        padding: 1.15rem;
-        gap: 0.75rem;
-      }
-
-      .card-body > p {
-        flex-grow: 0;
-      }
-
-      .btn {
-        min-height: 2.35rem;
-        height: 2.35rem;
-        padding-inline: 0.9rem;
-        font-weight: 800;
-      }
-
-      .btn-sm {
-        min-height: 2rem;
-        height: 2rem;
-      }
-
-      .input,
-      .select {
-        height: 2.4rem;
-      }
-
-      .input-sm {
-        height: 2rem;
-      }
-
-      .textarea {
-        min-height: 6rem;
-      }
-
-      .badge {
-        border-radius: 0.28rem;
-        font-weight: 800;
-      }
-
-      .stat {
-        padding: 1rem;
-      }
-
-      .stat-value {
-        font-size: 2rem;
-        line-height: 1;
-      }
-
-      .table :where(th, td) {
-        padding-block: 0.55rem;
-      }
-
-      pre {
-        border: 1px solid rgba(251, 241, 199, 0.08);
-      }
-    </style>
+    <link href="/favicon.svg" rel="icon" type="image/svg+xml">
+    <link href="/assets/app.css" rel="stylesheet" type="text/css">
+    <script defer src="/assets/vendor/htmx.min.js"></script>
+    <script defer src="/assets/app.js"></script>
   </head>
   <body class="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-accent/10 text-base-content">
     <div class="navbar sticky top-0 z-10 min-h-14 border-b border-base-300 bg-base-100/90 px-4 backdrop-blur sm:px-6">
@@ -192,7 +18,7 @@
       </div>
       <div class="flex-none gap-2">
         <a class="btn btn-ghost btn-sm" href="/sqs">SQS</a>
-        <a class="btn btn-ghost btn-sm btn-disabled">IAM</a>
+        <a class="btn btn-ghost btn-sm" href="/iam">IAM</a>
         <a class="btn btn-ghost btn-sm btn-disabled">S3</a>
       </div>
     </div>

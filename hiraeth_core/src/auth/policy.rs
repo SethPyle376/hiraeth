@@ -1,7 +1,23 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::IntoDeserializer};
 
 use crate::auth::principal::{PolicyPrincipal, deserialize_principals};
 use crate::auth::util::deserialize_one_or_many;
+
+fn deserialize_optional_principals<'de, D>(
+    deserializer: D,
+) -> Result<Vec<PolicyPrincipal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+
+    match value {
+        Some(value) => {
+            deserialize_principals(value.into_deserializer()).map_err(serde::de::Error::custom)
+        }
+        None => Ok(Vec::new()),
+    }
+}
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
@@ -27,7 +43,7 @@ pub struct PolicyStatement {
     pub action: Vec<String>,
     #[serde(deserialize_with = "deserialize_one_or_many")]
     pub resource: Vec<String>,
-    #[serde(deserialize_with = "deserialize_principals")]
+    #[serde(default, deserialize_with = "deserialize_optional_principals")]
     pub principal: Vec<PolicyPrincipal>,
 }
 
@@ -154,6 +170,26 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserializes_statement_without_principal_as_identity_policy_statement() {
+        let policy = serde_json::from_str::<Policy>(
+            r#"{
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": "sqs:SendMessage",
+                        "Resource": "arn:aws:sqs:us-east-1:000000000000:orders"
+                    }
+                ]
+            }"#,
+        )
+        .expect("policy should deserialize");
+
+        assert_eq!(policy.statement.len(), 1);
+        assert!(policy.statement[0].principal.is_empty());
     }
 
     #[test]

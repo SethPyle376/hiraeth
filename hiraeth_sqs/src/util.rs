@@ -1,8 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use base64::Engine;
-use hiraeth_auth::ResolvedRequest;
-use hiraeth_core::parse_json_body;
+use hiraeth_core::{AuthContext, ResolvedRequest, parse_json_body};
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -193,7 +192,7 @@ mod tests {
     use std::collections::{BTreeMap, HashMap};
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_auth::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde::Deserialize;
@@ -223,6 +222,8 @@ mod tests {
                     account_id: "123456789012".to_string(),
                     kind: "user".to_string(),
                     name: "test-user".to_string(),
+                    path: "/".to_string(),
+                    user_id: "AIDATESTUSER000001".to_string(),
                     created_at: Utc
                         .with_ymd_and_hms(2026, 4, 6, 12, 0, 0)
                         .unwrap()

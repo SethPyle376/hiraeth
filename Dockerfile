@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1
 
+FROM node:22-bookworm-slim AS node
+
 FROM rust:1-slim-bookworm AS builder
 
 ARG TARGETARCH
+
+COPY --from=node /usr/local/ /usr/local/
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -33,6 +37,8 @@ ENV SQLX_OFFLINE=true \
     CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
 
 COPY . .
+
+RUN npm install --prefix hiraeth_web --include=optional
 
 RUN cargo build --locked --release --target "$(cat /tmp/rust-target)" -p hiraeth_runtime \
     && cp "target/$(cat /tmp/rust-target)/release/hiraeth_runtime" /tmp/hiraeth

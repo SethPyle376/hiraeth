@@ -8,6 +8,8 @@ target/
 .DS_Store
 .env
 .env.*
+node_modules/
+**/node_modules/
 
 data/
 db.sqlite

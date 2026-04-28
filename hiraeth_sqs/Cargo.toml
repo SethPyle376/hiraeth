@@ -8,7 +8,6 @@ async-trait = "0.1"
 base64 = "0.22"
 chrono = "0.4"
 futures = "0.3"
-hiraeth_auth = { path = "../hiraeth_auth" }
 hiraeth_core = { path = "../hiraeth_core" }
 hiraeth_router = { path = "../hiraeth_router" }
 hiraeth_store = { path = "../hiraeth_store" }

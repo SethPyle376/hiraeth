@@ -4,20 +4,7 @@
 
 {% block content %}
 <section class="mx-auto max-w-[94rem]">
-  <div class="mb-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-    <div>
-      <p class="text-xs font-semibold uppercase tracking-[0.45em] text-primary">Service Dashboard</p>
-      <h1 class="mt-2 text-4xl font-black tracking-tight md:text-5xl">SQS</h1>
-      <p class="mt-2 max-w-2xl text-sm leading-6 text-base-content/70">
-        Inspect queue state for one account and region. Use the AWS SDK or CLI to create resources;
-        use this page to verify what the emulator stored.
-      </p>
-    </div>
-    <div class="flex flex-wrap gap-2 lg:justify-end">
-      <a class="btn btn-primary" href="/sqs/queues?region={{ region }}&account_id={{ account_id }}">Browse queues</a>
-      <a class="btn btn-outline" href="/sqs/api/queues?region={{ region }}&account_id={{ account_id }}">JSON API</a>
-    </div>
-  </div>
+  {{ page_header_html|safe }}
 
   {% if has_feedback %}
   <div class="alert {{ feedback_class }} mb-5 flex items-center justify-between gap-3 py-3 text-sm">
@@ -26,7 +13,7 @@
   </div>
   {% endif %}
 
-  {% include "sqs/fragments/dashboard_stats.html" %}
+  {{ dashboard_stats_html|safe }}
 
   <form class="card mb-5 border border-primary/30 bg-base-100"
         action="/sqs/queues/create"
@@ -37,7 +24,7 @@
       <div class="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h2 class="card-title text-xl">Create queue</h2>
-          <p class="text-sm text-base-content/60">Create a queue in the active local SQS scope.</p>
+          <p class="text-sm text-base-content/60">Create a queue in the selected account and region.</p>
         </div>
         <div class="flex flex-wrap gap-2 text-sm text-base-content/60">
           <span class="badge badge-outline font-mono">{{ account_id }}</span>
@@ -114,21 +101,21 @@
           <div class="grid gap-2">
             <a class="btn btn-outline btn-sm justify-start" href="/sqs?region=us-east-1&account_id={{ account_id }}">us-east-1</a>
             <a class="btn btn-outline btn-sm justify-start" href="/sqs?region=us-west-2&account_id={{ account_id }}">us-west-2</a>
-            <a class="btn btn-outline btn-sm justify-start" href="/sqs?region={{ region }}&account_id=000000000000">default test account</a>
+            <a class="btn btn-outline btn-sm justify-start" href="/sqs?region={{ region }}&account_id=000000000000">default account</a>
           </div>
         </div>
       </div>
       <div class="card border border-base-300 bg-base-100/80">
         <div class="card-body">
-          <h2 class="card-title">Admin actions live per queue</h2>
+          <h2 class="card-title">Queue actions</h2>
           <p class="text-sm text-base-content/70">
-            Open a queue to inspect message payloads, attributes, tags, receipt handles, and timing metadata.
+            Open a queue to review message payloads, attributes, tags, receipt handles, and delivery timing.
             Destructive actions require browser confirmation.
           </p>
         </div>
       </div>
       <div class="alert border-warning/40 bg-warning/10 py-3 text-sm">
-        <span>This UI is intended for local emulator data. Do not expose it as a shared admin console.</span>
+        <span>This interface is intended for trusted internal use. Do not expose it publicly.</span>
       </div>
     </aside>
   </div>

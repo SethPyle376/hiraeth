@@ -19,6 +19,11 @@ target/
 # Misc logs
 *.log
 
+# Frontend dependencies
+node_modules/
+**/node_modules/
+hiraeth_web/assets/app.css
+
 .local/db.sqlite
 *.sqlite
 *.sqlite-shm

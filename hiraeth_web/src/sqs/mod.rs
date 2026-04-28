@@ -16,6 +16,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     WebState,
+    components::{
+        ActionCard, ActionCardAction, EmptyState, HeaderAction, MetadataEntry, MetadataList,
+        PageHeader, StatBlock, StatBlockGrid,
+    },
     error::WebError,
     templates::{
         QueueDetailStatsTemplate, QueueListTemplate, QueueMessageListTemplate,
@@ -252,8 +256,21 @@ async fn dashboard(
         .iter()
         .map(|queue| queue.delayed_message_count)
         .sum();
+    let page_header_html = dashboard_page_header(&params.region, &params.account_id)?;
+    let dashboard_stats_html = dashboard_stats_html(
+        &params.region,
+        &params.account_id,
+        summaries.len(),
+        total_messages,
+        visible_messages,
+        delayed_messages,
+    )?;
+    let empty_state_html = queue_list_empty_state_html()?;
 
     let template = SqsDashboardTemplate {
+        page_header_html: &page_header_html,
+        dashboard_stats_html: &dashboard_stats_html,
+        empty_state_html: &empty_state_html,
         region: &params.region,
         account_id: &params.account_id,
         prefix: &prefix,
@@ -267,10 +284,6 @@ async fn dashboard(
         create_queue_type: &create_fields.queue_type,
         create_region: &create_fields.region,
         create_account_id: &create_fields.account_id,
-        total_queues: summaries.len(),
-        total_messages,
-        visible_messages,
-        delayed_messages,
         queues: &summaries,
         has_queues: !summaries.is_empty(),
     };
@@ -287,7 +300,9 @@ async fn queues_page(
     let return_to = scoped_page_path("/sqs/queues", &params);
     let feedback = feedback_from_params(&params.feedback_kind, &params.feedback);
     let create_fields = create_queue_fields(&params);
+    let empty_state_html = queue_list_empty_state_html()?;
     let template = SqsQueuesTemplate {
+        empty_state_html: &empty_state_html,
         region: &params.region,
         account_id: &params.account_id,
         prefix: &prefix,
@@ -363,7 +378,9 @@ async fn queues_fragment(
     Query(params): Query<QueueListParams>,
 ) -> Result<Html<String>, WebError> {
     let summaries = load_queue_summaries(&state, &params).await?;
+    let empty_state_html = queue_list_empty_state_html()?;
     let template = QueueListTemplate {
+        empty_state_html: &empty_state_html,
         queues: &summaries,
         has_queues: !summaries.is_empty(),
     };
@@ -385,14 +402,17 @@ async fn dashboard_stats_fragment(
         .iter()
         .map(|queue| queue.delayed_message_count)
         .sum();
-
-    let template = SqsDashboardStatsTemplate {
-        region: &params.region,
-        account_id: &params.account_id,
-        total_queues: summaries.len(),
+    let stats_cards_html = dashboard_stats_cards_html(
+        &params.region,
+        &params.account_id,
+        summaries.len(),
         total_messages,
         visible_messages,
         delayed_messages,
+    )?;
+
+    let template = SqsDashboardStatsTemplate {
+        stats_cards_html: &stats_cards_html,
     };
 
     Ok(Html(template.render()?))
@@ -437,8 +457,12 @@ async fn queue_detail(
     let feedback = feedback_from_params(&params.feedback_kind, &params.feedback);
     let send_error = params.send_error.clone().unwrap_or_default();
     let tag_fields = tag_form_fields(&params);
+    let action_card_html = queue_action_card_html(&queue, message_limit)?;
+    let metadata_list_html = queue_metadata_list_html(&queue)?;
 
     let template = SqsQueueDetailTemplate {
+        action_card_html: &action_card_html,
+        metadata_list_html: &metadata_list_html,
         queue_id: queue.id,
         queue: &queue,
         queue_arn: &queue_arn,
@@ -844,6 +868,168 @@ fn append_query_params(mut path: String, params: &[(&str, &str)]) -> String {
     }
 
     path
+}
+
+fn dashboard_page_header(region: &str, account_id: &str) -> Result<String, askama::Error> {
+    PageHeader {
+        eyebrow: "Service Dashboard".to_string(),
+        title: "SQS".to_string(),
+        description: "Review queue state for a specific account and region. Use this page to monitor resources and confirm recent changes.".to_string(),
+        actions: vec![
+            HeaderAction::link(
+                "Browse queues",
+                format!("/sqs/queues?region={region}&account_id={account_id}"),
+                "btn btn-primary",
+            ),
+            HeaderAction::link(
+                "JSON API",
+                format!("/sqs/api/queues?region={region}&account_id={account_id}"),
+                "btn btn-outline",
+            ),
+        ],
+    }
+    .render()
+}
+
+fn dashboard_stats_html(
+    region: &str,
+    account_id: &str,
+    total_queues: usize,
+    total_messages: i64,
+    visible_messages: i64,
+    delayed_messages: i64,
+) -> Result<String, askama::Error> {
+    Ok(format!(
+        r##"<div id="dashboard-stats"
+     class="mb-5"
+     hx-get="/sqs/fragments/dashboard-stats"
+     hx-trigger="every 3s"
+     hx-include="#dashboard-queue-filter"
+     hx-swap="outerHTML">{}</div>"##,
+        dashboard_stats_cards_html(
+            region,
+            account_id,
+            total_queues,
+            total_messages,
+            visible_messages,
+            delayed_messages,
+        )?
+    ))
+}
+
+fn dashboard_stats_cards_html(
+    region: &str,
+    account_id: &str,
+    total_queues: usize,
+    total_messages: i64,
+    visible_messages: i64,
+    delayed_messages: i64,
+) -> Result<String, askama::Error> {
+    StatBlockGrid {
+        grid_class: "grid gap-3 md:grid-cols-4",
+        blocks: vec![
+            StatBlock {
+                title: "Queues".to_string(),
+                value: total_queues.to_string(),
+                value_class: "text-primary",
+                description: format!("{account_id} / {region}"),
+            },
+            StatBlock {
+                title: "Messages".to_string(),
+                value: total_messages.to_string(),
+                value_class: "text-secondary",
+                description: "retained and not expired".to_string(),
+            },
+            StatBlock {
+                title: "Visible".to_string(),
+                value: visible_messages.to_string(),
+                value_class: "text-success",
+                description: "available to consumers".to_string(),
+            },
+            StatBlock {
+                title: "Delayed".to_string(),
+                value: delayed_messages.to_string(),
+                value_class: "text-info",
+                description: "waiting for delay".to_string(),
+            },
+        ],
+    }
+    .render()
+}
+
+fn queue_list_empty_state_html() -> Result<String, askama::Error> {
+    EmptyState {
+        title: "No queues found".to_string(),
+        message: "Create a queue or adjust the account, region, or prefix filter.".to_string(),
+    }
+    .render()
+}
+
+fn queue_action_card_html(queue: &SqsQueue, message_limit: i64) -> Result<String, askama::Error> {
+    ActionCard {
+        title: "Queue actions".to_string(),
+        grid_class: "sm:grid-cols-4",
+        actions: vec![
+            ActionCardAction::link(
+                "Back",
+                format!(
+                    "/sqs/queues?region={}&account_id={}",
+                    queue.region, queue.account_id
+                ),
+                "btn btn-ghost",
+            ),
+            ActionCardAction::link(
+                "Reload",
+                format!("/sqs/queues/{}?message_limit={message_limit}", queue.id),
+                "btn btn-outline",
+            ),
+            ActionCardAction::post(
+                "Purge",
+                format!(
+                    "/sqs/queues/{}/purge?message_limit={message_limit}",
+                    queue.id
+                ),
+                "btn btn-warning w-full",
+                Some(
+                    "return hiraethConfirmSubmit(this, 'Purge every message in this queue?', 'Purging...')"
+                        .to_string(),
+                ),
+            ),
+            ActionCardAction::post(
+                "Delete",
+                format!("/sqs/queues/{}/delete", queue.id),
+                "btn btn-error w-full",
+                Some(
+                    "return hiraethConfirmSubmit(this, 'Delete this queue and all messages?', 'Deleting...')"
+                        .to_string(),
+                ),
+            ),
+        ],
+    }
+    .render()
+}
+
+fn queue_metadata_list_html(queue: &SqsQueue) -> Result<String, askama::Error> {
+    MetadataList {
+        entries: vec![
+            MetadataEntry {
+                label: "Database ID".to_string(),
+                value: queue.id.to_string(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Created".to_string(),
+                value: queue.created_at.to_string(),
+                value_class: "font-mono",
+            },
+            MetadataEntry {
+                label: "Updated".to_string(),
+                value: queue.updated_at.to_string(),
+                value_class: "font-mono",
+            },
+        ],
+    }
+    .render()
 }
 
 async fn load_queue_summaries(
