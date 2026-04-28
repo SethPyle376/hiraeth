@@ -1,9 +1,8 @@
 # Hiraeth
 
-Hiraeth is a local AWS emulator focused on fast integration testing. The first
-release target is SQS: signed AWS SDK requests go through a local HTTP endpoint,
-state is stored in SQLite, and an optional web UI exposes the local emulator
-state for debugging.
+Hiraeth is a local AWS emulator focused on fast integration testing. Signed AWS
+SDK requests go through a local HTTP endpoint, state is stored in SQLite, and an
+optional web UI exposes local service state for debugging.
 
 ![Hiraeth web UI showing the SQS dashboard](docs/assets/hiraeth-web-ui.png)
 
@@ -13,17 +12,22 @@ environments, not as a production AWS replacement.
 ## Current Scope
 
 - AWS SigV4 header authentication with a seeded local test credential.
-- SQS queue resource policy authorization with `audit`, `enforce`, and `off`
-  modes.
-- SQLite-backed principals, access keys, queues, messages, attributes, and tags.
+- Authorization modes for `audit`, `enforce`, and `off`.
+- SQS queue resource policy authorization and IAM identity policy evaluation.
+- SQLite-backed IAM users, access keys, inline policies, managed policies, SQS
+  queues, messages, attributes, and tags.
 - SQS-compatible endpoint for common queue and message operations.
-- Web admin UI on a separate port for inspecting local emulator state.
+- Partial IAM Query API support for users, access keys, inline user policies,
+  managed policies, and policy attachments.
+- STS `GetCallerIdentity` support.
+- Web admin UI on a separate port for inspecting local service state.
 - Docker and Docker Compose support.
 - SQLx offline query metadata for checked SQL builds.
 
 ## Documentation
 
 - [Service docs](docs/README.md)
+- [IAM](docs/iam/README.md)
 - [SQS](docs/sqs/README.md)
 
 ## Quickstart
@@ -45,8 +49,10 @@ export AWS_SECRET_ACCESS_KEY=test
 export AWS_DEFAULT_REGION=us-east-1
 ```
 
-For SQS examples, queue policy docs, API support, and service-specific gaps, see
-[docs/sqs](docs/sqs/README.md).
+For service-specific examples, API support, and current gaps, see:
+
+- [IAM docs](docs/iam/README.md)
+- [SQS docs](docs/sqs/README.md)
 
 Compose writes SQLite data to `/data/db.sqlite` inside the container. Mount your
 own volume or bind mount at `/data` if you want data to survive container
@@ -57,7 +63,7 @@ recreation.
 Release images are published to GitHub Container Registry:
 
 ```sh
-docker pull ghcr.io/sethpyle376/hiraeth:v0.1.1
+docker pull ghcr.io/sethpyle376/hiraeth:v0.2.0
 ```
 
 Release maintainers can publish a multi-architecture image for `linux/amd64`
@@ -65,7 +71,7 @@ and `linux/arm64` from a local Docker Buildx environment:
 
 ```sh
 docker login ghcr.io
-scripts/publish-image.sh v0.1.1
+scripts/publish-image.sh v0.2.0
 ```
 
 The publish script pushes `ghcr.io/sethpyle376/hiraeth:<tag>`. Tags must match
@@ -95,14 +101,15 @@ When running from source, prefer setting `HIRAETH_DATABASE_URL` to a path under
 
 ## Web UI
 
-The web UI is an admin/debug surface for local emulator state. Current
-service-specific UI coverage is documented under [docs/sqs](docs/sqs/README.md).
+The web UI is an admin/debug surface for local service state. Current
+service-specific UI coverage is documented under [docs/iam](docs/iam/README.md)
+and [docs/sqs](docs/sqs/README.md).
 
 The web UI does not use SigV4 authentication. Keep `HIRAETH_WEB_HOST` bound to a
 trusted interface unless you intentionally want to expose local test state.
 
-The current UI uses CDN-hosted Tailwind, DaisyUI, and htmx assets. A fully
-self-contained/offline UI asset pipeline is still future work.
+The current UI vendors its JavaScript and CSS assets and serves them from the
+Hiraeth web process.
 
 ## AI Usage
 

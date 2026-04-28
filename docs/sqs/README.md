@@ -1,7 +1,8 @@
 # SQS
 
-SQS is Hiraeth's first service target. This page collects the service-specific
-notes that are likely to change as SQS compatibility improves.
+SQS was Hiraeth's first service target and remains the most complete service
+surface. This page collects service-specific notes that are likely to change as
+SQS compatibility improves.
 
 ## Quickstart
 
@@ -29,19 +30,21 @@ aws --endpoint-url http://localhost:4566 sqs receive-message \
 
 ## Authorization
 
-Hiraeth currently evaluates SQS queue resource policies. The default mode is
-`audit`, which logs authorization decisions but still allows the request.
+Hiraeth currently evaluates IAM identity policies and SQS queue resource
+policies. The default mode is `audit`, which logs authorization decisions but
+still allows the request.
 
 | Mode | Behavior |
 | --- | --- |
-| `audit` | Evaluates queue resource policies, logs the result, and allows the request. |
-| `enforce` | Requires a matching queue resource policy and denies by default. |
+| `audit` | Evaluates policies, logs the result, and allows the request. |
+| `enforce` | Requires a matching policy decision and denies by default. |
 | `off` | Skips authorization checks entirely. |
 
-Because identity policies and policy conditions are not implemented yet,
-`enforce` is currently most useful for queue-scoped requests against existing
-queues with a resource policy. Requests without a queue resource, such as
-`CreateQueue` and `ListQueues`, currently default deny in `enforce` mode.
+Identity policies are evaluated for local IAM users. Queue resource policies
+are evaluated for queue-scoped requests against existing queues. Policy
+conditions and full AWS IAM semantics are still incomplete, but `enforce` mode
+can now authorize both queue operations and non-queue-scoped requests such as
+`CreateQueue` through IAM identity policies.
 
 Allow `test` to send messages to `local-orders`:
 
@@ -104,15 +107,15 @@ aws --endpoint-url http://localhost:4566 sqs set-queue-attributes \
 
 ## Web UI
 
-The web UI is an admin/debug surface for local emulator state. The current SQS
+The web UI is an admin/debug surface for local service state. The current SQS
 UI supports queue browsing, queue details, message inspection, attributes, tags,
 purge, delete queue, and delete message.
 
 The web UI does not use SigV4 authentication. Keep `HIRAETH_WEB_HOST` bound to a
 trusted interface unless you intentionally want to expose local test state.
 
-The current UI uses CDN-hosted Tailwind, DaisyUI, and htmx assets. A fully
-self-contained offline asset pipeline is still future work.
+The current UI vendors its JavaScript and CSS assets and serves them from the
+Hiraeth web process.
 
 ## API Support
 
@@ -150,8 +153,9 @@ Status labels:
 
 ## Current Gaps
 
-- Queue resource policies are evaluated, but identity policies, policy
-  conditions, and cross-policy IAM evaluation are not implemented yet.
+- Queue resource policies and IAM user identity policies are evaluated for the
+  supported local authorization path, but policy conditions and full AWS IAM
+  cross-policy semantics are not complete yet.
 - Error responses are SDK-compatible for common paths, but not exhaustively
   identical to AWS.
 - Request validation is pragmatic and still needs a deeper AWS parity pass.
