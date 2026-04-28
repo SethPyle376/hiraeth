@@ -15,6 +15,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),

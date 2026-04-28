@@ -1,6 +1,9 @@
 use std::time::Instant;
 
-use hiraeth_core::{ApiError, ServiceResponse};
+use hiraeth_core::{
+    ApiError, ServiceResponse,
+    tracing::{TraceContext, TraceRecorder},
+};
 use hiraeth_http::IncomingRequest;
 use hiraeth_iam::IamService;
 use hiraeth_router::ServiceRouter;
@@ -21,21 +24,49 @@ pub struct AppRequestOutcome {
 }
 
 pub async fn resolve_and_route(
+    trace_context: &TraceContext,
+    trace_recorder: &(impl TraceRecorder + Sync),
     incoming_request: IncomingRequest,
     iam: &IamService<impl hiraeth_store::IamStore + Send + Sync + 'static>,
     router: &ServiceRouter,
 ) -> AppRequestOutcome {
     let auth_started_at = Instant::now();
+    let authn_timer = trace_context.start_span();
     let authenticated_request = hiraeth_auth::authenticate_request(incoming_request, iam.store())
         .await
         .map_err(ApiError::from);
+    record_runtime_span(
+        trace_context,
+        trace_recorder,
+        authn_timer,
+        "authn.authenticate",
+        if authenticated_request.is_ok() {
+            "ok"
+        } else {
+            "error"
+        },
+    )
+    .await;
 
     match authenticated_request {
         Ok(authenticated_request) => {
+            let identity_timer = trace_context.start_span();
             let resolved_request = iam
-                .resolve_identity(authenticated_request)
+                .resolve_identity(trace_context.request_id.clone(), authenticated_request)
                 .await
                 .map_err(ApiError::from);
+            record_runtime_span(
+                trace_context,
+                trace_recorder,
+                identity_timer,
+                "iam.resolve_identity",
+                if resolved_request.is_ok() {
+                    "ok"
+                } else {
+                    "error"
+                },
+            )
+            .await;
             let auth_ms = auth_started_at.elapsed().as_millis();
 
             match resolved_request {
@@ -53,7 +84,9 @@ pub async fn resolve_and_route(
                     };
 
                     let route_started_at = Instant::now();
-                    let response = router.route(resolved_request).await;
+                    let response = router
+                        .route_traced(resolved_request, trace_context, trace_recorder)
+                        .await;
                     let route_ms = route_started_at.elapsed().as_millis();
 
                     AppRequestOutcome {
@@ -94,5 +127,27 @@ pub async fn resolve_and_route(
                 },
             }
         }
+    }
+}
+
+async fn record_runtime_span(
+    trace_context: &TraceContext,
+    trace_recorder: &(impl TraceRecorder + Sync),
+    timer: hiraeth_core::tracing::TraceSpanTimer,
+    name: &'static str,
+    status: &'static str,
+) {
+    if let Err(error) = trace_context
+        .record_span(
+            trace_recorder,
+            timer,
+            name,
+            "runtime",
+            status,
+            std::collections::HashMap::new(),
+        )
+        .await
+    {
+        tracing::warn!(error = ?error, span = name, "failed to record trace span");
     }
 }

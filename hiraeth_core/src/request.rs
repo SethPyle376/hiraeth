@@ -3,6 +3,7 @@ use hiraeth_store::iam::Principal;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedRequest {
+    pub request_id: String,
     pub request: IncomingRequest,
     pub service: String,
     pub region: String,

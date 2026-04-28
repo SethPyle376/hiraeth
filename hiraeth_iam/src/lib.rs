@@ -43,6 +43,7 @@ where
 
     pub async fn resolve_identity(
         &self,
+        request_id: String,
         request: AuthenticatedRequest,
     ) -> Result<ResolvedRequest, ResolveIdentityError> {
         let principal = self
@@ -53,6 +54,7 @@ where
             .ok_or(ResolveIdentityError::PrincipalNotFound)?;
 
         Ok(ResolvedRequest {
+            request_id,
             request: request.request,
             service: request.service,
             region: request.region,
@@ -209,10 +211,11 @@ mod tests {
         );
 
         let resolved = iam
-            .resolve_identity(authenticated_request(42))
+            .resolve_identity("test-request-id".to_string(), authenticated_request(42))
             .await
             .expect("principal should resolve");
 
+        assert_eq!(resolved.request_id, "test-request-id");
         assert_eq!(resolved.service, "sqs");
         assert_eq!(resolved.region, "us-east-1");
         assert_eq!(
@@ -232,7 +235,7 @@ mod tests {
         );
 
         let error = iam
-            .resolve_identity(authenticated_request(42))
+            .resolve_identity("test-request-id".to_string(), authenticated_request(42))
             .await
             .expect_err("missing principal should fail identity resolution");
 
@@ -241,6 +244,7 @@ mod tests {
 
     fn iam_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),

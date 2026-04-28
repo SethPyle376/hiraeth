@@ -3,8 +3,13 @@ mod service;
 
 pub use authorizer::{AuthorizationResult, Authorizer};
 pub use hiraeth_core::ServiceResponse;
-use hiraeth_core::{ApiError, ResolvedRequest};
+use hiraeth_core::{
+    ApiError, ResolvedRequest,
+    tracing::{NoopTraceRecorder, TraceContext, TraceRecorder},
+};
 pub use service::Service;
+
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceRouterError {
@@ -37,27 +42,136 @@ impl ServiceRouter {
 
 impl ServiceRouter {
     pub async fn route(&self, request: ResolvedRequest) -> Result<ServiceResponse, ApiError> {
+        self.route_traced(request, &TraceContext::new("noop"), &NoopTraceRecorder)
+            .await
+    }
+
+    pub async fn route_traced<R>(
+        &self,
+        request: ResolvedRequest,
+        trace_context: &TraceContext,
+        trace_recorder: &R,
+    ) -> Result<ServiceResponse, ApiError>
+    where
+        R: TraceRecorder + Sync,
+    {
+        let resolve_service_timer = trace_context.start_span();
         let service = self
             .services
             .iter()
             .find(|s| s.can_handle(&request))
             .ok_or(ApiError::from(ServiceRouterError::NoServiceFound))?;
+        record_router_span(
+            trace_context,
+            trace_recorder,
+            resolve_service_timer,
+            "router.resolve_service",
+            "ok",
+            [
+                ("service".to_string(), request.service.clone()),
+                ("region".to_string(), request.region.clone()),
+            ],
+        )
+        .await;
 
+        let resolve_check_timer = trace_context.start_span();
         let check = match service.resolve_authorization(&request).await {
-            Ok(check) => check,
-            Err(response) => return Ok(response),
+            Ok(check) => {
+                record_router_span(
+                    trace_context,
+                    trace_recorder,
+                    resolve_check_timer,
+                    "authz.resolve_check",
+                    "ok",
+                    [
+                        ("action".to_string(), check.action.clone()),
+                        ("resource".to_string(), check.resource.clone()),
+                    ],
+                )
+                .await;
+                check
+            }
+            Err(response) => {
+                record_router_span(
+                    trace_context,
+                    trace_recorder,
+                    resolve_check_timer,
+                    "authz.resolve_check",
+                    "error",
+                    [("status_code".to_string(), response.status_code.to_string())],
+                )
+                .await;
+                return Ok(response);
+            }
         };
 
+        let authz_timer = trace_context.start_span();
         let auth_result = self.authorizer.authorize(&request, &check).await;
+        record_router_span(
+            trace_context,
+            trace_recorder,
+            authz_timer,
+            "authz.evaluate",
+            match auth_result {
+                AuthorizationResult::Allow => "allow",
+                AuthorizationResult::Deny => "deny",
+            },
+            [
+                ("action".to_string(), check.action.clone()),
+                ("resource".to_string(), check.resource.clone()),
+            ],
+        )
+        .await;
 
         match auth_result {
-            AuthorizationResult::Allow => service.handle_request(request).await,
-            AuthorizationResult::Deny => Ok(self.authorizer.unauthorized_response()),
+            AuthorizationResult::Allow => {
+                let service_timer = trace_context.start_span();
+                let result = service.handle_request(request).await;
+                record_router_span(
+                    trace_context,
+                    trace_recorder,
+                    service_timer,
+                    "service.handle",
+                    if result.is_ok() { "ok" } else { "error" },
+                    [("action".to_string(), check.action)],
+                )
+                .await;
+                result
+            }
+            AuthorizationResult::Deny => {
+                let response = self.authorizer.unauthorized_response();
+                Ok(response)
+            }
         }
     }
 
     pub fn register_service(&mut self, service: Box<dyn Service + Send + Sync>) {
         self.services.push(service);
+    }
+}
+
+async fn record_router_span<R, const N: usize>(
+    trace_context: &TraceContext,
+    trace_recorder: &R,
+    timer: hiraeth_core::tracing::TraceSpanTimer,
+    name: &'static str,
+    status: &'static str,
+    attributes: [(String, String); N],
+) where
+    R: TraceRecorder + Sync,
+{
+    if let Err(error) = trace_context
+        .record_span(
+            trace_recorder,
+            timer,
+            name,
+            "router",
+            status,
+            HashMap::from(attributes),
+        )
+        .await
+    {
+        tracing::warn!(error = ?error, span = name, "failed to record trace span");
     }
 }
 
@@ -77,6 +191,7 @@ mod tests {
 
     fn resolved_request() -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "sqs.us-east-1.amazonaws.com".to_string(),
                 method: "POST".to_string(),

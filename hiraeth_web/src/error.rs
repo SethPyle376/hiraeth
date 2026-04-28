@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
+use hiraeth_core::tracing::TraceRecordError;
 use hiraeth_store::StoreError;
 
 use crate::templates::ErrorTemplate;
@@ -25,6 +26,16 @@ impl From<StoreError> for WebError {
         Self {
             status,
             title,
+            message: value.to_string(),
+        }
+    }
+}
+
+impl From<TraceRecordError> for WebError {
+    fn from(value: TraceRecordError) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            title: "Trace storage error",
             message: value.to_string(),
         }
     }

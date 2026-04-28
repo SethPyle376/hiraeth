@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, iam_xml_response, new_request_id, parse_payload_error,
+        IAM_XMLNS, ResponseMetadata, iam_xml_response, parse_payload_error,
         requested_or_signing_user, response_metadata,
     },
     error::IamError,
@@ -92,7 +92,7 @@ where
 
         iam_xml_response(&create_access_key_response(
             iam_access_key_xml(&target_user.name, &created_access_key),
-            new_request_id(),
+            request.request_id,
         ))
     }
 
@@ -209,6 +209,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),

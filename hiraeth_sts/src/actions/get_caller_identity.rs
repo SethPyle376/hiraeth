@@ -20,6 +20,8 @@ struct GetCallerIdentityResponse {
     xmlns: &'static str,
     #[serde(rename = "GetCallerIdentityResult")]
     result: GetCallerIdentityResult,
+    #[serde(rename = "ResponseMetadata")]
+    response_metadata: ResponseMetadata,
 }
 
 #[derive(Debug, Serialize)]
@@ -28,6 +30,12 @@ struct GetCallerIdentityResult {
     arn: String,
     user_id: String,
     account: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct ResponseMetadata {
+    request_id: String,
 }
 
 #[async_trait]
@@ -66,6 +74,9 @@ where
                 arn: arn_util::user_arn(account_id, &user.path, &user.name),
                 user_id: user.user_id.clone(),
                 account: account_id.clone(),
+            },
+            response_metadata: ResponseMetadata {
+                request_id: request.request_id,
             },
         };
 
@@ -135,6 +146,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> hiraeth_core::ResolvedRequest {
         hiraeth_core::ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "sts.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -176,6 +188,7 @@ mod tests {
         assert!(
             body.contains("<Arn>arn:aws:iam::123456789012:user/engineering/signing-user</Arn>")
         );
+        assert!(body.contains("<ResponseMetadata><RequestId>test-request-id</RequestId>"));
     }
 
     #[tokio::test]

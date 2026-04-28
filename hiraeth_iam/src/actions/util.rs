@@ -30,10 +30,6 @@ pub(super) fn iam_xml_response<T: Serialize>(body: &T) -> Result<ServiceResponse
     xml_response(body).map_err(IamError::from)
 }
 
-pub(super) fn new_request_id() -> String {
-    Uuid::new_v4().to_string()
-}
-
 pub(super) fn new_id() -> String {
     format!("AIDA{}", Uuid::new_v4().simple().to_string().to_uppercase())
 }

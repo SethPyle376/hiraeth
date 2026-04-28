@@ -205,6 +205,7 @@ mod tests {
         );
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: hiraeth_http::IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),

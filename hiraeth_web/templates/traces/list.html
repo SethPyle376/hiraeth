@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+
+{% block title %}Request Traces | Hiraeth{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-[94rem]">
+  {{ page_header_html|safe }}
+
+  <div class="mb-5">{{ stats_html|safe }}</div>
+
+  <section class="card border border-base-300 bg-base-100">
+    <div class="card-body">
+      <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 class="card-title text-xl">Recent requests</h2>
+          <p class="text-sm text-base-content/60">Newest request traces are shown first.</p>
+        </div>
+        <div class="badge badge-outline">{{ traces.len() }} shown</div>
+      </div>
+
+      {% if has_traces %}
+      <div class="overflow-x-auto rounded border border-base-300 bg-base-100">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Request</th>
+              <th>Service</th>
+              <th>Principal</th>
+              <th>Status</th>
+              <th class="text-right">Duration</th>
+              <th>Started</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for trace in traces %}
+            <tr class="hover:bg-base-200/70">
+              <td>
+                <div class="font-mono text-sm font-bold">{{ trace.method }} {{ trace.path }}</div>
+                <div class="text-xs text-base-content/50">request {{ trace.request_id }}</div>
+              </td>
+              <td>
+                <div class="font-bold">{{ trace.service }}</div>
+                <div class="font-mono text-xs text-base-content/50">{{ trace.region }}</div>
+              </td>
+              <td>
+                <div class="font-bold">{{ trace.principal }}</div>
+                <div class="font-mono text-xs text-base-content/50">{{ trace.account_id }}</div>
+              </td>
+              <td>
+                <span class="badge {{ trace.status_class }}">{{ trace.status_code }}</span>
+                {% if trace.has_error %}
+                <div class="mt-1 max-w-xs truncate text-xs text-error">{{ trace.error_message }}</div>
+                {% endif %}
+              </td>
+              <td class="text-right font-mono">{{ trace.duration_ms }} ms</td>
+              <td class="text-sm text-base-content/70">{{ trace.started_at }}</td>
+              <td class="text-right">
+                <a class="btn btn-sm btn-primary" href="/traces/{{ trace.request_id }}">Open</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="rounded border border-dashed border-base-300 p-8 text-center">
+        <h3 class="text-lg font-bold">No traces yet</h3>
+        <p class="mt-2 text-sm text-base-content/60">Send a request to the AWS endpoint and refresh this page.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}

@@ -347,6 +347,18 @@ mod tests {
             Ok(None)
         }
 
+        async fn list_managed_policies(&self) -> Result<Vec<ManagedPolicy>, StoreError> {
+            unreachable!("authorization tests do not list managed policies")
+        }
+
+        async fn update_managed_policy_document(
+            &self,
+            _policy_id: i64,
+            _policy_document: &str,
+        ) -> Result<ManagedPolicy, StoreError> {
+            unreachable!("authorization tests do not update managed policies")
+        }
+
         async fn attach_policy_to_principal(
             &self,
             _policy_id: i64,
@@ -414,6 +426,7 @@ mod tests {
 
     fn resolved_request(kind: &str) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "sqs.us-east-1.amazonaws.com".to_string(),
                 method: "POST".to_string(),

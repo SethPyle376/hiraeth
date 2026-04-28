@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
+chrono = "0.4"
 config = { version = "0.15", features = ["json"] }
 hiraeth_auth = { path = "../hiraeth_auth" }
 hiraeth_core = { path = "../hiraeth_core" }
@@ -23,3 +24,4 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "net"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1.18", features = ["v4"] }

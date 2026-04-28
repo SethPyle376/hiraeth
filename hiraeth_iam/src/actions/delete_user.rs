@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, existing_user_by_name, iam_xml_response, new_request_id,
-        parse_payload_error, response_metadata,
+        IAM_XMLNS, ResponseMetadata, existing_user_by_name, iam_xml_response, parse_payload_error,
+        response_metadata,
     },
     error::IamError,
 };
@@ -70,7 +70,7 @@ where
         store
             .delete_user(account_id, &delete_request.user_name)
             .await
-            .map(|_| iam_xml_response(&delete_user_response(new_request_id())))?
+            .map(|_| iam_xml_response(&delete_user_response(request.request_id)))?
     }
 
     async fn resolve_authorization_typed(
@@ -143,6 +143,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),

@@ -4,6 +4,7 @@ pub mod auth;
 mod config;
 mod protocol;
 mod request;
+pub mod tracing;
 
 pub use action::{
     AwsAction, AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionRegistry,

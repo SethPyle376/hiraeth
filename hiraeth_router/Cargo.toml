@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 async-trait = "0.1"
 hiraeth_core = { path = "../hiraeth_core" }
+tracing = "0.1"
 
 [dev-dependencies]
 chrono = "0.4"

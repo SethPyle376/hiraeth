@@ -94,6 +94,7 @@ mod tests {
         }
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "sqs.us-east-1.amazonaws.com".to_string(),
                 method: "POST".to_string(),

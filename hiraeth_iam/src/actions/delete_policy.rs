@@ -5,7 +5,6 @@ use hiraeth_core::{
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     actions::util::{
@@ -69,7 +68,7 @@ where
 
         iam_xml_response(&DeletePolicyResponse {
             xmlns: IAM_XMLNS,
-            response_metadata: response_metadata(Uuid::new_v4().to_string()),
+            response_metadata: response_metadata(request.request_id),
         })
     }
 

@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, iam_xml_response, new_request_id,
-        optional_target_user, parse_payload_error, response_metadata,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, iam_xml_response, optional_target_user,
+        parse_payload_error, response_metadata,
     },
     error::IamError,
 };
@@ -78,7 +78,7 @@ where
                 }
             };
 
-        iam_xml_response(&get_user_response(principal.into(), new_request_id()))
+        iam_xml_response(&get_user_response(principal.into(), request.request_id))
     }
 
     async fn resolve_authorization_typed(
@@ -165,6 +165,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),

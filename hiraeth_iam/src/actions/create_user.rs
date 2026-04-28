@@ -6,12 +6,11 @@ use hiraeth_core::{
 };
 use hiraeth_store::{IamStore, iam::NewPrincipal};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     actions::util::{
         IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, iam_xml_response, new_id,
-        new_request_id, parse_payload_error, response_metadata,
+        parse_payload_error, response_metadata,
     },
     error::IamError,
 };
@@ -81,7 +80,7 @@ where
 
         iam_xml_response(&create_user_response(
             created_principal.into(),
-            new_request_id(),
+            request.request_id,
         ))
     }
 
@@ -158,6 +157,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -253,7 +253,7 @@ mod tests {
         assert!(body.contains("<Path>/engineering/dev/</Path>"));
         assert!(body.contains("<Arn>arn:aws:iam::123456789012:user/engineering/dev/alice</Arn>"));
         assert!(body.contains("<UserId>AIDA"));
-        assert!(body.contains("<ResponseMetadata><RequestId>"));
+        assert!(body.contains("<ResponseMetadata><RequestId>test-request-id</RequestId>"));
     }
 
     #[test]

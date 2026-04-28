@@ -5,7 +5,6 @@ use hiraeth_core::{
 };
 use hiraeth_store::{IamStore, iam::NewManagedPolicy};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     actions::util::{
@@ -79,7 +78,7 @@ where
             create_policy_result: CreatePolicyResult {
                 policy: created_policy.into(),
             },
-            response_metadata: response_metadata(Uuid::new_v4().to_string()),
+            response_metadata: response_metadata(request.request_id),
         })
     }
 
@@ -149,6 +148,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> hiraeth_core::ResolvedRequest {
         hiraeth_core::ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),

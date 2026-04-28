@@ -5,7 +5,6 @@ use hiraeth_core::{
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     actions::util::{
@@ -88,7 +87,7 @@ where
 
         let response = DetachUserPolicyResponse {
             xmlns: IAM_XMLNS,
-            response_metadata: response_metadata(Uuid::new_v4().to_string()),
+            response_metadata: response_metadata(request.request_id),
         };
         iam_xml_response(&response)
     }
@@ -190,6 +189,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> hiraeth_core::ResolvedRequest {
         hiraeth_core::ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),
