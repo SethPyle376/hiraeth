@@ -157,3 +157,164 @@ impl ManagedPolicyStore for SqliteManagedPolicyStore {
             .map_err(map_sqlx_error)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use hiraeth_store::iam::{ManagedPolicyStore, NewManagedPolicy, NewPrincipal, PrincipalStore};
+
+    use crate::{get_store_pool, run_migrations};
+
+    use super::super::SqlitePrincipalStore;
+    use super::SqliteManagedPolicyStore;
+
+    async fn test_pool() -> (TempDir, sqlx::SqlitePool) {
+        let temp_dir = TempDir::new().expect("temp dir should be created");
+        let db_url = format!(
+            "sqlite://{}",
+            temp_dir.path().join("managed-policy.sqlite").display()
+        );
+        let pool = get_store_pool(&db_url)
+            .await
+            .expect("pool should connect to temp sqlite db");
+        run_migrations(&pool)
+            .await
+            .expect("migrations should run for temp sqlite db");
+        (temp_dir, pool)
+    }
+
+    #[tokio::test]
+    async fn get_managed_policy_is_path_aware() {
+        let (_temp_dir, pool) = test_pool().await;
+        let store = SqliteManagedPolicyStore::new(&pool);
+
+        store
+            .insert_managed_policy(NewManagedPolicy {
+                policy_id: "AIDAPOLICY00000001".to_string(),
+                account_id: "123456789012".to_string(),
+                policy_name: "orders-readonly".to_string(),
+                policy_path: Some("/team-a/".to_string()),
+                policy_document: r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+            })
+            .await
+            .expect("insert should succeed");
+        store
+            .insert_managed_policy(NewManagedPolicy {
+                policy_id: "AIDAPOLICY00000002".to_string(),
+                account_id: "123456789012".to_string(),
+                policy_name: "orders-readonly".to_string(),
+                policy_path: Some("/team-b/".to_string()),
+                policy_document: r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+            })
+            .await
+            .expect("insert should succeed");
+
+        let team_a = store
+            .get_managed_policy("123456789012", "orders-readonly", "/team-a/")
+            .await
+            .expect("lookup should succeed")
+            .expect("policy should exist");
+        let team_b = store
+            .get_managed_policy("123456789012", "orders-readonly", "/team-b/")
+            .await
+            .expect("lookup should succeed")
+            .expect("policy should exist");
+
+        assert_ne!(team_a.id, team_b.id);
+        assert_eq!(team_a.policy_path.as_deref(), Some("/team-a/"));
+        assert_eq!(team_b.policy_path.as_deref(), Some("/team-b/"));
+    }
+
+    #[tokio::test]
+    async fn delete_managed_policy_removes_only_matching_path() {
+        let (_temp_dir, pool) = test_pool().await;
+        let store = SqliteManagedPolicyStore::new(&pool);
+
+        store
+            .insert_managed_policy(NewManagedPolicy {
+                policy_id: "AIDAPOLICY00000011".to_string(),
+                account_id: "123456789012".to_string(),
+                policy_name: "orders-readonly".to_string(),
+                policy_path: Some("/team-a/".to_string()),
+                policy_document: r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+            })
+            .await
+            .expect("insert should succeed");
+        store
+            .insert_managed_policy(NewManagedPolicy {
+                policy_id: "AIDAPOLICY00000012".to_string(),
+                account_id: "123456789012".to_string(),
+                policy_name: "orders-readonly".to_string(),
+                policy_path: Some("/team-b/".to_string()),
+                policy_document: r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+            })
+            .await
+            .expect("insert should succeed");
+
+        store
+            .delete_managed_policy("123456789012", "orders-readonly", "/team-a/")
+            .await
+            .expect("delete should succeed");
+
+        let team_a = store
+            .get_managed_policy("123456789012", "orders-readonly", "/team-a/")
+            .await
+            .expect("lookup should succeed");
+        let team_b = store
+            .get_managed_policy("123456789012", "orders-readonly", "/team-b/")
+            .await
+            .expect("lookup should succeed");
+        assert!(team_a.is_none());
+        assert!(team_b.is_some());
+    }
+
+    #[tokio::test]
+    async fn attach_and_detach_policy_for_principal() {
+        let (_temp_dir, pool) = test_pool().await;
+        let policy_store = SqliteManagedPolicyStore::new(&pool);
+        let principal_store = SqlitePrincipalStore::new(&pool);
+
+        let principal = principal_store
+            .create_principal(NewPrincipal {
+                account_id: "123456789012".to_string(),
+                kind: "user".to_string(),
+                name: "alice".to_string(),
+                path: "/".to_string(),
+                user_id: "AIDATESTUSER000001".to_string(),
+            })
+            .await
+            .expect("principal should be created");
+
+        let policy = policy_store
+            .insert_managed_policy(NewManagedPolicy {
+                policy_id: "AIDAPOLICY00000021".to_string(),
+                account_id: "123456789012".to_string(),
+                policy_name: "orders-readonly".to_string(),
+                policy_path: Some("/".to_string()),
+                policy_document: r#"{"Version":"2012-10-17","Statement":[]}"#.to_string(),
+            })
+            .await
+            .expect("insert should succeed");
+
+        policy_store
+            .attach_policy_to_principal(policy.id, principal.id)
+            .await
+            .expect("attach should succeed");
+        let attached = policy_store
+            .get_managed_policies_attached_to_principal(principal.id)
+            .await
+            .expect("attached policy lookup should succeed");
+        assert_eq!(attached.len(), 1);
+
+        policy_store
+            .detach_policy_from_principal(policy.id, principal.id)
+            .await
+            .expect("detach should succeed");
+        let detached = policy_store
+            .get_managed_policies_attached_to_principal(principal.id)
+            .await
+            .expect("attached policy lookup should succeed");
+        assert!(detached.is_empty());
+    }
+}

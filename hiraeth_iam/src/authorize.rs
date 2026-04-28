@@ -207,6 +207,7 @@ mod tests {
     #[derive(Clone, Default)]
     struct TestIamStore {
         inline_policies: Vec<PrincipalInlinePolicy>,
+        managed_policies: Vec<ManagedPolicy>,
     }
 
     #[async_trait]
@@ -373,9 +374,14 @@ mod tests {
 
         async fn get_managed_policies_attached_to_principal(
             &self,
-            _principal_id: i64,
+            principal_id: i64,
         ) -> Result<Vec<ManagedPolicy>, StoreError> {
-            Ok(vec![])
+            Ok(self
+                .managed_policies
+                .iter()
+                .filter(|policy| policy.id == principal_id)
+                .cloned()
+                .collect())
         }
     }
 
@@ -387,6 +393,21 @@ mod tests {
             mode,
             TestIamStore {
                 inline_policies: inline_policies.into_iter().collect(),
+                managed_policies: vec![],
+            },
+        )
+    }
+
+    fn service_with_managed(
+        mode: AuthorizationMode,
+        inline_policies: impl IntoIterator<Item = PrincipalInlinePolicy>,
+        managed_policies: impl IntoIterator<Item = ManagedPolicy>,
+    ) -> IamService<TestIamStore> {
+        IamService::new(
+            mode,
+            TestIamStore {
+                inline_policies: inline_policies.into_iter().collect(),
+                managed_policies: managed_policies.into_iter().collect(),
             },
         )
     }
@@ -476,6 +497,41 @@ mod tests {
             id: 1,
             principal_id,
             policy_name: format!("{}-{}", effect.to_lowercase(), action),
+            policy_document: format!(
+                r#"{{
+                    "Version":"2012-10-17",
+                    "Statement":[
+                        {{
+                            "Effect":"{effect}",
+                            "Action":"{action}",
+                            "Resource":"{resource}"
+                        }}
+                    ]
+                }}"#
+            ),
+            created_at: Utc
+                .with_ymd_and_hms(2026, 4, 20, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            updated_at: Utc
+                .with_ymd_and_hms(2026, 4, 20, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+        }
+    }
+
+    fn managed_policy(
+        effect: &str,
+        action: &str,
+        resource: &str,
+        principal_id: i64,
+    ) -> ManagedPolicy {
+        ManagedPolicy {
+            id: principal_id,
+            policy_id: format!("AIDAPOLICY{:08}", principal_id),
+            account_id: "123456789012".to_string(),
+            policy_name: format!("managed-{}-{}", effect.to_lowercase(), action),
+            policy_path: Some("/".to_string()),
             policy_document: format!(
                 r#"{{
                     "Version":"2012-10-17",
@@ -613,6 +669,24 @@ mod tests {
         let result = service(
             AuthorizationMode::Enforce,
             [inline_policy(
+                "Allow",
+                "sqs:SendMessage",
+                "arn:aws:sqs:us-east-1:123456789012:orders",
+                1,
+            )],
+        )
+        .authorize(&resolved_request("user"), &check(None))
+        .await;
+
+        assert_eq!(result, AuthorizationResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn enforce_mode_allows_matching_managed_policy_without_resource_policy() {
+        let result = service_with_managed(
+            AuthorizationMode::Enforce,
+            [],
+            [managed_policy(
                 "Allow",
                 "sqs:SendMessage",
                 "arn:aws:sqs:us-east-1:123456789012:orders",
