@@ -32,7 +32,7 @@ const HTMX_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/assets/vendor/htmx.min.js"
 ));
-const APP_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+const APP_ASSET_CACHE_CONTROL: &str = "public, max-age=0, must-revalidate";
 const VENDOR_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
 #[derive(Clone)]
