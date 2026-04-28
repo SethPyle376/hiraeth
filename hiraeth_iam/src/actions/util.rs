@@ -1,6 +1,8 @@
 use chrono::SecondsFormat;
 use hiraeth_core::auth::Policy;
-use hiraeth_core::{AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, xml_response};
+use hiraeth_core::{
+    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, arn_util, xml_response,
+};
 use hiraeth_store::IamStore;
 use hiraeth_store::iam::{ManagedPolicy, Principal};
 use serde::Serialize;
@@ -61,7 +63,7 @@ impl From<Principal> for IamUserXml {
             path: principal.path.clone(),
             user_name: principal.name.clone(),
             user_id: principal.user_id.clone(),
-            arn: user_arn(&principal.account_id, &principal.path, &principal.name),
+            arn: arn_util::user_arn(&principal.account_id, &principal.path, &principal.name),
             create_date: principal
                 .created_at
                 .and_utc()
@@ -90,7 +92,7 @@ impl From<ManagedPolicy> for IamPolicyXml {
             policy_name: Some(policy.policy_name.clone()),
             default_version_id: None,
             policy_id: Some(policy.policy_id.clone()),
-            arn: Some(policy_arn(
+            arn: Some(arn_util::policy_arn(
                 &policy.account_id,
                 &policy.policy_path.unwrap_or("".to_string()).as_ref(),
                 &policy.policy_name,
@@ -176,20 +178,6 @@ where
         .ok_or_else(|| IamError::NoSuchEntity(format!("User with name {user_name} does not exist")))
 }
 
-pub(super) fn user_arn(account_id: &str, path: &str, user_name: &str) -> String {
-    format!(
-        "arn:aws:iam::{account_id}:user{}{user_name}",
-        normalize_user_path(path)
-    )
-}
-
-pub(super) fn policy_arn(account_id: &str, path: &str, policy_name: &str) -> String {
-    format!(
-        "arn:aws:iam::{account_id}:user{}{policy_name}",
-        normalize_user_path(path)
-    )
-}
-
 pub(super) fn parse_policy_arn(arn: &str) -> Result<(String, String), IamError> {
     let parts: Vec<&str> = arn.split(':').collect();
     if parts.len() != 6 || parts[0] != "arn" || parts[1] != "aws" || parts[2] != "iam" {
@@ -207,16 +195,6 @@ pub(super) fn parse_policy_arn(arn: &str) -> Result<(String, String), IamError> 
 
     let policy_name = resource_parts[resource_parts.len() - 1].to_string();
     Ok((account_id, policy_name))
-}
-
-pub(super) fn normalize_user_path(path: &str) -> String {
-    let trimmed = path.trim();
-    if trimmed.is_empty() || trimmed == "/" {
-        "/".to_string()
-    } else {
-        let trimmed = trimmed.trim_matches('/');
-        format!("/{trimmed}/")
-    }
 }
 
 pub(super) fn default_user_path() -> String {

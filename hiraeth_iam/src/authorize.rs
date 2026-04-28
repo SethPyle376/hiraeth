@@ -373,7 +373,7 @@ mod tests {
             &self,
             _principal_id: i64,
         ) -> Result<Vec<ManagedPolicy>, StoreError> {
-            unreachable!("authorization tests do not get managed policies attached to principal")
+            Ok(vec![])
         }
     }
 

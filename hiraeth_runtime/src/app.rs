@@ -3,6 +3,7 @@ use hiraeth_iam::{AuthorizationMode, IamService};
 use hiraeth_router::ServiceRouter;
 use hiraeth_sqs::SqsService;
 use hiraeth_store_sqlx::SqlxStore;
+use hiraeth_sts::StsService;
 
 use crate::request::{self, AppRequestOutcome};
 
@@ -21,6 +22,7 @@ impl App {
         )));
         router.register_service(Box::new(IamService::new(auth_mode, iam_store)));
         router.register_service(Box::new(SqsService::new(store.sqs_store.clone())));
+        router.register_service(Box::new(StsService::new(store.iam_store.clone())));
 
         Self { iam, router }
     }

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::SecondsFormat;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
 };
 use hiraeth_store::{IamStore, iam::AccessKey};
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     actions::util::{
         IAM_XMLNS, ResponseMetadata, iam_xml_response, new_request_id, parse_payload_error,
-        requested_or_signing_user, response_metadata, user_arn,
+        requested_or_signing_user, response_metadata,
     },
     error::IamError,
 };
@@ -111,7 +111,7 @@ where
 
         Ok(AuthorizationCheck {
             action: "iam:CreateAccessKey".to_string(),
-            resource: user_arn(
+            resource: arn_util::user_arn(
                 &target_user.account_id,
                 &target_user.path,
                 &target_user.name,

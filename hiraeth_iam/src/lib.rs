@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use hiraeth_auth::AuthenticatedRequest;
 use hiraeth_core::{
     ApiError, AuthContext, AuthMode, AwsActionRegistry, ResolvedRequest, ServiceResponse,
-    auth::AuthorizationCheck,
+    auth::AuthorizationCheck, get_query_request_action_name,
 };
 use hiraeth_router::Service;
 use hiraeth_store::{IamStore, StoreError, iam::PrincipalStore};
@@ -107,10 +107,9 @@ where
         &self,
         request: ResolvedRequest,
     ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
-        let action_name = match auth::get_action_name_for_request(&request) {
-            Ok(action_name) => action_name,
-            Err(error) => return Ok(ServiceResponse::from(error)),
-        };
+        let action_name = get_query_request_action_name(&request)
+            .map_err(|error| ApiError::BadRequest(error.to_string()))?
+            .ok_or_else(|| ApiError::BadRequest("Missing Action parameter".to_string()))?;
         let action = match self.actions.get(&action_name) {
             Some(action) => action,
             None => {
@@ -127,8 +126,13 @@ where
         &self,
         request: &ResolvedRequest,
     ) -> Result<AuthorizationCheck, ServiceResponse> {
-        let action_name =
-            auth::get_action_name_for_request(request).map_err(ServiceResponse::from)?;
+        let action_name = get_query_request_action_name(request)
+            .map_err(|error| ServiceResponse::from(error::IamError::from(error)))?
+            .ok_or_else(|| {
+                ServiceResponse::from(error::IamError::BadRequest(
+                    "Missing Action parameter".to_string(),
+                ))
+            })?;
         let action = self.actions.get(&action_name).ok_or_else(|| {
             ServiceResponse::from(error::IamError::UnsupportedOperation(action_name.clone()))
         })?;

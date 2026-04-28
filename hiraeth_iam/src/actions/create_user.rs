@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
 };
 use hiraeth_store::{IamStore, iam::NewPrincipal};
@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::{
     actions::util::{
         IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, iam_xml_response, new_id,
-        new_request_id, normalize_user_path, parse_payload_error, response_metadata, user_arn,
+        new_request_id, parse_payload_error, response_metadata,
     },
     error::IamError,
 };
@@ -68,7 +68,7 @@ where
     ) -> Result<ServiceResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
 
-        let path = normalize_user_path(&create_user_request.path);
+        let path = arn_util::normalize_user_path(&create_user_request.path);
         let created_principal = store
             .create_principal(NewPrincipal {
                 account_id: account_id.clone(),
@@ -93,7 +93,7 @@ where
     ) -> Result<AuthorizationCheck, IamError> {
         Ok(AuthorizationCheck {
             action: "iam:CreateUser".to_string(),
-            resource: user_arn(
+            resource: arn_util::user_arn(
                 &request.auth_context.principal.account_id,
                 &create_user_request.path,
                 &create_user_request.user_name,

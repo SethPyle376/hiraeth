@@ -1,0 +1,12 @@
+[package]
+name = "hiraeth_sts"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1"
+hiraeth_core = { path = "../hiraeth_core" }
+hiraeth_router = { path = "../hiraeth_router" }
+hiraeth_store = { path = "../hiraeth_store" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

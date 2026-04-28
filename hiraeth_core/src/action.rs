@@ -3,7 +3,7 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     AwsQueryParseError, RequestBodyParseError, ResolvedRequest, ServiceResponse,
-    auth::AuthorizationCheck, parse_aws_query_request, parse_json_body,
+    auth::AuthorizationCheck, parse_aws_query_params, parse_aws_query_request, parse_json_body,
 };
 
 #[async_trait]
@@ -158,6 +158,13 @@ impl<S> Default for AwsActionRegistry<S> {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn get_query_request_action_name(
+    request: &ResolvedRequest,
+) -> Result<Option<String>, AwsQueryParseError> {
+    let params = parse_aws_query_params(&request.request)?;
+    Ok(params.get("Action").map(|s| s.to_string()))
 }
 
 #[cfg(test)]

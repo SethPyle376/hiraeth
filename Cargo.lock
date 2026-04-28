@@ -1486,6 +1486,7 @@ dependencies = [
  "hiraeth_sqs",
  "hiraeth_store",
  "hiraeth_store_sqlx",
+ "hiraeth_sts",
  "hiraeth_web",
  "http 1.4.0",
  "http-body-util",
@@ -1534,6 +1535,18 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "hiraeth_sts"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hiraeth_core",
+ "hiraeth_router",
+ "hiraeth_store",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

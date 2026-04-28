@@ -4,36 +4,14 @@ use crate::error::IamError;
 
 const IAM_API_VERSION: &str = "2010-05-08";
 
-pub(crate) fn get_action_name_for_request(request: &ResolvedRequest) -> Result<String, IamError> {
-    let params = parse_aws_query_params(&request.request)?;
-    let action = params
-        .get("Action")
-        .ok_or_else(|| IamError::BadRequest("Missing Action parameter".to_string()))?;
-    let version = params
-        .get("Version")
-        .ok_or_else(|| IamError::BadRequest("Missing Version parameter".to_string()))?;
-
-    if version != IAM_API_VERSION {
-        return Err(IamError::BadRequest(format!(
-            "Unsupported Version parameter '{}'",
-            version
-        )));
-    }
-
-    Ok(action.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, get_query_request_action_name};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::principal::Principal;
-
-    use super::get_action_name_for_request;
-    use crate::error::IamError;
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
@@ -75,20 +53,18 @@ mod tests {
     fn resolves_create_user_action_name() {
         let request = resolved_request(b"Action=CreateUser&Version=2010-05-08&UserName=alice");
 
-        let action = get_action_name_for_request(&request).expect("action should resolve");
+        let action = get_query_request_action_name(&request)
+            .expect("action query should parse")
+            .expect("action should be present");
 
         assert_eq!(action, "CreateUser");
     }
 
     #[test]
-    fn rejects_missing_version_parameter() {
-        let request = resolved_request(b"Action=CreateUser&UserName=alice");
+    fn returns_none_when_action_parameter_is_missing() {
+        let request = resolved_request(b"Version=2010-05-08&UserName=alice");
 
-        let error = get_action_name_for_request(&request).expect_err("missing version should fail");
-
-        assert_eq!(
-            error,
-            IamError::BadRequest("Missing Version parameter".to_string())
-        );
+        let action = get_query_request_action_name(&request).expect("query should parse");
+        assert_eq!(action, None);
     }
 }

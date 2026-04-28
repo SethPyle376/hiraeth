@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
 };
 use hiraeth_store::IamStore;
@@ -10,7 +10,6 @@ use uuid::Uuid;
 use crate::{
     actions::util::{
         IAM_XMLNS, ResponseMetadata, iam_xml_response, parse_payload_error, parse_policy_arn,
-        user_arn,
     },
     error::IamError,
 };
@@ -103,7 +102,7 @@ where
 
         Ok(AuthorizationCheck {
             action: "iam:AttachUserPolicy".to_string(),
-            resource: user_arn(account_id, &user.path, &user.name),
+            resource: arn_util::user_arn(account_id, &user.path, &user.name),
             resource_policy: None,
         })
     }

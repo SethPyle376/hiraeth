@@ -1,4 +1,5 @@
 mod action;
+pub mod arn_util;
 pub mod auth;
 mod config;
 mod protocol;
@@ -6,7 +7,7 @@ mod request;
 
 pub use action::{
     AwsAction, AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionRegistry,
-    TypedAwsAction, TypedAwsActionAdapter,
+    TypedAwsAction, TypedAwsActionAdapter, get_query_request_action_name,
 };
 pub use config::{AuthMode, Config};
 pub use protocol::{

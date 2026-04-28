@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck,
+    TypedAwsAction, arn_util, auth::AuthorizationCheck,
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions::util::{
         IAM_XMLNS, ResponseMetadata, existing_user_by_name, iam_xml_response, new_request_id,
-        parse_payload_error, response_metadata, user_arn,
+        parse_payload_error, response_metadata,
     },
     error::IamError,
 };
@@ -84,7 +84,7 @@ where
 
         Ok(AuthorizationCheck {
             action: "iam:DeleteUser".to_string(),
-            resource: user_arn(
+            resource: arn_util::user_arn(
                 &request.auth_context.principal.account_id,
                 &principal.path,
                 &principal.name,

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
 };
 use hiraeth_store::IamStore;
@@ -98,7 +98,7 @@ where
                 ))
             })?;
 
-        let arn = util::user_arn(account_id, &user.path, &user.name);
+        let arn = arn_util::user_arn(account_id, &user.path, &user.name);
 
         Ok(AuthorizationCheck {
             action: "iam:PutUserPolicy".to_string(),
