@@ -6,10 +6,8 @@ use std::{
 use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
-    json_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
@@ -68,7 +66,7 @@ async fn handle_receive_message_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     receive_request: ReceiveMessageRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<ReceiveMessageResponse, SqsError> {
     let queue =
         crate::util::load_queue_from_url(request, store, &receive_request.queue_url).await?;
     validate_receive_request(&receive_request)?;
@@ -135,10 +133,9 @@ async fn handle_receive_message_typed<S: SqsStore>(
         .await;
     };
 
-    json_response(&ReceiveMessageResponse {
+    Ok(ReceiveMessageResponse {
         messages: received_messages,
     })
-    .map_err(Into::into)
 }
 
 fn validate_receive_request(request: &ReceiveMessageRequest) -> Result<(), SqsError> {
@@ -274,6 +271,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ReceiveMessageRequest;
+    type Response = ReceiveMessageResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -295,7 +293,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<ReceiveMessageResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), receive_request.queue_url.clone()),
@@ -473,8 +471,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -503,8 +501,6 @@ mod tests {
         )
         .await
         .expect("receive message should succeed");
-
-        assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);
         let messages = body["Messages"]
             .as_array()

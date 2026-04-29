@@ -2,10 +2,8 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
-    json_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
@@ -36,13 +34,13 @@ async fn handle_get_queue_attributes_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     attributes_request: GetQueueAttributesRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<GetQueueAttributesResponse, SqsError> {
     let queue =
         crate::util::load_queue_from_url(request, store, &attributes_request.queue_url).await?;
     let attributes =
         collect_queue_attributes(store, &queue, &attributes_request.attribute_names).await?;
 
-    json_response(&GetQueueAttributesResponse { attributes }).map_err(Into::into)
+    Ok(GetQueueAttributesResponse { attributes })
 }
 
 #[async_trait]
@@ -51,6 +49,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = GetQueueAttributesRequest;
+    type Response = GetQueueAttributesResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -72,7 +71,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<GetQueueAttributesResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
             (
@@ -199,8 +198,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -238,8 +237,6 @@ mod tests {
         )
         .await
         .expect("get queue attributes should succeed");
-
-        assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);
         let attributes = &body["Attributes"];
         assert_eq!(attributes["VisibilityTimeout"], "30");

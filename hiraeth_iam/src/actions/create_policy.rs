@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamPolicyXml, ResponseMetadata, iam_xml_response, new_id, normalize_policy_path,
+        IAM_XMLNS, IamPolicyXml, ResponseMetadata, new_id, normalize_policy_path,
         parse_payload_error, response_metadata,
     },
     error::IamError,
@@ -29,7 +29,7 @@ pub(crate) struct CreatePolicyRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct CreatePolicyResponse {
+pub(crate) struct CreatePolicyResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     create_policy_result: CreatePolicyResult,
@@ -48,6 +48,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = CreatePolicyRequest;
+    type Response = CreatePolicyResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -58,6 +59,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -65,7 +70,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, IamError> {
+    ) -> Result<CreatePolicyResponse, IamError> {
         let account_id = request.auth_context.principal.account_id.clone();
         let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
         let timer = trace_context.start_span();
@@ -103,7 +108,7 @@ where
             .await;
         let created_policy = result?;
 
-        iam_xml_response(&CreatePolicyResponse {
+        Ok(CreatePolicyResponse {
             xmlns: IAM_XMLNS,
             create_policy_result: CreatePolicyResult {
                 policy: created_policy.into(),

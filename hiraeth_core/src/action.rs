@@ -1,11 +1,14 @@
 use async_trait::async_trait;
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    AwsQueryParseError, RequestBodyParseError, ResolvedRequest, ServiceResponse,
+    AwsQueryParseError, RequestBodyParseError, ResolvedRequest, ResponseSerializationError,
+    ServiceResponse,
     auth::AuthorizationCheck,
-    parse_aws_query_params, parse_aws_query_request, parse_json_body,
+    empty_response, json_response, parse_aws_query_params, parse_aws_query_request,
+    parse_json_body,
     tracing::{TraceContext, TraceRecorder},
+    xml_response,
 };
 
 #[async_trait]
@@ -30,12 +33,17 @@ pub trait AwsAction<S>: Send + Sync {
 #[async_trait]
 pub trait TypedAwsAction<S>: Send + Sync {
     type Request: DeserializeOwned + Send;
-    type Error: Into<ServiceResponse> + Send;
+    type Response: Serialize + Send;
+    type Error: From<ResponseSerializationError> + Into<ServiceResponse> + Send;
 
     fn name(&self) -> &'static str;
 
     fn payload_format(&self) -> AwsActionPayloadFormat {
         AwsActionPayloadFormat::AwsQuery
+    }
+
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Json
     }
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error;
@@ -47,7 +55,7 @@ pub trait TypedAwsAction<S>: Send + Sync {
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, Self::Error>;
+    ) -> Result<Self::Response, Self::Error>;
 
     async fn resolve_authorization_typed(
         &self,
@@ -61,6 +69,13 @@ pub trait TypedAwsAction<S>: Send + Sync {
 pub enum AwsActionPayloadFormat {
     AwsQuery,
     Json,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AwsActionResponseFormat {
+    Json,
+    Xml,
+    Empty,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,7 +121,10 @@ where
             .handle(request, payload, store, trace_context, trace_recorder)
             .await
         {
-            Ok(response) => response,
+            Ok(response) => match render_response(self.action.response_format(), &response) {
+                Ok(response) => response,
+                Err(error) => A::Error::from(error).into(),
+            },
             Err(error) => error.into(),
         }
     }
@@ -123,6 +141,20 @@ where
             .resolve_authorization_typed(request, payload, store)
             .await
             .map_err(Into::into)
+    }
+}
+
+fn render_response<T>(
+    format: AwsActionResponseFormat,
+    response: &T,
+) -> Result<ServiceResponse, ResponseSerializationError>
+where
+    T: Serialize,
+{
+    match format {
+        AwsActionResponseFormat::Json => json_response(response),
+        AwsActionResponseFormat::Xml => xml_response(response),
+        AwsActionResponseFormat::Empty => Ok(empty_response()),
     }
 }
 

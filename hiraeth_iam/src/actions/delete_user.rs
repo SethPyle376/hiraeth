@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
     TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
@@ -12,8 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, existing_user_by_name, iam_xml_response, parse_payload_error,
-        response_metadata,
+        IAM_XMLNS, ResponseMetadata, existing_user_by_name, parse_payload_error, response_metadata,
     },
     error::IamError,
 };
@@ -29,7 +28,7 @@ pub(crate) struct DeleteUserRequest {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename = "DeleteUserResponse")]
 #[serde(rename_all = "PascalCase")]
-struct DeleteUserResponse {
+pub(crate) struct DeleteUserResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "ResponseMetadata")]
@@ -49,6 +48,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = DeleteUserRequest;
+    type Response = DeleteUserResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -57,6 +57,10 @@ where
 
     fn payload_format(&self) -> AwsActionPayloadFormat {
         AwsActionPayloadFormat::AwsQuery
+    }
+
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
     }
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
@@ -70,7 +74,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, IamError> {
+    ) -> Result<DeleteUserResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
@@ -92,7 +96,9 @@ where
                 attributes,
             )
             .await;
-        result.map(|_| iam_xml_response(&delete_user_response(request.request_id)))?
+        result
+            .map(|_| delete_user_response(request.request_id))
+            .map_err(Into::into)
     }
 
     async fn resolve_authorization_typed(

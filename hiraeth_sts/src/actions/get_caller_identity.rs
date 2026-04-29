@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
-    xml_response,
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
@@ -19,7 +18,7 @@ pub(crate) struct GetCallerIdentityRequest {}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct GetCallerIdentityResponse {
+pub(crate) struct GetCallerIdentityResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "GetCallerIdentityResult")]
@@ -48,6 +47,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = GetCallerIdentityRequest;
+    type Response = GetCallerIdentityResponse;
     type Error = StsError;
 
     fn name(&self) -> &'static str {
@@ -58,6 +58,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -65,7 +69,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, Self::Error> {
+    ) -> Result<GetCallerIdentityResponse, Self::Error> {
         let account_id = &request.auth_context.principal.account_id;
         let name = &request.auth_context.principal.name;
 
@@ -105,7 +109,7 @@ where
             },
         };
 
-        Ok(xml_response(&response).map_err(StsError::from)?)
+        Ok(response)
     }
 
     async fn resolve_authorization_typed(

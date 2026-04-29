@@ -3,10 +3,8 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use futures::StreamExt;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
-    json_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
@@ -72,7 +70,7 @@ struct BatchResultErrorEntry {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct SendMessageBatchResponse {
+pub(crate) struct SendMessageBatchResponse {
     successful: Vec<SendMessageBatchResultEntry>,
     failed: Vec<BatchResultErrorEntry>,
 }
@@ -81,7 +79,7 @@ async fn handle_send_message_batch_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: SendMessageBatchRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<SendMessageBatchResponse, SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
     crate::util::validate_batch_request(
         request_body.entries.iter().map(|entry| entry.id.as_str()),
@@ -168,7 +166,7 @@ async fn handle_send_message_batch_typed<S: SqsStore>(
         .filter_map(|result| result.as_ref().err().cloned())
         .collect();
 
-    json_response(&SendMessageBatchResponse { successful, failed }).map_err(Into::into)
+    Ok(SendMessageBatchResponse { successful, failed })
 }
 
 fn batch_error_entry(id: &str, error: SqsError) -> BatchResultErrorEntry {
@@ -187,6 +185,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = SendMessageBatchRequest;
+    type Response = SendMessageBatchResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -208,7 +207,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<SendMessageBatchResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), request_body.queue_url.clone()),
@@ -355,8 +354,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -387,8 +386,6 @@ mod tests {
         )
         .await
         .expect("send message batch should succeed");
-
-        assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);
         assert_eq!(body["Successful"].as_array().unwrap().len(), 2);
         assert_eq!(body["Failed"].as_array().unwrap().len(), 0);

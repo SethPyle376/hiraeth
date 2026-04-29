@@ -2,10 +2,8 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
-    json_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
@@ -26,7 +24,7 @@ pub(crate) struct ListQueuesRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct ListQueuesResponse {
+pub(crate) struct ListQueuesResponse {
     queue_urls: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     next_token: Option<String>,
@@ -36,7 +34,7 @@ async fn handle_list_queues_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: ListQueuesRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<ListQueuesResponse, SqsError> {
     if let Some(max_results) = request_body.max_results
         && !(1..=1000).contains(&max_results)
     {
@@ -80,11 +78,10 @@ async fn handle_list_queues_typed<S: SqsStore>(
         .map(|q| crate::util::queue_url(&request.request.host, &account_id, &q.name))
         .collect();
 
-    json_response(&ListQueuesResponse {
+    Ok(ListQueuesResponse {
         queue_urls,
         next_token,
     })
-    .map_err(Into::into)
 }
 
 #[async_trait]
@@ -93,6 +90,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ListQueuesRequest;
+    type Response = ListQueuesResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -114,7 +112,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<ListQueuesResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("region".to_string(), request.region.clone()),
@@ -240,8 +238,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -278,8 +276,6 @@ mod tests {
         .await
         .expect("list queues should succeed");
         let body = parse_json_body(&response);
-
-        assert_eq!(response.status_code, 200);
         assert_eq!(
             body["QueueUrls"],
             serde_json::json!([

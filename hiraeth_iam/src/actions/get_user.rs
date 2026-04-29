@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, iam_xml_response, optional_target_user,
-        parse_payload_error, response_metadata,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, optional_target_user, parse_payload_error,
+        response_metadata,
     },
     error::IamError,
 };
@@ -27,7 +27,7 @@ pub(crate) struct GetUserRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "GetUserResponse")]
-struct GetUserResponse {
+pub(crate) struct GetUserResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "GetUserResult")]
@@ -48,6 +48,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = GetUserRequest;
+    type Response = GetUserResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -58,6 +59,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -65,7 +70,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, IamError> {
+    ) -> Result<GetUserResponse, IamError> {
         let timer = trace_context.start_span();
         let requested_user_name = get_user_request.user_name.clone();
         let principal =
@@ -105,7 +110,7 @@ where
             )
             .await;
 
-        iam_xml_response(&get_user_response(principal.into(), request.request_id))
+        Ok(get_user_response(principal.into(), request.request_id))
     }
 
     async fn resolve_authorization_typed(

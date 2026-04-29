@@ -3,10 +3,9 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
     TypedAwsAction,
     auth::AuthorizationCheck,
-    empty_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
@@ -29,7 +28,7 @@ async fn handle_change_message_visibility_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     change_request: ChangeMessageVisibilityRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<(), SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &change_request.queue_url).await?;
     validate_visibility_timeout(change_request.visibility_timeout)?;
 
@@ -42,7 +41,7 @@ async fn handle_change_message_visibility_typed<S: SqsStore>(
         .await
         .map_err(crate::error::map_receipt_handle_store_error)?;
 
-    Ok(empty_response())
+    Ok(())
 }
 
 pub(super) fn validate_visibility_timeout(visibility_timeout: u32) -> Result<(), SqsError> {
@@ -61,6 +60,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ChangeMessageVisibilityRequest;
+    type Response = ();
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -69,6 +69,10 @@ where
 
     fn payload_format(&self) -> AwsActionPayloadFormat {
         json_payload_format()
+    }
+
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Empty
     }
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
@@ -82,7 +86,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<(), SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), change_request.queue_url.clone()),
@@ -217,7 +221,7 @@ mod tests {
         );
 
         let before = Utc::now().naive_utc();
-        let response = handle_change_message_visibility_typed(
+        handle_change_message_visibility_typed(
             &request,
             &store,
             crate::actions::test_support::parse_request_body(&request),
@@ -225,9 +229,6 @@ mod tests {
         .await
         .expect("change message visibility should succeed");
         let after = Utc::now().naive_utc();
-
-        assert_eq!(response.status_code, 200);
-        assert!(response.body.is_empty());
         let updates = store.visibility_updates();
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].0, 42);

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use chrono::SecondsFormat;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -13,8 +13,8 @@ use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, iam_xml_response, parse_payload_error,
-        requested_or_signing_user, response_metadata,
+        IAM_XMLNS, ResponseMetadata, parse_payload_error, requested_or_signing_user,
+        response_metadata,
     },
     error::IamError,
 };
@@ -29,7 +29,7 @@ pub(crate) struct CreateAccessKeyRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "CreateAccessKeyResponse")]
-struct CreateAccessKeyResponse {
+pub(crate) struct CreateAccessKeyResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "CreateAccessKeyResult")]
@@ -64,6 +64,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = CreateAccessKeyRequest;
+    type Response = CreateAccessKeyResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -74,6 +75,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -81,7 +86,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, IamError> {
+    ) -> Result<CreateAccessKeyResponse, IamError> {
         let timer = trace_context.start_span();
         let requested_user_name = create_access_key_request.user_name.clone();
         let target_user = requested_or_signing_user(
@@ -119,7 +124,7 @@ where
             .await;
         let created_access_key = result?;
 
-        iam_xml_response(&create_access_key_response(
+        Ok(create_access_key_response(
             iam_access_key_xml(&target_user.name, &created_access_key),
             request.request_id,
         ))

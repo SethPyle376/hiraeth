@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
     TypedAwsAction,
     auth::AuthorizationCheck,
-    empty_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
@@ -26,13 +25,12 @@ async fn handle_purge_queue_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: PurgeQueueRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<(), SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
 
     store
         .purge_queue(queue.id)
         .await
-        .map(|_| empty_response())
         .map_err(crate::error::map_store_error)
 }
 
@@ -42,6 +40,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = PurgeQueueRequest;
+    type Response = ();
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -50,6 +49,10 @@ where
 
     fn payload_format(&self) -> AwsActionPayloadFormat {
         json_payload_format()
+    }
+
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Empty
     }
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
@@ -63,7 +66,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<(), SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([("queue_url".to_string(), request_body.queue_url.clone())]);
 
@@ -180,16 +183,13 @@ mod tests {
         let request =
             resolved_request(r#"{"QueueUrl":"http://localhost:4566/123456789012/orders"}"#);
 
-        let response = handle_purge_queue_typed(
+        handle_purge_queue_typed(
             &request,
             &store,
             crate::actions::test_support::parse_request_body(&request),
         )
         .await
         .expect("purge queue should succeed");
-
-        assert_eq!(response.status_code, 200);
-        assert!(response.body.is_empty());
         assert_eq!(store.purged_queue_ids(), vec![42]);
     }
 

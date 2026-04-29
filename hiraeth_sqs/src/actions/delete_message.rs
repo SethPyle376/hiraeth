@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
     TypedAwsAction,
     auth::AuthorizationCheck,
-    empty_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
@@ -27,7 +26,7 @@ async fn handle_delete_message_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     delete_request: DeleteMessageRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<(), SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
 
     store
@@ -35,7 +34,7 @@ async fn handle_delete_message_typed<S: SqsStore>(
         .await
         .map_err(crate::error::map_receipt_handle_store_error)?;
 
-    Ok(empty_response())
+    Ok(())
 }
 
 #[async_trait]
@@ -44,6 +43,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = DeleteMessageRequest;
+    type Response = ();
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -52,6 +52,10 @@ where
 
     fn payload_format(&self) -> AwsActionPayloadFormat {
         json_payload_format()
+    }
+
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Empty
     }
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
@@ -65,7 +69,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<(), SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), delete_request.queue_url.clone()),
@@ -192,16 +196,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_delete_message_typed(
+        handle_delete_message_typed(
             &request,
             &store,
             crate::actions::test_support::parse_request_body(&request),
         )
         .await
         .expect("delete message should succeed");
-
-        assert_eq!(response.status_code, 200);
-        assert!(response.body.is_empty());
         assert_eq!(
             store.deleted_messages(),
             vec![(42, "receipt-123".to_string())]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -10,9 +10,7 @@ use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::util::{
-        self, ResponseMetadata, iam_xml_response, parse_payload_error, response_metadata,
-    },
+    actions::util::{self, ResponseMetadata, parse_payload_error, response_metadata},
     error::IamError,
 };
 
@@ -28,7 +26,7 @@ pub(crate) struct PutUserPolicyRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct PutUserPolicyResponse {
+pub(crate) struct PutUserPolicyResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     response_metadata: ResponseMetadata,
@@ -40,6 +38,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = PutUserPolicyRequest;
+    type Response = PutUserPolicyResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -50,6 +49,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -57,7 +60,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, Self::Error> {
+    ) -> Result<PutUserPolicyResponse, Self::Error> {
         let account_id = &request.auth_context.principal.account_id;
         let user = store
             .get_principal_by_identity(account_id, "user", &put_policy_request.user_name)
@@ -108,7 +111,7 @@ where
             response_metadata: response_metadata(request.request_id),
         };
 
-        iam_xml_response(&response)
+        Ok(response)
     }
 
     async fn resolve_authorization_typed(

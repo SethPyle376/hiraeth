@@ -2,10 +2,8 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
-    json_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::{
@@ -36,7 +34,7 @@ pub(crate) struct CreateQueueRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct CreateQueueResponse {
+pub(crate) struct CreateQueueResponse {
     queue_url: String,
 }
 
@@ -44,7 +42,7 @@ async fn handle_create_queue_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: CreateQueueRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<CreateQueueResponse, SqsError> {
     let queue_attributes = QueueAttributeValues::from_attribute_map(&request_body.attributes)?;
     queue_support::validate_queue_name(&request_body.queue_name, queue_attributes.fifo_queue)?;
     validate_tags(&request_body.tags, true)?;
@@ -144,11 +142,10 @@ fn create_queue_response(
     request: &ResolvedRequest,
     account_id: &str,
     queue_name: &str,
-) -> Result<ServiceResponse, SqsError> {
-    let response = CreateQueueResponse {
+) -> Result<CreateQueueResponse, SqsError> {
+    Ok(CreateQueueResponse {
         queue_url: crate::util::queue_url(&request.request.host, account_id, queue_name),
-    };
-    json_response(&response).map_err(Into::into)
+    })
 }
 
 #[async_trait]
@@ -157,6 +154,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = CreateQueueRequest;
+    type Response = CreateQueueResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -178,7 +176,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<CreateQueueResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_name".to_string(), request_body.queue_name.clone()),
@@ -286,8 +284,8 @@ mod tests {
         request
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -318,8 +316,6 @@ mod tests {
         )
         .await
         .expect("create queue should succeed");
-
-        assert_eq!(response.status_code, 200);
         assert_eq!(
             store.queue_tags(0),
             [
@@ -343,8 +339,6 @@ mod tests {
         )
         .await
         .expect("create queue should succeed");
-
-        assert_eq!(response.status_code, 200);
         assert_eq!(
             parse_json_body(&response)["QueueUrl"],
             "http://sqs.us-east-1.amazonaws.com/123456789012/test-queue"

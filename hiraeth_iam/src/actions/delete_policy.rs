@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -10,9 +10,7 @@ use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::util::{
-        self, IAM_XMLNS, ResponseMetadata, iam_xml_response, parse_payload_error, response_metadata,
-    },
+    actions::util::{self, IAM_XMLNS, ResponseMetadata, parse_payload_error, response_metadata},
     error::IamError,
 };
 
@@ -26,7 +24,7 @@ pub(crate) struct DeletePolicyRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct DeletePolicyResponse {
+pub(crate) struct DeletePolicyResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     response_metadata: ResponseMetadata,
@@ -38,6 +36,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = DeletePolicyRequest;
+    type Response = DeletePolicyResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -48,6 +47,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -55,7 +58,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, IamError> {
+    ) -> Result<DeletePolicyResponse, IamError> {
         let policy_arn = util::parse_policy_arn(&delete_request.policy_arn)?;
         if policy_arn.account_id != request.auth_context.principal.account_id {
             return Err(IamError::NoSuchEntity(format!(
@@ -90,7 +93,7 @@ where
             .await;
         result?;
 
-        iam_xml_response(&DeletePolicyResponse {
+        Ok(DeletePolicyResponse {
             xmlns: IAM_XMLNS,
             response_metadata: response_metadata(request.request_id),
         })

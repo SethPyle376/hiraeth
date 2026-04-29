@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, iam_xml_response, parse_payload_error, parse_policy_arn,
-        response_metadata,
+        IAM_XMLNS, ResponseMetadata, parse_payload_error, parse_policy_arn, response_metadata,
     },
     error::IamError,
 };
@@ -28,7 +27,7 @@ pub(crate) struct DetachUserPolicyRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct DetachUserPolicyResponse {
+pub(crate) struct DetachUserPolicyResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     response_metadata: ResponseMetadata,
@@ -40,6 +39,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = DetachUserPolicyRequest;
+    type Response = DetachUserPolicyResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -50,6 +50,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -57,7 +61,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, IamError> {
+    ) -> Result<DetachUserPolicyResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
         let user = store
             .get_principal_by_identity(account_id, "user", &detach_policy_request.user_name)
@@ -120,7 +124,7 @@ where
             xmlns: IAM_XMLNS,
             response_metadata: response_metadata(request.request_id),
         };
-        iam_xml_response(&response)
+        Ok(response)
     }
 
     async fn resolve_authorization_typed(

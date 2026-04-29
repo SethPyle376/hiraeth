@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, iam_xml_response, new_id,
-        parse_payload_error, response_metadata,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, new_id, parse_payload_error,
+        response_metadata,
     },
     error::IamError,
 };
@@ -31,7 +31,7 @@ pub(crate) struct CreateUserRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "CreateUserResponse")]
-struct CreateUserResponse {
+pub(crate) struct CreateUserResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "CreateUserResult")]
@@ -52,6 +52,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = CreateUserRequest;
+    type Response = CreateUserResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -62,6 +63,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -69,7 +74,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, IamError> {
+    ) -> Result<CreateUserResponse, IamError> {
         let timer = trace_context.start_span();
         let account_id = &request.auth_context.principal.account_id;
         let attributes = HashMap::from([
@@ -111,7 +116,7 @@ where
             .await;
         let created_principal = result?;
 
-        iam_xml_response(&create_user_response(
+        Ok(create_user_response(
             created_principal.into(),
             request.request_id,
         ))

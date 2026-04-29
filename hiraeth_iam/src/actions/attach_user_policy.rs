@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -10,9 +10,7 @@ use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::util::{
-        IAM_XMLNS, ResponseMetadata, iam_xml_response, parse_payload_error, parse_policy_arn,
-    },
+    actions::util::{IAM_XMLNS, ResponseMetadata, parse_payload_error, parse_policy_arn},
     error::IamError,
 };
 
@@ -27,7 +25,7 @@ pub(crate) struct AttachUserPolicyRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct AttachUserPolicyResponse {
+pub(crate) struct AttachUserPolicyResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     response_metadata: ResponseMetadata,
@@ -39,6 +37,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = AttachUserPolicyRequest;
+    type Response = AttachUserPolicyResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -49,6 +48,10 @@ where
         parse_payload_error(error)
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -56,7 +59,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, IamError> {
+    ) -> Result<AttachUserPolicyResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
         let user = store
             .get_principal_by_identity(account_id, "user", &attach_policy_request.user_name)
@@ -111,14 +114,14 @@ where
                 attributes,
             )
             .await;
-        result.map(|_| {
-            iam_xml_response(&AttachUserPolicyResponse {
+        result
+            .map(|_| AttachUserPolicyResponse {
                 xmlns: IAM_XMLNS,
                 response_metadata: ResponseMetadata {
                     request_id: request.request_id,
                 },
             })
-        })?
+            .map_err(Into::into)
     }
 
     async fn resolve_authorization_typed(

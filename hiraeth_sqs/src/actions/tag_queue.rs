@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
     TypedAwsAction,
     auth::AuthorizationCheck,
-    empty_response,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
@@ -30,7 +29,7 @@ async fn handle_tag_queue_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: TagQueueRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<(), SqsError> {
     validate_tags(&request_body.tags, false)?;
 
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
@@ -44,7 +43,6 @@ async fn handle_tag_queue_typed<S: SqsStore>(
     store
         .tag_queue(queue.id, request_body.tags)
         .await
-        .map(|_| empty_response())
         .map_err(crate::error::map_store_error)
 }
 
@@ -54,6 +52,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = TagQueueRequest;
+    type Response = ();
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -62,6 +61,10 @@ where
 
     fn payload_format(&self) -> AwsActionPayloadFormat {
         json_payload_format()
+    }
+
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Empty
     }
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
@@ -75,7 +78,7 @@ where
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, SqsError> {
+    ) -> Result<(), SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), request_body.queue_url.clone()),
@@ -213,15 +216,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_tag_queue_typed(
+        handle_tag_queue_typed(
             &request,
             &store,
             crate::actions::test_support::parse_request_body(&request),
         )
         .await
         .expect("tag queue should succeed");
-
-        assert_eq!(response.status_code, 200);
         assert_eq!(
             store.queue_tags(42),
             [
