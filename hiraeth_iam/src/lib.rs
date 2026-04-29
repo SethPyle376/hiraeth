@@ -112,7 +112,7 @@ where
         request: ResolvedRequest,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
+    ) -> Result<ServiceResponse, ApiError> {
         let action_name = get_query_request_action_name(&request)
             .map_err(|error| ApiError::BadRequest(error.to_string()))?
             .ok_or_else(|| ApiError::BadRequest("Missing Action parameter".to_string()))?;
@@ -163,7 +163,10 @@ mod tests {
 
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext as AuthenticatedAuthContext, AuthenticatedRequest};
-    use hiraeth_core::{AuthContext, ResolvedRequest, tracing::NoopTraceRecorder};
+    use hiraeth_core::{
+        ApiError, AuthContext, ResolvedRequest, ServiceResponse,
+        tracing::{NoopTraceRecorder, TraceContext},
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::Service;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
@@ -285,8 +288,8 @@ mod tests {
     async fn handle_request(
         service: &IamService<InMemoryIamStore>,
         request: ResolvedRequest,
-    ) -> Result<hiraeth_core::ServiceResponse, hiraeth_core::ApiError> {
-        let trace_context = hiraeth_core::tracing::TraceContext::new(request.request_id.clone());
+    ) -> Result<ServiceResponse, ApiError> {
+        let trace_context = TraceContext::new(request.request_id.clone());
         service
             .handle_request(request, &trace_context, &NoopTraceRecorder)
             .await

@@ -2,11 +2,12 @@ use std::{collections::HashMap, time::Instant};
 
 use hiraeth_core::{
     ApiError, ResolvedRequest, ServiceResponse,
-    tracing::{TraceContext, TraceRecorder},
+    tracing::{TraceContext, TraceRecorder, TraceSpanTimer},
 };
 use hiraeth_http::IncomingRequest;
-use hiraeth_iam::IamService;
+use hiraeth_iam::{IamService, ResolveIdentityError};
 use hiraeth_router::ServiceRouter;
+use hiraeth_store::IamStore;
 
 pub struct RequestTrace {
     pub auth_ms: u128,
@@ -27,7 +28,7 @@ pub async fn resolve_and_route(
     trace_context: &TraceContext,
     trace_recorder: &impl TraceRecorder,
     incoming_request: IncomingRequest,
-    iam: &IamService<impl hiraeth_store::IamStore + Send + Sync + 'static>,
+    iam: &IamService<impl IamStore + Send + Sync + 'static>,
     router: &ServiceRouter,
 ) -> AppRequestOutcome {
     let auth_started_at = Instant::now();
@@ -274,7 +275,7 @@ fn request_span_attributes(
 async fn record_runtime_span(
     trace_context: &TraceContext,
     trace_recorder: &impl TraceRecorder,
-    timer: hiraeth_core::tracing::TraceSpanTimer,
+    timer: TraceSpanTimer,
     name: &'static str,
     status: &'static str,
     attributes: HashMap<String, String>,
@@ -288,7 +289,7 @@ async fn record_runtime_span(
 }
 
 fn identity_span_attributes(
-    resolved_request: &Result<ResolvedRequest, hiraeth_iam::ResolveIdentityError>,
+    resolved_request: &Result<ResolvedRequest, ResolveIdentityError>,
     authenticated_access_key: &str,
     authenticated_principal_id: i64,
     authenticated_service: &str,

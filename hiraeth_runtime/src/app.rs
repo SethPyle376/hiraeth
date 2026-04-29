@@ -3,13 +3,13 @@ use hiraeth_http::IncomingRequest;
 use hiraeth_iam::{AuthorizationMode, IamService};
 use hiraeth_router::ServiceRouter;
 use hiraeth_sqs::SqsService;
-use hiraeth_store_sqlx::{SqliteTraceStore, SqlxStore};
+use hiraeth_store_sqlx::{SqliteIamStore, SqliteTraceStore, SqlxStore};
 use hiraeth_sts::StsService;
 
 use crate::request::{self, AppRequestOutcome};
 
 pub struct App {
-    iam: IamService<hiraeth_store_sqlx::SqliteIamStore>,
+    iam: IamService<SqliteIamStore>,
     router: ServiceRouter,
     trace_recorder: SqliteTraceStore,
 }

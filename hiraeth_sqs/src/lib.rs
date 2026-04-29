@@ -43,7 +43,7 @@ where
         request: ResolvedRequest,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
+    ) -> Result<ServiceResponse, ApiError> {
         let action_name = match auth::get_action_name_for_request(&request) {
             Ok(action_name) => action_name,
             Err(error::SqsError::BadRequest(message))
@@ -95,7 +95,10 @@ mod tests {
 
     use super::{Service, ServiceResponse, SqsService};
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{ApiError, AuthContext, ResolvedRequest, tracing::NoopTraceRecorder};
+    use hiraeth_core::{
+        ApiError, AuthContext, ResolvedRequest,
+        tracing::{NoopTraceRecorder, TraceContext},
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
@@ -145,7 +148,7 @@ mod tests {
         service: &SqsService<SqsTestStore>,
         request: ResolvedRequest,
     ) -> Result<ServiceResponse, ApiError> {
-        let trace_context = hiraeth_core::tracing::TraceContext::new(request.request_id.clone());
+        let trace_context = TraceContext::new(request.request_id.clone());
         service
             .handle_request(request, &trace_context, &NoopTraceRecorder)
             .await
@@ -239,7 +242,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(hiraeth_core::ApiError::NotFound(message))
+            Err(ApiError::NotFound(message))
                 if message == "Missing x-amz-target header"
         ));
     }

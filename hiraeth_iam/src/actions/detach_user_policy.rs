@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
@@ -54,8 +55,8 @@ where
         request: ResolvedRequest,
         detach_policy_request: DetachUserPolicyRequest,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
         let user = store
@@ -149,7 +150,10 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, TypedAwsActionAdapter};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{
         AccessKey, InMemoryIamStore, ManagedPolicy, ManagedPolicyStore, Principal,
@@ -217,8 +221,8 @@ mod tests {
         )
     }
 
-    fn resolved_request(body: &[u8]) -> hiraeth_core::ResolvedRequest {
-        hiraeth_core::ResolvedRequest {
+    fn resolved_request(body: &[u8]) -> ResolvedRequest {
+        ResolvedRequest {
             request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
@@ -257,8 +261,8 @@ mod tests {
                     b"Action=DetachUserPolicy&Version=2010-05-08&UserName=alice&PolicyArn=arn%3Aaws%3Aiam%3A%3A123456789012%3Apolicy%2Fdev%2Forders-readonly",
                 ),
                 &store,
-                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
-                &hiraeth_core::tracing::NoopTraceRecorder,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 
@@ -280,8 +284,8 @@ mod tests {
                     b"Action=DetachUserPolicy&Version=2010-05-08&UserName=alice&PolicyArn=arn%3Aaws%3Aiam%3A%3A999999999999%3Apolicy%2Fdev%2Forders-readonly",
                 ),
                 &store(),
-                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
-                &hiraeth_core::tracing::NoopTraceRecorder,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 

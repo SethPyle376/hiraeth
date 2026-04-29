@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
-    auth::AuthorizationCheck, xml_response,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
+    xml_response,
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
@@ -61,8 +63,8 @@ where
         request: ResolvedRequest,
         get_caller_identity_request: Self::Request,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, Self::Error> {
         let account_id = &request.auth_context.principal.account_id;
         let name = &request.auth_context.principal.name;
@@ -128,7 +130,10 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, TypedAwsActionAdapter};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
 
@@ -167,8 +172,8 @@ mod tests {
         )
     }
 
-    fn resolved_request(body: &[u8]) -> hiraeth_core::ResolvedRequest {
-        hiraeth_core::ResolvedRequest {
+    fn resolved_request(body: &[u8]) -> ResolvedRequest {
+        ResolvedRequest {
             request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "sts.amazonaws.com".to_string(),
@@ -200,8 +205,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=GetCallerIdentity&Version=2011-06-15"),
                 &store(),
-                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
-                &hiraeth_core::tracing::NoopTraceRecorder,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 

@@ -1,4 +1,5 @@
 use askama::Template;
+use hiraeth_store::sqs::SqsQueue;
 
 use crate::iam::{
     IamManagedPolicyDetailView, IamManagedPolicyPrincipalView, IamManagedPolicySummary,
@@ -167,7 +168,7 @@ pub(crate) struct SqsQueueDetailTemplate<'a> {
     pub(crate) action_card_html: &'a str,
     pub(crate) metadata_list_html: &'a str,
     pub(crate) queue_id: i64,
-    pub(crate) queue: &'a hiraeth_store::sqs::SqsQueue,
+    pub(crate) queue: &'a SqsQueue,
     pub(crate) queue_arn: &'a str,
     pub(crate) queue_url: &'a str,
     pub(crate) feedback_message: &'a str,

@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    TypedAwsAction,
+    auth::AuthorizationCheck,
+    json_response,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
@@ -88,8 +91,8 @@ where
         request: ResolvedRequest,
         request_body: GetQueueUrlRequest,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([

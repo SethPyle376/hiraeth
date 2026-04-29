@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
@@ -54,8 +55,8 @@ where
         request: ResolvedRequest,
         put_policy_request: Self::Request,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, Self::Error> {
         let account_id = &request.auth_context.principal.account_id;
         let user = store
@@ -142,7 +143,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, TypedAwsActionAdapter, xml_body};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+        xml_body,
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal, PrincipalInlinePolicyStore};
 
@@ -184,8 +189,8 @@ mod tests {
         )
     }
 
-    fn resolved_request(body: &[u8]) -> hiraeth_core::ResolvedRequest {
-        hiraeth_core::ResolvedRequest {
+    fn resolved_request(body: &[u8]) -> ResolvedRequest {
+        ResolvedRequest {
             request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
@@ -220,8 +225,8 @@ mod tests {
                     b"Action=PutUserPolicy&Version=2010-05-08&UserName=alice&PolicyName=sqs-read&PolicyDocument=%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Action%22%3A%22sqs%3AReceiveMessage%22%2C%22Resource%22%3A%22*%22%7D%5D%7D",
                 ),
                 &store,
-                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
-                &hiraeth_core::tracing::NoopTraceRecorder,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 
@@ -244,8 +249,8 @@ mod tests {
                     b"Action=PutUserPolicy&Version=2010-05-08&UserName=missing&PolicyName=sqs-read&PolicyDocument=%7B%22Version%22%3A%222012-10-17%22%7D",
                 ),
                 &store(),
-                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
-                &hiraeth_core::tracing::NoopTraceRecorder,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 

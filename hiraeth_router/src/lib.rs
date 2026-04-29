@@ -5,7 +5,7 @@ pub use authorizer::{AuthorizationOutcome, AuthorizationResult, Authorizer};
 pub use hiraeth_core::ServiceResponse;
 use hiraeth_core::{
     ApiError, ResolvedRequest,
-    tracing::{NoopTraceRecorder, TraceContext, TraceRecorder},
+    tracing::{NoopTraceRecorder, TraceContext, TraceRecorder, TraceSpanTimer},
 };
 pub use service::Service;
 
@@ -256,7 +256,7 @@ fn route_span_attributes(
 async fn record_router_span<R, I>(
     trace_context: &TraceContext,
     trace_recorder: &R,
-    timer: hiraeth_core::tracing::TraceSpanTimer,
+    timer: TraceSpanTimer,
     name: &'static str,
     status: &'static str,
     attributes: I,

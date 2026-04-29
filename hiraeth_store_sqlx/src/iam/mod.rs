@@ -54,17 +54,14 @@ impl SqliteIamStore {
 
 #[async_trait]
 impl AccessKeyStore for SqliteIamStore {
-    async fn get_secret_key(
-        &self,
-        access_key: &str,
-    ) -> Result<Option<AccessKey>, hiraeth_store::StoreError> {
+    async fn get_secret_key(&self, access_key: &str) -> Result<Option<AccessKey>, StoreError> {
         self.access_key_store.get_secret_key(access_key).await
     }
 
     async fn list_access_keys_for_principal(
         &self,
         principal_id: i64,
-    ) -> Result<Vec<AccessKey>, hiraeth_store::StoreError> {
+    ) -> Result<Vec<AccessKey>, StoreError> {
         self.access_key_store
             .list_access_keys_for_principal(principal_id)
             .await
@@ -75,7 +72,7 @@ impl AccessKeyStore for SqliteIamStore {
         access_key: &str,
         secret_key: &str,
         principal_id: i64,
-    ) -> Result<AccessKey, hiraeth_store::StoreError> {
+    ) -> Result<AccessKey, StoreError> {
         self.access_key_store
             .insert_secret_key(access_key, secret_key, principal_id)
             .await
@@ -85,7 +82,7 @@ impl AccessKeyStore for SqliteIamStore {
         &self,
         principal_id: i64,
         access_key: &str,
-    ) -> Result<(), hiraeth_store::StoreError> {
+    ) -> Result<(), StoreError> {
         self.access_key_store
             .delete_access_key_for_principal(principal_id, access_key)
             .await
@@ -94,10 +91,7 @@ impl AccessKeyStore for SqliteIamStore {
 
 #[async_trait]
 impl PrincipalStore for SqliteIamStore {
-    async fn get_principal(
-        &self,
-        principal_id: i64,
-    ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
+    async fn get_principal(&self, principal_id: i64) -> Result<Option<Principal>, StoreError> {
         self.principal_store.get_principal(principal_id).await
     }
 
@@ -106,32 +100,25 @@ impl PrincipalStore for SqliteIamStore {
         account_id: &str,
         kind: &str,
         name: &str,
-    ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
+    ) -> Result<Option<Principal>, StoreError> {
         self.principal_store
             .get_principal_by_identity(account_id, kind, name)
             .await
     }
 
-    async fn list_principals(&self) -> Result<Vec<Principal>, hiraeth_store::StoreError> {
+    async fn list_principals(&self) -> Result<Vec<Principal>, StoreError> {
         self.principal_store.list_principals().await
     }
 
-    async fn create_principal(
-        &self,
-        principal: NewPrincipal,
-    ) -> Result<Principal, hiraeth_store::StoreError> {
+    async fn create_principal(&self, principal: NewPrincipal) -> Result<Principal, StoreError> {
         self.principal_store.create_principal(principal).await
     }
 
-    async fn delete_principal(&self, principal_id: i64) -> Result<(), hiraeth_store::StoreError> {
+    async fn delete_principal(&self, principal_id: i64) -> Result<(), StoreError> {
         self.principal_store.delete_principal(principal_id).await
     }
 
-    async fn delete_user(
-        &self,
-        account_id: &str,
-        name: &str,
-    ) -> Result<(), hiraeth_store::StoreError> {
+    async fn delete_user(&self, account_id: &str, name: &str) -> Result<(), StoreError> {
         self.principal_store.delete_user(account_id, name).await
     }
 }
@@ -141,7 +128,7 @@ impl PrincipalInlinePolicyStore for SqliteIamStore {
     async fn get_inline_policies_for_principal(
         &self,
         principal_id: i64,
-    ) -> Result<Vec<PrincipalInlinePolicy>, hiraeth_store::StoreError> {
+    ) -> Result<Vec<PrincipalInlinePolicy>, StoreError> {
         self.principal_inline_policy_store
             .get_inline_policies_for_principal(principal_id)
             .await
@@ -152,7 +139,7 @@ impl PrincipalInlinePolicyStore for SqliteIamStore {
         principal_id: i64,
         policy_name: &str,
         policy_document: &str,
-    ) -> Result<PrincipalInlinePolicy, hiraeth_store::StoreError> {
+    ) -> Result<PrincipalInlinePolicy, StoreError> {
         self.principal_inline_policy_store
             .put_inline_policy(principal_id, policy_name, policy_document)
             .await
@@ -162,7 +149,7 @@ impl PrincipalInlinePolicyStore for SqliteIamStore {
         &self,
         principal_id: i64,
         policy_name: &str,
-    ) -> Result<(), hiraeth_store::StoreError> {
+    ) -> Result<(), StoreError> {
         self.principal_inline_policy_store
             .delete_inline_policy(principal_id, policy_name)
             .await
@@ -174,7 +161,7 @@ impl ManagedPolicyStore for SqliteIamStore {
     async fn insert_managed_policy(
         &self,
         policy: NewManagedPolicy,
-    ) -> Result<ManagedPolicy, hiraeth_store::StoreError> {
+    ) -> Result<ManagedPolicy, StoreError> {
         self.managed_policy_store
             .insert_managed_policy(policy)
             .await
@@ -185,13 +172,13 @@ impl ManagedPolicyStore for SqliteIamStore {
         account_id: &str,
         policy_name: &str,
         policy_path: &str,
-    ) -> Result<Option<ManagedPolicy>, hiraeth_store::StoreError> {
+    ) -> Result<Option<ManagedPolicy>, StoreError> {
         self.managed_policy_store
             .get_managed_policy(account_id, policy_name, policy_path)
             .await
     }
 
-    async fn list_managed_policies(&self) -> Result<Vec<ManagedPolicy>, hiraeth_store::StoreError> {
+    async fn list_managed_policies(&self) -> Result<Vec<ManagedPolicy>, StoreError> {
         self.managed_policy_store.list_managed_policies().await
     }
 
@@ -199,7 +186,7 @@ impl ManagedPolicyStore for SqliteIamStore {
         &self,
         policy_id: i64,
         policy_document: &str,
-    ) -> Result<ManagedPolicy, hiraeth_store::StoreError> {
+    ) -> Result<ManagedPolicy, StoreError> {
         self.managed_policy_store
             .update_managed_policy_document(policy_id, policy_document)
             .await
@@ -209,7 +196,7 @@ impl ManagedPolicyStore for SqliteIamStore {
         &self,
         policy_id: i64,
         principal_id: i64,
-    ) -> Result<(), hiraeth_store::StoreError> {
+    ) -> Result<(), StoreError> {
         self.managed_policy_store
             .attach_policy_to_principal(policy_id, principal_id)
             .await
@@ -219,7 +206,7 @@ impl ManagedPolicyStore for SqliteIamStore {
         &self,
         policy_id: i64,
         principal_id: i64,
-    ) -> Result<(), hiraeth_store::StoreError> {
+    ) -> Result<(), StoreError> {
         self.managed_policy_store
             .detach_policy_from_principal(policy_id, principal_id)
             .await
@@ -230,7 +217,7 @@ impl ManagedPolicyStore for SqliteIamStore {
         account_id: &str,
         policy_name: &str,
         policy_path: &str,
-    ) -> Result<(), hiraeth_store::StoreError> {
+    ) -> Result<(), StoreError> {
         self.managed_policy_store
             .delete_managed_policy(account_id, policy_name, policy_path)
             .await
@@ -239,7 +226,7 @@ impl ManagedPolicyStore for SqliteIamStore {
     async fn get_managed_policies_attached_to_principal(
         &self,
         principal_id: i64,
-    ) -> Result<Vec<ManagedPolicy>, hiraeth_store::StoreError> {
+    ) -> Result<Vec<ManagedPolicy>, StoreError> {
         self.managed_policy_store
             .get_managed_policies_attached_to_principal(principal_id)
             .await

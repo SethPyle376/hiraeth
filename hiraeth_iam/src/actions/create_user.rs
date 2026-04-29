@@ -5,6 +5,7 @@ use chrono::Utc;
 use hiraeth_core::{
     AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::{IamStore, iam::NewPrincipal};
 use serde::{Deserialize, Serialize};
@@ -66,8 +67,8 @@ where
         request: ResolvedRequest,
         create_user_request: CreateUserRequest,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, IamError> {
         let timer = trace_context.start_span();
         let account_id = &request.auth_context.principal.account_id;
@@ -147,7 +148,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{NaiveDate, TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, xml_body};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+        xml_body,
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         IamStore,
@@ -268,8 +273,8 @@ mod tests {
                     b"Action=CreateUser&Version=2010-05-08&UserName=alice&Path=%2Fengineering%2Fdev%2F",
                 ),
                 &store(),
-                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
-                &hiraeth_core::tracing::NoopTraceRecorder,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 

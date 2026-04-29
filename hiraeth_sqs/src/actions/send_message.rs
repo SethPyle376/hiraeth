@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    TypedAwsAction,
+    auth::AuthorizationCheck,
+    json_response,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -166,8 +169,8 @@ where
         request: ResolvedRequest,
         request_body: SendMessageRequest,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
@@ -249,10 +252,7 @@ mod tests {
     use serde_json::Value;
 
     use super::{MessageAttributeValue, SendMessageAction, handle_send_message_typed};
-    use crate::{
-        error::SqsError,
-        util::{self},
-    };
+    use crate::{error::SqsError, util};
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -263,7 +263,7 @@ mod tests {
 
         ResolvedRequest {
             request_id: "test-request-id".to_string(),
-            request: hiraeth_http::IncomingRequest {
+            request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
                 path: "/".to_string(),

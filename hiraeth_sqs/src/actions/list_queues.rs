@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    TypedAwsAction,
+    auth::AuthorizationCheck,
+    json_response,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -109,8 +112,8 @@ where
         request: ResolvedRequest,
         request_body: ListQueuesRequest,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
@@ -165,13 +168,14 @@ where
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
+    use hiraeth_core::{AuthContext, ResolvedRequest, ServiceResponse, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         principal::Principal,
         sqs::SqsQueue,
         test_support::{ListQueuesCall, SqsTestStore},
     };
+    use serde_json::Value;
 
     use super::{ListQueuesAction, handle_list_queues_typed};
     use crate::error::SqsError;
@@ -236,7 +240,7 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &hiraeth_router::ServiceResponse) -> serde_json::Value {
+    fn parse_json_body(response: &ServiceResponse) -> Value {
         serde_json::from_slice(&response.body).expect("response body should be valid json")
     }
 

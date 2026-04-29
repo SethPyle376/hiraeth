@@ -302,17 +302,14 @@ mod tests {
 
     #[async_trait]
     impl AccessKeyStore for TestIamStore {
-        async fn get_secret_key(
-            &self,
-            _access_key: &str,
-        ) -> Result<Option<AccessKey>, hiraeth_store::StoreError> {
+        async fn get_secret_key(&self, _access_key: &str) -> Result<Option<AccessKey>, StoreError> {
             Ok(None)
         }
 
         async fn list_access_keys_for_principal(
             &self,
             _principal_id: i64,
-        ) -> Result<Vec<AccessKey>, hiraeth_store::StoreError> {
+        ) -> Result<Vec<AccessKey>, StoreError> {
             Ok(vec![])
         }
 
@@ -321,7 +318,7 @@ mod tests {
             _access_key: &str,
             _secret_key: &str,
             _principal_id: i64,
-        ) -> Result<AccessKey, hiraeth_store::StoreError> {
+        ) -> Result<AccessKey, StoreError> {
             unreachable!("authorization tests do not insert access keys")
         }
 
@@ -329,17 +326,14 @@ mod tests {
             &self,
             _principal_id: i64,
             _access_key: &str,
-        ) -> Result<(), hiraeth_store::StoreError> {
+        ) -> Result<(), StoreError> {
             unreachable!("authorization tests do not delete access keys")
         }
     }
 
     #[async_trait]
     impl PrincipalStore for TestIamStore {
-        async fn get_principal(
-            &self,
-            _principal_id: i64,
-        ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
+        async fn get_principal(&self, _principal_id: i64) -> Result<Option<Principal>, StoreError> {
             Ok(None)
         }
 
@@ -348,18 +342,15 @@ mod tests {
             _account_id: &str,
             _kind: &str,
             _name: &str,
-        ) -> Result<Option<Principal>, hiraeth_store::StoreError> {
+        ) -> Result<Option<Principal>, StoreError> {
             Ok(None)
         }
 
-        async fn list_principals(&self) -> Result<Vec<Principal>, hiraeth_store::StoreError> {
+        async fn list_principals(&self) -> Result<Vec<Principal>, StoreError> {
             Ok(vec![])
         }
 
-        async fn create_principal(
-            &self,
-            principal: NewPrincipal,
-        ) -> Result<Principal, hiraeth_store::StoreError> {
+        async fn create_principal(&self, principal: NewPrincipal) -> Result<Principal, StoreError> {
             Ok(Principal {
                 id: 999,
                 account_id: principal.account_id,
@@ -371,18 +362,11 @@ mod tests {
             })
         }
 
-        async fn delete_principal(
-            &self,
-            _principal_id: i64,
-        ) -> Result<(), hiraeth_store::StoreError> {
+        async fn delete_principal(&self, _principal_id: i64) -> Result<(), StoreError> {
             unreachable!("authorization tests do not delete principals")
         }
 
-        async fn delete_user(
-            &self,
-            _account_id: &str,
-            _name: &str,
-        ) -> Result<(), hiraeth_store::StoreError> {
+        async fn delete_user(&self, _account_id: &str, _name: &str) -> Result<(), StoreError> {
             unreachable!("authorization tests do not delete users")
         }
     }
@@ -392,7 +376,7 @@ mod tests {
         async fn get_inline_policies_for_principal(
             &self,
             principal_id: i64,
-        ) -> Result<Vec<PrincipalInlinePolicy>, hiraeth_store::StoreError> {
+        ) -> Result<Vec<PrincipalInlinePolicy>, StoreError> {
             Ok(self
                 .inline_policies
                 .iter()
@@ -406,7 +390,7 @@ mod tests {
             _principal_id: i64,
             _policy_name: &str,
             _policy_document: &str,
-        ) -> Result<PrincipalInlinePolicy, hiraeth_store::StoreError> {
+        ) -> Result<PrincipalInlinePolicy, StoreError> {
             unreachable!("authorization tests do not put inline policies")
         }
 
@@ -414,7 +398,7 @@ mod tests {
             &self,
             _principal_id: i64,
             _policy_name: &str,
-        ) -> Result<(), hiraeth_store::StoreError> {
+        ) -> Result<(), StoreError> {
             unreachable!("authorization tests do not delete inline policies")
         }
     }

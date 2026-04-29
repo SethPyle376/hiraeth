@@ -135,10 +135,7 @@ fn map_sqlx_error(err: sqlx::Error) -> StoreError {
 
 #[async_trait]
 impl SqsStore for SqliteSqsStore {
-    async fn create_queue(
-        &self,
-        queue: hiraeth_store::sqs::SqsQueue,
-    ) -> Result<(), hiraeth_store::StoreError> {
+    async fn create_queue(&self, queue: SqsQueue) -> Result<(), StoreError> {
         sqlx::query!(
             "INSERT INTO sqs_queues (
                 name,

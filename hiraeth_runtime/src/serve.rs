@@ -1,8 +1,10 @@
 use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Instant};
 
-use hiraeth_core::tracing::{
-    CompletedRequestTrace, TraceContext, TraceHttpRequest, TraceHttpResponse,
+use hiraeth_core::{
+    ServiceResponse,
+    tracing::{CompletedRequestTrace, TraceContext, TraceHttpRequest, TraceHttpResponse},
 };
+use hiraeth_http::IncomingRequest;
 use http_body_util::Full;
 use hyper::{
     Request,
@@ -51,7 +53,7 @@ async fn handle_request(
     let started_at = Instant::now();
     let trace_started_at = chrono::Utc::now();
 
-    let incoming_request = match hiraeth_http::IncomingRequest::from_hyper(request).await {
+    let incoming_request = match IncomingRequest::from_hyper(request).await {
         Ok(incoming_request) => incoming_request,
         Err(error) => {
             let total_elapsed = started_at.elapsed();
@@ -200,20 +202,17 @@ async fn handle_request(
     }
 }
 
-fn response_headers_with_request_id(headers: &mut Vec<(String, String)>, request_id: &str) {
-    if !headers
+fn with_aws_request_id(mut response: ServiceResponse, request_id: &str) -> ServiceResponse {
+    if !response
+        .headers
         .iter()
         .any(|(name, _)| name.eq_ignore_ascii_case(AWS_REQUEST_ID_HEADER))
     {
-        headers.push((AWS_REQUEST_ID_HEADER.to_string(), request_id.to_string()));
+        response
+            .headers
+            .push((AWS_REQUEST_ID_HEADER.to_string(), request_id.to_string()));
     }
-}
 
-fn with_aws_request_id(
-    mut response: hiraeth_core::ServiceResponse,
-    request_id: &str,
-) -> hiraeth_core::ServiceResponse {
-    response_headers_with_request_id(&mut response.headers, request_id);
     if let Ok(body) = std::str::from_utf8(&response.body) {
         response.body = replace_xml_request_ids(body, request_id).into_bytes();
     }

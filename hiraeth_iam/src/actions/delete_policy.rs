@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
@@ -52,8 +53,8 @@ where
         request: ResolvedRequest,
         delete_request: DeletePolicyRequest,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, IamError> {
         let policy_arn = util::parse_policy_arn(&delete_request.policy_arn)?;
         if policy_arn.account_id != request.auth_context.principal.account_id {

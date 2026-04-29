@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
     AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    TypedAwsAction,
+    auth::AuthorizationCheck,
+    json_response,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -290,8 +293,8 @@ where
         request: ResolvedRequest,
         receive_request: ReceiveMessageRequest,
         store: &S,
-        trace_context: &hiraeth_core::tracing::TraceContext,
-        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
         let timer = trace_context.start_span();
         let attributes = HashMap::from([
