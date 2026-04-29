@@ -2,8 +2,10 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, empty_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
+    TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
@@ -27,7 +29,7 @@ async fn handle_set_queue_attributes_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: SetQueueAttributesRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<(), SqsError> {
     let queue =
         crate::util::load_queue_from_url(request, store, request_body.queue_url.as_str()).await?;
 
@@ -37,7 +39,6 @@ async fn handle_set_queue_attributes_typed<S: SqsStore>(
             parse_queue_attribute_update(&request_body.attributes)?,
         )
         .await
-        .map(|_| empty_response())
         .map_err(crate::error::map_store_error)
 }
 
@@ -47,6 +48,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = SetQueueAttributesRequest;
+    type Response = ();
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -57,17 +59,54 @@ where
         json_payload_format()
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Empty
+    }
+
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         request_body: SetQueueAttributesRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_set_queue_attributes_typed(&request, store, request_body).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<(), SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), request_body.queue_url.clone()),
+            (
+                "attribute_count".to_string(),
+                request_body.attributes.len().to_string(),
+            ),
+            (
+                "attributes".to_string(),
+                request_body
+                    .attributes
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        ]);
+
+        let result = handle_set_queue_attributes_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.queue.set_attributes",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -104,6 +143,7 @@ mod tests {
         );
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
@@ -174,16 +214,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_set_queue_attributes_typed(
+        handle_set_queue_attributes_typed(
             &request,
             &store,
             crate::actions::test_support::parse_request_body(&request),
         )
         .await
         .expect("set queue attributes should succeed");
-
-        assert_eq!(response.status_code, 200);
-        assert!(response.body.is_empty());
 
         let updated_queue = store
             .get_queue("orders", "us-east-1", "123456789012")

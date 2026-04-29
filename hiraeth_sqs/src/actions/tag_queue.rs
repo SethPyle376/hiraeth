@@ -2,8 +2,10 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, empty_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
+    TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
@@ -27,7 +29,7 @@ async fn handle_tag_queue_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: TagQueueRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<(), SqsError> {
     validate_tags(&request_body.tags, false)?;
 
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
@@ -41,7 +43,6 @@ async fn handle_tag_queue_typed<S: SqsStore>(
     store
         .tag_queue(queue.id, request_body.tags)
         .await
-        .map(|_| empty_response())
         .map_err(crate::error::map_store_error)
 }
 
@@ -51,6 +52,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = TagQueueRequest;
+    type Response = ();
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -61,17 +63,51 @@ where
         json_payload_format()
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Empty
+    }
+
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         request_body: TagQueueRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_tag_queue_typed(&request, store, request_body).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<(), SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), request_body.queue_url.clone()),
+            ("tag_count".to_string(), request_body.tags.len().to_string()),
+            (
+                "tag_keys".to_string(),
+                request_body
+                    .tags
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        ]);
+
+        let result = handle_tag_queue_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.queue.tag",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -100,6 +136,7 @@ mod tests {
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
@@ -179,15 +216,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_tag_queue_typed(
+        handle_tag_queue_typed(
             &request,
             &store,
             crate::actions::test_support::parse_request_body(&request),
         )
         .await
         .expect("tag queue should succeed");
-
-        assert_eq!(response.status_code, 200);
         assert_eq!(
             store.queue_tags(42),
             [

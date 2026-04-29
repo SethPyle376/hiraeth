@@ -8,6 +8,7 @@ anyhow = "1.0"
 askama = "0.14"
 axum = { version = "0.8", default-features = false, features = ["form", "http1", "json", "query", "tokio"] }
 chrono = "0.4"
+hiraeth_core = { path = "../hiraeth_core" }
 hiraeth_store = { path = "../hiraeth_store" }
 hiraeth_store_sqlx = { path = "../hiraeth_store_sqlx" }
 serde = { version = "1.0", features = ["derive"] }

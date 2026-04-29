@@ -1407,6 +1407,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "tokio",
+ "tracing",
  "url",
  "wildmatch",
 ]
@@ -1470,6 +1472,7 @@ dependencies = [
  "hiraeth_http",
  "hiraeth_store",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1477,6 +1480,7 @@ name = "hiraeth_runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "config",
  "hiraeth_auth",
  "hiraeth_core",
@@ -1495,6 +1499,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -1531,7 +1536,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "hiraeth_core",
  "hiraeth_store",
+ "serde",
+ "serde_json",
  "sqlx",
  "tempfile",
  "tokio",
@@ -1560,6 +1568,7 @@ dependencies = [
  "askama",
  "axum",
  "chrono",
+ "hiraeth_core",
  "hiraeth_store",
  "hiraeth_store_sqlx",
  "serde",

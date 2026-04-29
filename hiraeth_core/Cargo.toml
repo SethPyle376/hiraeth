@@ -14,3 +14,7 @@ serde_urlencoded = "0.7"
 wildmatch = "2.6.0"
 chrono = "0.4"
 url = "2.5"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1.45", features = ["macros", "rt"] }

@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
@@ -23,7 +26,7 @@ pub(crate) struct GetQueueUrlRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct GetQueueUrlResponse {
+pub(crate) struct GetQueueUrlResponse {
     queue_url: String,
 }
 
@@ -31,7 +34,7 @@ async fn handle_get_queue_url_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: GetQueueUrlRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<GetQueueUrlResponse, SqsError> {
     queue_support::validate_queue_name(
         &request_body.queue_name,
         request_body.queue_name.ends_with(".fifo"),
@@ -55,7 +58,7 @@ async fn handle_get_queue_url_typed<S: SqsStore>(
                     &request_body.queue_name,
                 ),
             };
-            json_response(&response).map_err(Into::into)
+            Ok(response)
         }
         None => Err(SqsError::QueueNotFound),
     }
@@ -67,6 +70,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = GetQueueUrlRequest;
+    type Response = GetQueueUrlResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -81,13 +85,41 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         request_body: GetQueueUrlRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_get_queue_url_typed(&request, store, request_body).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<GetQueueUrlResponse, SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_name".to_string(), request_body.queue_name.clone()),
+            ("region".to_string(), request.region.clone()),
+            (
+                "queue_owner_account_id".to_string(),
+                request_body
+                    .queue_owner_aws_account_id
+                    .clone()
+                    .unwrap_or_else(|| request.auth_context.principal.account_id.clone()),
+            ),
+        ]);
+
+        let result = handle_get_queue_url_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.queue.lookup_url",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -120,6 +152,7 @@ mod tests {
         );
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
@@ -209,10 +242,7 @@ mod tests {
         )
         .await
         .expect("get queue url should succeed");
-        let body: serde_json::Value =
-            serde_json::from_slice(&response.body).expect("response body should be valid json");
-
-        assert_eq!(response.status_code, 200);
+        let body = serde_json::to_value(response).expect("response should serialize to json");
         assert_eq!(
             body["QueueUrl"],
             "http://localhost:4566/123456789012/existing-queue"
@@ -250,8 +280,7 @@ mod tests {
         )
         .await
         .expect("get queue url should succeed");
-        let body: serde_json::Value =
-            serde_json::from_slice(&response.body).expect("response body should be valid json");
+        let body = serde_json::to_value(response).expect("response should serialize to json");
 
         assert_eq!(
             body["QueueUrl"],

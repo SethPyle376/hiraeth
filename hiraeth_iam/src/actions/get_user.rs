@@ -1,15 +1,18 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, iam_xml_response, new_request_id,
-        optional_target_user, parse_payload_error, response_metadata,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, optional_target_user, parse_payload_error,
+        response_metadata,
     },
     error::IamError,
 };
@@ -24,7 +27,7 @@ pub(crate) struct GetUserRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "GetUserResponse")]
-struct GetUserResponse {
+pub(crate) struct GetUserResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "GetUserResult")]
@@ -45,6 +48,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = GetUserRequest;
+    type Response = GetUserResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -55,12 +59,20 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
+    async fn handle(
         &self,
         request: ResolvedRequest,
         get_user_request: GetUserRequest,
         store: &S,
-    ) -> Result<ServiceResponse, IamError> {
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<GetUserResponse, IamError> {
+        let timer = trace_context.start_span();
+        let requested_user_name = get_user_request.user_name.clone();
         let principal =
             match optional_target_user(&request, store, get_user_request.user_name.as_deref())
                 .await?
@@ -77,8 +89,28 @@ where
                     )));
                 }
             };
+        let attributes = HashMap::from([
+            (
+                "requested_user_name".to_string(),
+                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+            ),
+            ("user_name".to_string(), principal.name.clone()),
+            ("user_id".to_string(), principal.id.to_string()),
+            ("account_id".to_string(), principal.account_id.clone()),
+            ("path".to_string(), principal.path.clone()),
+        ]);
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.user.lookup",
+                "iam",
+                "ok",
+                attributes,
+            )
+            .await;
 
-        iam_xml_response(&get_user_response(principal.into(), new_request_id()))
+        Ok(get_user_response(principal.into(), request.request_id))
     }
 
     async fn resolve_authorization_typed(
@@ -121,7 +153,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, xml_body};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+        xml_body,
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
 
@@ -165,6 +201,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -195,6 +232,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=GetUser&Version=2010-05-08&UserName=alice"),
                 &store(),
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 
@@ -214,6 +253,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=GetUser&Version=2010-05-08"),
                 &store(),
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 

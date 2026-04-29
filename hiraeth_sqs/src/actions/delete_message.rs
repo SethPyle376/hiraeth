@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, empty_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
+    TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
@@ -22,7 +26,7 @@ async fn handle_delete_message_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     delete_request: DeleteMessageRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<(), SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
 
     store
@@ -30,7 +34,7 @@ async fn handle_delete_message_typed<S: SqsStore>(
         .await
         .map_err(crate::error::map_receipt_handle_store_error)?;
 
-    Ok(empty_response())
+    Ok(())
 }
 
 #[async_trait]
@@ -39,6 +43,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = DeleteMessageRequest;
+    type Response = ();
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -49,17 +54,45 @@ where
         json_payload_format()
     }
 
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Empty
+    }
+
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         delete_request: DeleteMessageRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_delete_message_typed(&request, store, delete_request).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<(), SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), delete_request.queue_url.clone()),
+            (
+                "receipt_handle".to_string(),
+                delete_request.receipt_handle.clone(),
+            ),
+        ]);
+
+        let result = handle_delete_message_typed(&request, store, delete_request).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.message.delete",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -115,6 +148,7 @@ mod tests {
         );
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
@@ -162,16 +196,13 @@ mod tests {
             }"#,
         );
 
-        let response = handle_delete_message_typed(
+        handle_delete_message_typed(
             &request,
             &store,
             crate::actions::test_support::parse_request_body(&request),
         )
         .await
         .expect("delete message should succeed");
-
-        assert_eq!(response.status_code, 200);
-        assert!(response.body.is_empty());
         assert_eq!(
             store.deleted_messages(),
             vec![(42, "receipt-123".to_string())]

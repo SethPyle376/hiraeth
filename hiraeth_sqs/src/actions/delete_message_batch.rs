@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -27,13 +30,13 @@ pub(crate) struct DeleteMessageBatchRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct DeleteMessageBatchSuccessEntry {
+pub(crate) struct DeleteMessageBatchSuccessEntry {
     pub id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct DeleteMessageBatchFailedEntry {
+pub(crate) struct DeleteMessageBatchFailedEntry {
     pub id: String,
     pub code: String,
     pub message: String,
@@ -42,7 +45,7 @@ struct DeleteMessageBatchFailedEntry {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct DeleteMessageBatchResponse {
+pub(crate) struct DeleteMessageBatchResponse {
     pub successful: Vec<DeleteMessageBatchSuccessEntry>,
     pub failed: Vec<DeleteMessageBatchFailedEntry>,
 }
@@ -51,7 +54,7 @@ async fn handle_delete_message_batch_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     delete_request: DeleteMessageBatchRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<DeleteMessageBatchResponse, SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &delete_request.queue_url).await?;
     crate::util::validate_batch_request(
         delete_request.entries.iter().map(|entry| entry.id.as_str()),
@@ -80,7 +83,7 @@ async fn handle_delete_message_batch_typed<S: SqsStore>(
         }
     }
 
-    json_response(&DeleteMessageBatchResponse { successful, failed }).map_err(Into::into)
+    Ok(DeleteMessageBatchResponse { successful, failed })
 }
 
 #[async_trait]
@@ -89,6 +92,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = DeleteMessageBatchRequest;
+    type Response = DeleteMessageBatchResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -103,13 +107,37 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         delete_request: DeleteMessageBatchRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_delete_message_batch_typed(&request, store, delete_request).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<DeleteMessageBatchResponse, SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), delete_request.queue_url.clone()),
+            (
+                "entry_count".to_string(),
+                delete_request.entries.len().to_string(),
+            ),
+        ]);
+
+        let result = handle_delete_message_batch_typed(&request, store, delete_request).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.delete_message_batch.delete",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -166,6 +194,7 @@ mod tests {
         );
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
@@ -195,8 +224,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -230,8 +259,6 @@ mod tests {
         )
         .await
         .expect("delete message batch should succeed");
-
-        assert_eq!(response.status_code, 200);
 
         let body = parse_json_body(&response);
         assert_eq!(body["Successful"].as_array().unwrap().len(), 2);

@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -32,7 +33,7 @@ pub(crate) struct SendMessageRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct SendMessageResponse {
+pub(crate) struct SendMessageResponse {
     #[serde(rename = "MD5OfMessageAttributes")]
     #[serde(skip_serializing_if = "Option::is_none")]
     md5_of_message_attributes: Option<String>,
@@ -49,7 +50,7 @@ async fn handle_send_message_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: SendMessageRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<SendMessageResponse, SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
     validate_message_body(&request_body.message_body, queue.maximum_message_size)?;
     let delay_seconds = resolve_delay_seconds(request_body.delay_seconds, queue.delay_seconds)?;
@@ -110,7 +111,7 @@ async fn handle_send_message_typed<S: SqsStore>(
         sequence_number: None,
     };
 
-    json_response(&response).map_err(Into::into)
+    Ok(response)
 }
 
 pub(super) fn resolve_delay_seconds(
@@ -147,6 +148,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = SendMessageRequest;
+    type Response = SendMessageResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -161,13 +163,70 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         request_body: SendMessageRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_send_message_typed(&request, store, request_body).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<SendMessageResponse, SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), request_body.queue_url.clone()),
+            (
+                "body_bytes".to_string(),
+                request_body.message_body.len().to_string(),
+            ),
+            (
+                "delay_seconds".to_string(),
+                request_body
+                    .delay_seconds
+                    .map(|delay_seconds| delay_seconds.to_string())
+                    .unwrap_or_else(|| "queue_default".to_string()),
+            ),
+            (
+                "message_attribute_count".to_string(),
+                request_body
+                    .message_attributes
+                    .as_ref()
+                    .map(HashMap::len)
+                    .unwrap_or_default()
+                    .to_string(),
+            ),
+            (
+                "system_attribute_count".to_string(),
+                request_body
+                    .message_system_attributes
+                    .as_ref()
+                    .map(HashMap::len)
+                    .unwrap_or_default()
+                    .to_string(),
+            ),
+            (
+                "has_message_group_id".to_string(),
+                request_body.message_group_id.is_some().to_string(),
+            ),
+            (
+                "has_message_deduplication_id".to_string(),
+                request_body.message_deduplication_id.is_some().to_string(),
+            ),
+        ]);
+
+        let result = handle_send_message_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.send_message.persist",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -192,10 +251,7 @@ mod tests {
     use serde_json::Value;
 
     use super::{MessageAttributeValue, SendMessageAction, handle_send_message_typed};
-    use crate::{
-        error::SqsError,
-        util::{self},
-    };
+    use crate::{error::SqsError, util};
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -205,7 +261,8 @@ mod tests {
         );
 
         ResolvedRequest {
-            request: hiraeth_http::IncomingRequest {
+            request_id: "test-request-id".to_string(),
+            request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
                 path: "/".to_string(),
@@ -257,8 +314,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -292,8 +349,6 @@ mod tests {
         )
         .await
         .expect("send message should succeed");
-
-        assert_eq!(response.status_code, 200);
         let response_body = parse_json_body(&response);
         assert_eq!(
             response_body["MD5OfMessageBody"],
@@ -341,8 +396,6 @@ mod tests {
         )
         .await
         .expect("send message should succeed");
-
-        assert_eq!(response.status_code, 200);
         assert!(parse_json_body(&response)["MD5OfMessageAttributes"].is_null());
 
         let sent_messages = store.sent_messages();

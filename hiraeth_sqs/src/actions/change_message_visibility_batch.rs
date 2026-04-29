@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -32,13 +35,13 @@ pub(crate) struct ChangeMessageVisibilityBatchRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct ChangeMessageVisibilityBatchSuccessEntry {
+pub(crate) struct ChangeMessageVisibilityBatchSuccessEntry {
     pub id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct ChangeMessageVisibilityBatchFailedEntry {
+pub(crate) struct ChangeMessageVisibilityBatchFailedEntry {
     pub id: String,
     pub code: String,
     pub message: String,
@@ -47,7 +50,7 @@ struct ChangeMessageVisibilityBatchFailedEntry {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct ChangeMessageVisibilityBatchResponse {
+pub(crate) struct ChangeMessageVisibilityBatchResponse {
     pub successful: Vec<ChangeMessageVisibilityBatchSuccessEntry>,
     pub failed: Vec<ChangeMessageVisibilityBatchFailedEntry>,
 }
@@ -56,7 +59,7 @@ async fn handle_change_message_visibility_batch_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     change_request: ChangeMessageVisibilityBatchRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<ChangeMessageVisibilityBatchResponse, SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &change_request.queue_url).await?;
     crate::util::validate_batch_request(
         change_request.entries.iter().map(|entry| entry.id.as_str()),
@@ -101,7 +104,7 @@ async fn handle_change_message_visibility_batch_typed<S: SqsStore>(
         }
     }
 
-    json_response(&ChangeMessageVisibilityBatchResponse { successful, failed }).map_err(Into::into)
+    Ok(ChangeMessageVisibilityBatchResponse { successful, failed })
 }
 
 #[async_trait]
@@ -110,6 +113,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ChangeMessageVisibilityBatchRequest;
+    type Response = ChangeMessageVisibilityBatchResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -124,13 +128,38 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         change_request: ChangeMessageVisibilityBatchRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_change_message_visibility_batch_typed(&request, store, change_request).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<ChangeMessageVisibilityBatchResponse, SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), change_request.queue_url.clone()),
+            (
+                "entry_count".to_string(),
+                change_request.entries.len().to_string(),
+            ),
+        ]);
+
+        let result =
+            handle_change_message_visibility_batch_typed(&request, store, change_request).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.change_message_visibility_batch.update",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -187,6 +216,7 @@ mod tests {
         );
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
@@ -216,8 +246,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -251,8 +281,6 @@ mod tests {
         )
         .await
         .expect("change visibility batch should succeed");
-
-        assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);
         assert_eq!(body["Successful"].as_array().unwrap().len(), 1);
         assert_eq!(body["Failed"].as_array().unwrap().len(), 2);

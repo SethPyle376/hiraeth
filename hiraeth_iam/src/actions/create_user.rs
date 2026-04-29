@@ -1,17 +1,19 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::{IamStore, iam::NewPrincipal};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, iam_xml_response, new_id,
-        new_request_id, parse_payload_error, response_metadata,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, new_id, parse_payload_error,
+        response_metadata,
     },
     error::IamError,
 };
@@ -29,7 +31,7 @@ pub(crate) struct CreateUserRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "CreateUserResponse")]
-struct CreateUserResponse {
+pub(crate) struct CreateUserResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "CreateUserResult")]
@@ -50,6 +52,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = CreateUserRequest;
+    type Response = CreateUserResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -60,16 +63,38 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
+    async fn handle(
         &self,
         request: ResolvedRequest,
         create_user_request: CreateUserRequest,
         store: &S,
-    ) -> Result<ServiceResponse, IamError> {
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<CreateUserResponse, IamError> {
+        let timer = trace_context.start_span();
         let account_id = &request.auth_context.principal.account_id;
+        let attributes = HashMap::from([
+            ("account_id".to_string(), account_id.clone()),
+            (
+                "user_name".to_string(),
+                create_user_request.user_name.clone(),
+            ),
+            ("path".to_string(), create_user_request.path.clone()),
+            (
+                "has_permissions_boundary".to_string(),
+                create_user_request
+                    .permissions_boundary
+                    .is_some()
+                    .to_string(),
+            ),
+        ]);
 
         let path = arn_util::normalize_user_path(&create_user_request.path);
-        let created_principal = store
+        let result = store
             .create_principal(NewPrincipal {
                 account_id: account_id.clone(),
                 kind: "user".to_string(),
@@ -77,11 +102,23 @@ where
                 path,
                 user_id: new_id(),
             })
-            .await?;
+            .await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.user.create",
+                "iam",
+                status,
+                attributes,
+            )
+            .await;
+        let created_principal = result?;
 
-        iam_xml_response(&create_user_response(
+        Ok(create_user_response(
             created_principal.into(),
-            new_request_id(),
+            request.request_id,
         ))
     }
 
@@ -116,7 +153,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{NaiveDate, TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, xml_body};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+        xml_body,
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         IamStore,
@@ -158,6 +199,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -236,6 +278,8 @@ mod tests {
                     b"Action=CreateUser&Version=2010-05-08&UserName=alice&Path=%2Fengineering%2Fdev%2F",
                 ),
                 &store(),
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 
@@ -253,7 +297,7 @@ mod tests {
         assert!(body.contains("<Path>/engineering/dev/</Path>"));
         assert!(body.contains("<Arn>arn:aws:iam::123456789012:user/engineering/dev/alice</Arn>"));
         assert!(body.contains("<UserId>AIDA"));
-        assert!(body.contains("<ResponseMetadata><RequestId>"));
+        assert!(body.contains("<ResponseMetadata><RequestId>test-request-id</RequestId>"));
     }
 
     #[test]

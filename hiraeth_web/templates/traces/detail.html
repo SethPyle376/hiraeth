@@ -1,0 +1,213 @@
+{% extends "layout.html" %}
+
+{% block title %}Request {{ trace.request_id }} | Hiraeth{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-[112rem]">
+  {{ page_header_html|safe }}
+
+  <div class="mb-5 flex flex-col gap-2 rounded border border-base-300 bg-base-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <div class="text-xs font-bold uppercase tracking-wider text-base-content/50">Trace ID</div>
+      <div class="font-mono text-sm break-all">{{ trace.request_id }}</div>
+    </div>
+    <button class="btn btn-outline btn-sm self-start sm:self-center" type="button" data-copy-value="{{ trace.request_id }}" onclick="hiraethCopyText(this)">Copy trace ID</button>
+  </div>
+
+  <div class="mb-5 grid gap-5 md:grid-cols-4">
+    <section class="card border border-base-300 bg-base-100">
+      <div class="card-body">
+        <div class="text-sm text-base-content/60">Status</div>
+        <div class="text-3xl font-black"><span class="badge {{ trace.response_status_class }} text-lg">{{ trace.response_status_code }}</span></div>
+        <div class="text-sm text-base-content/60">response code</div>
+      </div>
+    </section>
+    <section class="card border border-base-300 bg-base-100">
+      <div class="card-body">
+        <div class="text-sm text-base-content/60">Duration</div>
+        <div class="text-3xl font-black text-primary">{{ trace.duration_ms }}</div>
+        <div class="text-sm text-base-content/60">milliseconds</div>
+      </div>
+    </section>
+    <section class="card border border-base-300 bg-base-100">
+      <div class="card-body">
+        <div class="text-sm text-base-content/60">Auth</div>
+        <div class="font-mono text-lg font-bold">{{ trace.auth_ms }} ms</div>
+        <div class="text-sm text-base-content/60">route {{ trace.route_ms }} ms</div>
+      </div>
+    </section>
+    <section class="card border border-base-300 bg-base-100">
+      <div class="card-body">
+        <div class="text-sm text-base-content/60">Scope</div>
+        <div class="font-bold">{{ trace.service }} / {{ trace.region }}</div>
+        <div class="font-mono text-xs text-base-content/60">{{ trace.account_id }}</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+    <div class="space-y-5">
+      <section class="card border border-base-300 bg-base-100">
+        <div class="card-body">
+          <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 class="card-title text-xl">Trace flow</h2>
+              <p class="text-sm text-base-content/60">Follow the request through recorded runtime, router, authorization, and service spans.</p>
+            </div>
+            <div class="badge badge-outline">{{ spans.len() }} spans</div>
+          </div>
+
+          {% if has_spans %}
+          <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(34rem,1.45fr)_minmax(20rem,0.75fr)]">
+            <div class="max-h-[38rem] overflow-auto rounded border border-base-300 bg-base-200/30 p-3">
+              <svg class="mx-auto block max-w-none" width="{{ graph.width }}" height="{{ graph.height }}" viewBox="0 0 {{ graph.width }} {{ graph.height }}" role="img" aria-label="Trace span directed graph">
+                {% for edge in graph.edges %}
+                <path data-trace-edge data-parent-node="{{ edge.parent_graph_id }}" data-child-node="{{ edge.child_graph_id }}" d="M {{ edge.x1 }} {{ edge.y1 }} L {{ edge.x1 }} {{ edge.y_mid }} L {{ edge.x2 }} {{ edge.y_mid }} L {{ edge.x2 }} {{ edge.arrow_base_y }}" class="fill-none stroke-base-content/35 transition" stroke-width="2"></path>
+                <polygon data-trace-edge data-parent-node="{{ edge.parent_graph_id }}" data-child-node="{{ edge.child_graph_id }}" points="{{ edge.arrow_left_x }},{{ edge.arrow_base_y }} {{ edge.arrow_right_x }},{{ edge.arrow_base_y }} {{ edge.x2 }},{{ edge.y2 }}" class="fill-base-content/45 transition"></polygon>
+                {% endfor %}
+
+                {% for node in graph.nodes %}
+                <foreignObject x="{{ node.x }}" y="{{ node.y }}" width="{{ node.width }}" height="{{ node.height }}">
+                  {% if node.is_span %}
+                  <button xmlns="http://www.w3.org/1999/xhtml" id="{{ node.graph_id }}" class="trace-graph-node trace-graph-span-node {{ node.node_class }} flex h-full w-full flex-col items-start justify-center rounded border px-2 text-left shadow-sm transition {% if node.is_tiny %}py-1{% endif %}" type="button" {% if node.has_parent_graph_id %}data-parent-node="{{ node.parent_graph_id }}"{% endif %} onclick="hiraethSelectTraceSpan('{{ node.detail_id }}', '{{ node.graph_id }}')" onmouseenter="hiraethHighlightTraceConnections('{{ node.graph_id }}', true)" onmouseleave="hiraethHighlightTraceConnections('{{ node.graph_id }}', false)">
+                    <span class="max-w-full truncate font-mono text-[0.68rem] font-black leading-tight">{{ node.label }}</span>
+                    {% if !node.is_tiny %}
+                    <span class="mt-0.5 max-w-full truncate text-[0.65rem] leading-tight text-base-content/60">{{ node.meta }}</span>
+                    {% else %}
+                    <span class="mt-0.5 max-w-full truncate text-[0.6rem] leading-tight text-base-content/45">0 ms</span>
+                    {% endif %}
+                  </button>
+                  {% else %}
+                  <div xmlns="http://www.w3.org/1999/xhtml" id="{{ node.graph_id }}" class="trace-graph-root trace-graph-node {{ node.node_class }} flex h-full w-full flex-col justify-center rounded border px-2 transition" onmouseenter="hiraethHighlightTraceConnections('{{ node.graph_id }}', true)" onmouseleave="hiraethHighlightTraceConnections('{{ node.graph_id }}', false)">
+                    <span class="mb-0.5 text-[0.55rem] font-black uppercase tracking-[0.22em] text-primary">Request</span>
+                    <span class="max-w-full truncate font-mono text-[0.68rem] font-black leading-tight">{{ node.label }}</span>
+                    <span class="mt-0.5 truncate text-[0.65rem] leading-tight text-base-content/60">{{ node.meta }}</span>
+                  </div>
+                  {% endif %}
+                </foreignObject>
+                {% endfor %}
+              </svg>
+            </div>
+
+            <div class="rounded border border-base-300 bg-base-200/30 p-4 xl:max-h-[38rem] xl:overflow-auto">
+              <div id="trace-span-empty" class="text-sm text-base-content/60">Select a span node to inspect its timing and attributes.</div>
+              {% for span in spans %}
+              <article id="{{ span.detail_id }}" class="{% if loop.first %}block{% else %}hidden{% endif %}" data-trace-span-detail>
+                <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="badge badge-outline">{{ span.layer }}</span>
+                      <span class="font-mono font-bold">{{ span.name }}</span>
+                      <span class="badge {{ span.status_class }}">{{ span.status }}</span>
+                    </div>
+                    <div class="mt-2 space-y-1 text-xs text-base-content/60">
+                      <div><span class="font-bold">Span</span> <span class="font-mono break-all">{{ span.span_id }}</span></div>
+                      {% if span.has_parent_span_id %}
+                      <div><span class="font-bold">Parent</span> <span class="font-mono break-all">{{ span.parent_span_id }}</span></div>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="font-mono text-sm font-bold text-primary">{{ span.duration_ms }} ms</div>
+                </div>
+
+                {% if span.has_attributes %}
+                <div class="mt-4">
+                  <h3 class="mb-2 text-sm font-bold">Attributes</h3>
+                  <pre class="max-h-96 overflow-auto rounded bg-neutral p-3 text-xs text-neutral-content">{{ span.attributes }}</pre>
+                </div>
+                {% else %}
+                <div class="mt-4 rounded border border-dashed border-base-300 p-4 text-sm text-base-content/60">This span did not record attributes.</div>
+                {% endif %}
+              </article>
+              {% endfor %}
+            </div>
+          </div>
+          <script>
+            window.requestAnimationFrame(function () {
+              var first = document.querySelector('[data-trace-span-detail]');
+              var firstNode = document.querySelector('.trace-graph-span-node');
+              if (first && firstNode && window.hiraethSelectTraceSpan) {
+                hiraethSelectTraceSpan(first.id, firstNode.id);
+              }
+            });
+          </script>
+          {% else %}
+          <div class="rounded border border-dashed border-base-300 p-8 text-center">
+            <h3 class="text-lg font-bold">No spans recorded</h3>
+            <p class="mt-2 text-sm text-base-content/60">Request metadata was stored, but no lifecycle spans were captured.</p>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="card border border-base-300 bg-base-100">
+        <div class="card-body">
+          <h2 class="card-title text-xl">Request</h2>
+          <div class="mb-3 font-mono text-sm">{{ trace.method }} {{ trace.path }}{% if trace.query.len() > 0 %}?{{ trace.query }}{% endif %}</div>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div>
+              <h3 class="mb-2 font-bold">Headers</h3>
+              <pre class="min-h-32 overflow-x-auto rounded bg-neutral p-3 text-xs text-neutral-content">{{ trace.request_headers }}</pre>
+            </div>
+            <div>
+              <h3 class="mb-2 font-bold">Body</h3>
+              <pre class="min-h-32 overflow-x-auto whitespace-pre-wrap rounded bg-neutral p-3 text-xs text-neutral-content">{{ trace.request_body }}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card border border-base-300 bg-base-100">
+        <div class="card-body">
+          <h2 class="card-title text-xl">Response</h2>
+          {% if trace.has_error %}
+          <div class="alert alert-error mb-4">
+            <span>{{ trace.error_message }}</span>
+          </div>
+          {% endif %}
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div>
+              <h3 class="mb-2 font-bold">Headers</h3>
+              <pre class="min-h-32 overflow-x-auto rounded bg-neutral p-3 text-xs text-neutral-content">{{ trace.response_headers }}</pre>
+            </div>
+            <div>
+              <h3 class="mb-2 font-bold">Body</h3>
+              <pre class="min-h-32 overflow-x-auto whitespace-pre-wrap rounded bg-neutral p-3 text-xs text-neutral-content">{{ trace.response_body }}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="space-y-5">
+      <section class="card border border-base-300 bg-base-100">
+        <div class="card-body">
+          <h2 class="card-title text-lg">Request metadata</h2>
+          <dl class="space-y-3 text-sm">
+            <div>
+              <dt class="text-base-content/60">Host</dt>
+              <dd class="font-mono">{{ trace.host }}</dd>
+            </div>
+            <div>
+              <dt class="text-base-content/60">Principal</dt>
+              <dd class="font-bold">{{ trace.principal }}</dd>
+            </div>
+            <div>
+              <dt class="text-base-content/60">Access key</dt>
+              <dd class="font-mono">{{ trace.access_key }}</dd>
+            </div>
+            <div>
+              <dt class="text-base-content/60">Started</dt>
+              <dd>{{ trace.started_at }}</dd>
+            </div>
+            <div>
+              <dt class="text-base-content/60">Completed</dt>
+              <dd>{{ trace.completed_at }}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+    </aside>
+  </div>
+</section>
+{% endblock %}

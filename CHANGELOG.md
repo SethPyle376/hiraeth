@@ -2,6 +2,42 @@
 
 All notable changes to Hiraeth will be documented in this file.
 
+## 0.2.1 - 2026-04-29
+
+Tracing and local request inspection slice.
+
+### Added
+
+- SQLite-backed request tracing for handled AWS endpoint requests.
+- Trace ids now use the generated AWS request id for consistent log, response,
+  and web UI correlation.
+- Runtime spans for authentication, IAM identity resolution, routing,
+  authorization resolution/evaluation, service handling, action handling, and
+  selected action-specific operations.
+- Trace span parent ids, enabling the web UI to render the request-processing
+  flow as a directed graph.
+- Web UI tracing dashboard with request id search, service/action/status
+  filters, trace clearing, and recent request summaries.
+- Web UI trace detail pages with a request-flow graph, selectable span details,
+  copied trace ids, full request/response headers, and full request/response
+  bodies.
+- Documentation for tracing behavior, captured data, storage, and current
+  limitations.
+
+### Changed
+
+- AWS action handling now serializes typed action responses centrally instead
+  of each action manually rendering its service response.
+- Authorization tracing now records the real allow/deny decision even when
+  `HIRAETH_AUTH_MODE=audit` allows the request to continue.
+
+### Known Gaps
+
+- Tracing is Hiraeth-specific and does not currently export OpenTelemetry data.
+- Trace storage has no automatic retention or sampling configuration yet.
+- Full request and response bodies are stored intentionally for local debugging;
+  keep the web UI and SQLite database bound to trusted local workflows.
+
 ## 0.2.0 - 2026-04-28
 
 IAM identity-policy slice and expanded local administration UI.

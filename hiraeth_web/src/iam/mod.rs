@@ -1031,10 +1031,7 @@ async fn load_attached_principals_for_policy(
     Ok(attached_principals)
 }
 
-async fn load_principal(
-    state: &WebState,
-    principal_id: i64,
-) -> Result<hiraeth_store::iam::Principal, WebError> {
+async fn load_principal(state: &WebState, principal_id: i64) -> Result<Principal, WebError> {
     state
         .iam_store
         .get_principal(principal_id)

@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -33,13 +34,13 @@ async fn handle_get_queue_attributes_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     attributes_request: GetQueueAttributesRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<GetQueueAttributesResponse, SqsError> {
     let queue =
         crate::util::load_queue_from_url(request, store, &attributes_request.queue_url).await?;
     let attributes =
         collect_queue_attributes(store, &queue, &attributes_request.attribute_names).await?;
 
-    json_response(&GetQueueAttributesResponse { attributes }).map_err(Into::into)
+    Ok(GetQueueAttributesResponse { attributes })
 }
 
 #[async_trait]
@@ -48,6 +49,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = GetQueueAttributesRequest;
+    type Response = GetQueueAttributesResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -62,13 +64,44 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         attributes_request: GetQueueAttributesRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_get_queue_attributes_typed(&request, store, attributes_request).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<GetQueueAttributesResponse, SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            (
+                "queue_url".to_string(),
+                attributes_request.queue_url.clone(),
+            ),
+            (
+                "requested_attribute_count".to_string(),
+                attributes_request.attribute_names.len().to_string(),
+            ),
+            (
+                "requested_attributes".to_string(),
+                attributes_request.attribute_names.join(","),
+            ),
+        ]);
+
+        let result = handle_get_queue_attributes_typed(&request, store, attributes_request).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.queue.get_attributes",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -103,6 +136,7 @@ mod tests {
         );
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
@@ -164,8 +198,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -203,8 +237,6 @@ mod tests {
         )
         .await
         .expect("get queue attributes should succeed");
-
-        assert_eq!(response.status_code, 200);
         let body = parse_json_body(&response);
         let attributes = &body["Attributes"];
         assert_eq!(attributes["VisibilityTimeout"], "30");

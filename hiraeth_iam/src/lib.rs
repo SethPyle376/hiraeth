@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use hiraeth_auth::AuthenticatedRequest;
 use hiraeth_core::{
     ApiError, AuthContext, AuthMode, AwsActionRegistry, ResolvedRequest, ServiceResponse,
-    auth::AuthorizationCheck, get_query_request_action_name,
+    auth::AuthorizationCheck,
+    get_query_request_action_name,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_router::Service;
 use hiraeth_store::{IamStore, StoreError, iam::PrincipalStore};
@@ -43,6 +45,7 @@ where
 
     pub async fn resolve_identity(
         &self,
+        request_id: String,
         request: AuthenticatedRequest,
     ) -> Result<ResolvedRequest, ResolveIdentityError> {
         let principal = self
@@ -53,6 +56,7 @@ where
             .ok_or(ResolveIdentityError::PrincipalNotFound)?;
 
         Ok(ResolvedRequest {
+            request_id,
             request: request.request,
             service: request.service,
             region: request.region,
@@ -106,12 +110,24 @@ where
     async fn handle_request(
         &self,
         request: ResolvedRequest,
-    ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<ServiceResponse, ApiError> {
         let action_name = get_query_request_action_name(&request)
             .map_err(|error| ApiError::BadRequest(error.to_string()))?
             .ok_or_else(|| ApiError::BadRequest("Missing Action parameter".to_string()))?;
-        let action = match self.actions.get(&action_name) {
-            Some(action) => action,
+        let response = match self
+            .actions
+            .handle(
+                &action_name,
+                request,
+                &self.store,
+                trace_context,
+                trace_recorder,
+            )
+            .await
+        {
+            Some(response) => response,
             None => {
                 return Ok(ServiceResponse::from(
                     error::IamError::UnsupportedOperation(action_name),
@@ -119,7 +135,7 @@ where
             }
         };
 
-        Ok(action.handle(request, &self.store).await)
+        Ok(response)
     }
 
     async fn resolve_authorization(
@@ -147,7 +163,10 @@ mod tests {
 
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext as AuthenticatedAuthContext, AuthenticatedRequest};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{
+        ApiError, AuthContext, ResolvedRequest, ServiceResponse,
+        tracing::{NoopTraceRecorder, TraceContext},
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::Service;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
@@ -209,10 +228,11 @@ mod tests {
         );
 
         let resolved = iam
-            .resolve_identity(authenticated_request(42))
+            .resolve_identity("test-request-id".to_string(), authenticated_request(42))
             .await
             .expect("principal should resolve");
 
+        assert_eq!(resolved.request_id, "test-request-id");
         assert_eq!(resolved.service, "sqs");
         assert_eq!(resolved.region, "us-east-1");
         assert_eq!(
@@ -232,7 +252,7 @@ mod tests {
         );
 
         let error = iam
-            .resolve_identity(authenticated_request(42))
+            .resolve_identity("test-request-id".to_string(), authenticated_request(42))
             .await
             .expect_err("missing principal should fail identity resolution");
 
@@ -241,6 +261,7 @@ mod tests {
 
     fn iam_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -262,6 +283,16 @@ mod tests {
             },
             date: Utc.with_ymd_and_hms(2026, 4, 21, 12, 0, 0).unwrap(),
         }
+    }
+
+    async fn handle_request(
+        service: &IamService<InMemoryIamStore>,
+        request: ResolvedRequest,
+    ) -> Result<ServiceResponse, ApiError> {
+        let trace_context = TraceContext::new(request.request_id.clone());
+        service
+            .handle_request(request, &trace_context, &NoopTraceRecorder)
+            .await
     }
 
     #[tokio::test]
@@ -302,12 +333,12 @@ mod tests {
             InMemoryIamStore::new([access_key(1)], [principal(1)], [], [], []),
         );
 
-        let response = iam
-            .handle_request(iam_request(
-                b"Action=CreateUser&Version=2010-05-08&UserName=test-user",
-            ))
-            .await
-            .expect("create user response should be returned");
+        let response = handle_request(
+            &iam,
+            iam_request(b"Action=CreateUser&Version=2010-05-08&UserName=test-user"),
+        )
+        .await
+        .expect("create user response should be returned");
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
 

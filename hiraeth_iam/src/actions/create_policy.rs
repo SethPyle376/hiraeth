@@ -1,15 +1,17 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::{IamStore, iam::NewManagedPolicy};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamPolicyXml, ResponseMetadata, iam_xml_response, new_id, normalize_policy_path,
+        IAM_XMLNS, IamPolicyXml, ResponseMetadata, new_id, normalize_policy_path,
         parse_payload_error, response_metadata,
     },
     error::IamError,
@@ -27,7 +29,7 @@ pub(crate) struct CreatePolicyRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct CreatePolicyResponse {
+pub(crate) struct CreatePolicyResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     create_policy_result: CreatePolicyResult,
@@ -46,6 +48,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = CreatePolicyRequest;
+    type Response = CreatePolicyResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -56,15 +59,34 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
+    async fn handle(
         &self,
         request: ResolvedRequest,
         create_policy_request: CreatePolicyRequest,
         store: &S,
-    ) -> Result<ServiceResponse, IamError> {
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<CreatePolicyResponse, IamError> {
         let account_id = request.auth_context.principal.account_id.clone();
         let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
-        let created_policy = store
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("account_id".to_string(), account_id.clone()),
+            (
+                "policy_name".to_string(),
+                create_policy_request.policy_name.clone(),
+            ),
+            ("policy_path".to_string(), policy_path.clone()),
+            (
+                "policy_document_bytes".to_string(),
+                create_policy_request.policy_document.len().to_string(),
+            ),
+        ]);
+        let result = store
             .insert_managed_policy(NewManagedPolicy {
                 account_id,
                 policy_id: new_id(),
@@ -72,14 +94,26 @@ where
                 policy_path: Some(policy_path),
                 policy_document: create_policy_request.policy_document.clone(),
             })
-            .await?;
+            .await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.policy.create",
+                "iam",
+                status,
+                attributes,
+            )
+            .await;
+        let created_policy = result?;
 
-        iam_xml_response(&CreatePolicyResponse {
+        Ok(CreatePolicyResponse {
             xmlns: IAM_XMLNS,
             create_policy_result: CreatePolicyResult {
                 policy: created_policy.into(),
             },
-            response_metadata: response_metadata(Uuid::new_v4().to_string()),
+            response_metadata: response_metadata(request.request_id),
         })
     }
 
@@ -108,7 +142,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, TypedAwsActionAdapter, xml_body};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+        xml_body,
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, ManagedPolicyStore, Principal};
 
@@ -147,8 +185,9 @@ mod tests {
         )
     }
 
-    fn resolved_request(body: &[u8]) -> hiraeth_core::ResolvedRequest {
-        hiraeth_core::ResolvedRequest {
+    fn resolved_request(body: &[u8]) -> ResolvedRequest {
+        ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -182,6 +221,8 @@ mod tests {
                     b"Action=CreatePolicy&Version=2010-05-08&PolicyName=orders-readonly&Path=dev/team-a&PolicyDocument=%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Action%22%3A%22sqs%3AReceiveMessage%22%2C%22Resource%22%3A%22*%22%7D%5D%7D",
                 ),
                 &store,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 

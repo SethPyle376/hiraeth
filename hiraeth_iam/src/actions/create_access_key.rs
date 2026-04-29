@@ -1,8 +1,11 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use chrono::SecondsFormat;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::{IamStore, iam::AccessKey};
 use serde::{Deserialize, Serialize};
@@ -10,8 +13,8 @@ use uuid::Uuid;
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, iam_xml_response, new_request_id, parse_payload_error,
-        requested_or_signing_user, response_metadata,
+        IAM_XMLNS, ResponseMetadata, parse_payload_error, requested_or_signing_user,
+        response_metadata,
     },
     error::IamError,
 };
@@ -26,7 +29,7 @@ pub(crate) struct CreateAccessKeyRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename = "CreateAccessKeyResponse")]
-struct CreateAccessKeyResponse {
+pub(crate) struct CreateAccessKeyResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "CreateAccessKeyResult")]
@@ -61,6 +64,7 @@ where
     S: IamStore + Send + Sync,
 {
     type Request = CreateAccessKeyRequest;
+    type Response = CreateAccessKeyResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
@@ -71,28 +75,58 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
+    async fn handle(
         &self,
         request: ResolvedRequest,
         create_access_key_request: CreateAccessKeyRequest,
         store: &S,
-    ) -> Result<ServiceResponse, IamError> {
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<CreateAccessKeyResponse, IamError> {
+        let timer = trace_context.start_span();
+        let requested_user_name = create_access_key_request.user_name.clone();
         let target_user = requested_or_signing_user(
             &request,
             store,
             create_access_key_request.user_name.as_deref(),
         )
         .await?;
+        let mut attributes = HashMap::from([
+            (
+                "requested_user_name".to_string(),
+                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+            ),
+            ("target_user_name".to_string(), target_user.name.clone()),
+            ("target_user_id".to_string(), target_user.id.to_string()),
+            ("account_id".to_string(), target_user.account_id.clone()),
+        ]);
 
         let access_key_id = new_access_key_id();
         let secret_access_key = new_secret_access_key();
-        let created_access_key = store
+        let result = store
             .insert_secret_key(&access_key_id, &secret_access_key, target_user.id)
-            .await?;
+            .await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        attributes.insert("access_key_id".to_string(), access_key_id);
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.access_key.create",
+                "iam",
+                status,
+                attributes,
+            )
+            .await;
+        let created_access_key = result?;
 
-        iam_xml_response(&create_access_key_response(
+        Ok(create_access_key_response(
             iam_access_key_xml(&target_user.name, &created_access_key),
-            new_request_id(),
+            request.request_id,
         ))
     }
 
@@ -160,7 +194,11 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{NaiveDate, TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, xml_body};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+        xml_body,
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{
         AccessKey, AccessKeyStore, InMemoryIamStore, Principal, PrincipalStore,
@@ -209,6 +247,7 @@ mod tests {
 
     fn resolved_request(body: &[u8]) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "iam.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -278,6 +317,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=CreateAccessKey&Version=2010-05-08&UserName=alice"),
                 &store,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 
@@ -309,6 +350,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=CreateAccessKey&Version=2010-05-08"),
                 &store,
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 
@@ -330,6 +373,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=CreateAccessKey&Version=2010-05-08&UserName=missing"),
                 &store(),
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 

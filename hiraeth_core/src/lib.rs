@@ -4,10 +4,11 @@ pub mod auth;
 mod config;
 mod protocol;
 mod request;
+pub mod tracing;
 
 pub use action::{
     AwsAction, AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionRegistry,
-    TypedAwsAction, TypedAwsActionAdapter, get_query_request_action_name,
+    AwsActionResponseFormat, TypedAwsAction, TypedAwsActionAdapter, get_query_request_action_name,
 };
 pub use config::{AuthMode, Config};
 pub use protocol::{

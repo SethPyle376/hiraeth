@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
-    TypedAwsAction, auth::AuthorizationCheck, json_response,
+    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ pub(crate) struct ListQueueTagsRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct ListQueueTagsResponse {
+pub(crate) struct ListQueueTagsResponse {
     tags: HashMap<String, String>,
 }
 
@@ -29,7 +30,7 @@ async fn handle_list_queue_tags_typed<S: SqsStore>(
     request: &ResolvedRequest,
     store: &S,
     request_body: ListQueueTagsRequest,
-) -> Result<ServiceResponse, SqsError> {
+) -> Result<ListQueueTagsResponse, SqsError> {
     let queue = crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
 
     let tags = store
@@ -37,7 +38,7 @@ async fn handle_list_queue_tags_typed<S: SqsStore>(
         .await
         .map_err(crate::error::map_store_error)?;
 
-    json_response(&ListQueueTagsResponse { tags }).map_err(Into::into)
+    Ok(ListQueueTagsResponse { tags })
 }
 
 #[async_trait]
@@ -46,6 +47,7 @@ where
     S: SqsStore + Send + Sync,
 {
     type Request = ListQueueTagsRequest;
+    type Response = ListQueueTagsResponse;
     type Error = SqsError;
 
     fn name(&self) -> &'static str {
@@ -60,13 +62,31 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         request_body: ListQueueTagsRequest,
         store: &S,
-    ) -> Result<ServiceResponse, SqsError> {
-        handle_list_queue_tags_typed(&request, store, request_body).await
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<ListQueueTagsResponse, SqsError> {
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([("queue_url".to_string(), request_body.queue_url.clone())]);
+
+        let result = handle_list_queue_tags_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.queue.list_tags",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
@@ -95,6 +115,7 @@ mod tests {
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "localhost:4566".to_string(),
                 method: "POST".to_string(),
@@ -147,8 +168,8 @@ mod tests {
         }
     }
 
-    fn parse_json_body(response: &ServiceResponse) -> serde_json::Value {
-        serde_json::from_slice(&response.body).expect("response body should be valid json")
+    fn parse_json_body<T: serde::Serialize>(response: &T) -> serde_json::Value {
+        serde_json::to_value(response).expect("response should serialize to json")
     }
 
     #[test]
@@ -185,8 +206,6 @@ mod tests {
         .await
         .expect("list queue tags should succeed");
         let body = parse_json_body(&response);
-
-        assert_eq!(response.status_code, 200);
         assert_eq!(body["Tags"]["environment"], "test");
         assert_eq!(body["Tags"]["owner"], "hiraeth");
     }

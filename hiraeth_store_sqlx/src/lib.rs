@@ -2,9 +2,11 @@ use std::str::FromStr;
 
 mod iam;
 mod sqs;
+mod trace;
 
 pub use iam::{SqliteAccessKeyStore, SqliteIamStore, SqlitePrincipalStore};
 pub use sqs::SqliteSqsStore;
+pub use trace::SqliteTraceStore;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {
@@ -27,6 +29,7 @@ impl std::error::Error for StoreError {}
 pub struct SqlxStore {
     pub sqs_store: SqliteSqsStore,
     pub iam_store: SqliteIamStore,
+    pub trace_store: SqliteTraceStore,
 }
 
 impl SqlxStore {
@@ -40,6 +43,7 @@ impl SqlxStore {
         Ok(Self {
             sqs_store: SqliteSqsStore::new(&pool),
             iam_store: SqliteIamStore::new(&pool),
+            trace_store: SqliteTraceStore::new(&pool),
         })
     }
 }

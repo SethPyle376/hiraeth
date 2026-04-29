@@ -1,8 +1,10 @@
 use std::{net::IpAddr, str::FromStr};
 
+use hiraeth_core::Config;
 use hiraeth_iam::AuthorizationMode;
 use hiraeth_runtime::{app::App, serve};
 use hiraeth_store_sqlx::SqlxStore;
+use hiraeth_web::WebState;
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[tokio::main]
@@ -12,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
     let config = config::Config::builder()
         .add_source(config::Environment::with_prefix("HIRAETH"))
         .build()?
-        .try_deserialize::<hiraeth_core::Config>()?;
+        .try_deserialize::<Config>()?;
     tracing::info!(config = ?config, "starting Hiraeth");
 
     let store = SqlxStore::new(&config.database_url).await?;
@@ -32,8 +34,12 @@ async fn main() -> anyhow::Result<()> {
             serve::serve(aws_addr, app),
             hiraeth_web::serve(
                 web_addr,
-                hiraeth_web::WebState::new(store.iam_store.clone(), store.sqs_store.clone())
-                    .with_aws_endpoint_url(aws_endpoint_url)
+                WebState::new(
+                    store.iam_store.clone(),
+                    store.sqs_store.clone(),
+                    store.trace_store.clone()
+                )
+                .with_aws_endpoint_url(aws_endpoint_url)
             )
         )?;
     } else {
@@ -44,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn aws_endpoint_url(config: &hiraeth_core::Config) -> String {
+fn aws_endpoint_url(config: &Config) -> String {
     let host = match config.host.as_str() {
         "0.0.0.0" | "::" => "localhost",
         host => host,

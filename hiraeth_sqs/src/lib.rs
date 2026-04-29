@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use hiraeth_core::{
     ApiError, AuthContext, AwsActionRegistry, ResolvedRequest, ServiceResponse,
     auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_router::Service;
 use hiraeth_store::sqs::SqsStore;
@@ -40,7 +41,9 @@ where
     async fn handle_request(
         &self,
         request: ResolvedRequest,
-    ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<ServiceResponse, ApiError> {
         let action_name = match auth::get_action_name_for_request(&request) {
             Ok(action_name) => action_name,
             Err(error::SqsError::BadRequest(message))
@@ -50,8 +53,18 @@ where
             }
             Err(error) => return Ok(ServiceResponse::from(error)),
         };
-        let action = match self.actions.get(&action_name) {
-            Some(action) => action,
+        let response = match self
+            .actions
+            .handle(
+                &action_name,
+                request,
+                &self.store,
+                trace_context,
+                trace_recorder,
+            )
+            .await
+        {
+            Some(response) => response,
             None => {
                 return Ok(ServiceResponse::from(
                     error::SqsError::UnsupportedOperation(action_name),
@@ -59,7 +72,7 @@ where
             }
         };
 
-        Ok(action.handle(request, &self.store).await)
+        Ok(response)
     }
 
     async fn resolve_authorization(
@@ -82,7 +95,10 @@ mod tests {
 
     use super::{Service, ServiceResponse, SqsService};
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{
+        ApiError, AuthContext, ResolvedRequest,
+        tracing::{NoopTraceRecorder, TraceContext},
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sqs::SqsQueue, test_support::SqsTestStore};
     use serde_json::Value;
@@ -94,6 +110,7 @@ mod tests {
         }
 
         ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "sqs.us-east-1.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -125,6 +142,16 @@ mod tests {
 
     fn parse_json_body(response: &ServiceResponse) -> Value {
         serde_json::from_slice(&response.body).expect("response body should be valid json")
+    }
+
+    async fn handle_request(
+        service: &SqsService<SqsTestStore>,
+        request: ResolvedRequest,
+    ) -> Result<ServiceResponse, ApiError> {
+        let trace_context = TraceContext::new(request.request_id.clone());
+        service
+            .handle_request(request, &trace_context, &NoopTraceRecorder)
+            .await
     }
 
     #[tokio::test]
@@ -211,11 +238,11 @@ mod tests {
         let service = SqsService::new(SqsTestStore::default());
         let request = resolved_request(None, r#"{"QueueName":"test-queue"}"#);
 
-        let result = service.handle_request(request).await;
+        let result = handle_request(&service, request).await;
 
         assert!(matches!(
             result,
-            Err(hiraeth_core::ApiError::NotFound(message))
+            Err(ApiError::NotFound(message))
                 if message == "Missing x-amz-target header"
         ));
     }
@@ -225,8 +252,7 @@ mod tests {
         let service = SqsService::new(SqsTestStore::default());
         let request = resolved_request(Some("AmazonSQS.DoesNotExist"), "{}");
 
-        let response = service
-            .handle_request(request)
+        let response = handle_request(&service, request)
             .await
             .expect("unknown SQS action should render an SQS error response");
 
@@ -253,8 +279,7 @@ mod tests {
             r#"{"QueueName":"missing-queue"}"#,
         );
 
-        let response = service
-            .handle_request(request)
+        let response = handle_request(&service, request)
             .await
             .expect("service should render SQS errors as a response");
 

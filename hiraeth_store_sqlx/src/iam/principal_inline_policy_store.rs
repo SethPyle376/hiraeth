@@ -33,7 +33,7 @@ impl PrincipalInlinePolicyStore for SqlitePrincipalInlinePolicyStore {
         )
         .fetch_all(&self.pool)
         .await
-        .map_err(|err| hiraeth_store::StoreError::StorageFailure(err.to_string()))
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))
     }
 
     async fn put_inline_policy(
@@ -57,7 +57,7 @@ impl PrincipalInlinePolicyStore for SqlitePrincipalInlinePolicyStore {
         .bind(policy_document)
         .fetch_one(&self.pool)
         .await
-        .map_err(|err| hiraeth_store::StoreError::StorageFailure(err.to_string()))?;
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
 
         Ok(PrincipalInlinePolicy {
             id: row.try_get("id").map_err(map_sqlx_error)?,
@@ -81,7 +81,7 @@ impl PrincipalInlinePolicyStore for SqlitePrincipalInlinePolicyStore {
         .bind(policy_name)
         .execute(&self.pool)
         .await
-        .map_err(|err| hiraeth_store::StoreError::StorageFailure(err.to_string()))?;
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))?;
 
         if result.rows_affected() == 0 {
             return Err(StoreError::NotFound(format!(

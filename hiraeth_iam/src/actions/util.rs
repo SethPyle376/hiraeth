@@ -1,8 +1,6 @@
 use chrono::SecondsFormat;
 use hiraeth_core::auth::Policy;
-use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, arn_util, xml_response,
-};
+use hiraeth_core::{AwsActionPayloadParseError, ResolvedRequest, arn_util};
 use hiraeth_store::IamStore;
 use hiraeth_store::iam::{ManagedPolicy, Principal};
 use serde::Serialize;
@@ -24,14 +22,6 @@ pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> IamError
         AwsActionPayloadParseError::AwsQuery(error) => IamError::from(error),
         AwsActionPayloadParseError::Json(error) => IamError::BadRequest(error.to_string()),
     }
-}
-
-pub(super) fn iam_xml_response<T: Serialize>(body: &T) -> Result<ServiceResponse, IamError> {
-    xml_response(body).map_err(IamError::from)
-}
-
-pub(super) fn new_request_id() -> String {
-    Uuid::new_v4().to_string()
 }
 
 pub(super) fn new_id() -> String {

@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
-    auth::AuthorizationCheck, xml_response,
+    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
@@ -15,11 +18,13 @@ pub(crate) struct GetCallerIdentityRequest {}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct GetCallerIdentityResponse {
+pub(crate) struct GetCallerIdentityResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     #[serde(rename = "GetCallerIdentityResult")]
     result: GetCallerIdentityResult,
+    #[serde(rename = "ResponseMetadata")]
+    response_metadata: ResponseMetadata,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,12 +35,19 @@ struct GetCallerIdentityResult {
     account: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct ResponseMetadata {
+    request_id: String,
+}
+
 #[async_trait]
 impl<S> TypedAwsAction<S> for GetCallerIdentityAction
 where
     S: IamStore + Send + Sync,
 {
     type Request = GetCallerIdentityRequest;
+    type Response = GetCallerIdentityResponse;
     type Error = StsError;
 
     fn name(&self) -> &'static str {
@@ -46,19 +58,44 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
+    async fn handle(
         &self,
         request: ResolvedRequest,
         get_caller_identity_request: Self::Request,
         store: &S,
-    ) -> Result<ServiceResponse, Self::Error> {
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<GetCallerIdentityResponse, Self::Error> {
         let account_id = &request.auth_context.principal.account_id;
         let name = &request.auth_context.principal.name;
 
-        let user = store
+        let timer = trace_context.start_span();
+        let result = store
             .get_principal_by_identity(account_id, "user", name)
-            .await?
-            .ok_or_else(|| StsError::InternalError("User not found".to_string()))?;
+            .await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sts.identity.lookup",
+                "sts",
+                status,
+                HashMap::from([
+                    ("account_id".to_string(), account_id.clone()),
+                    ("principal_name".to_string(), name.clone()),
+                    (
+                        "principal_kind".to_string(),
+                        request.auth_context.principal.kind.clone(),
+                    ),
+                ]),
+            )
+            .await;
+        let user = result?.ok_or_else(|| StsError::InternalError("User not found".to_string()))?;
 
         let response = GetCallerIdentityResponse {
             xmlns: "https://sts.amazonaws.com/doc/2011-06-15/",
@@ -67,9 +104,12 @@ where
                 user_id: user.user_id.clone(),
                 account: account_id.clone(),
             },
+            response_metadata: ResponseMetadata {
+                request_id: request.request_id,
+            },
         };
 
-        Ok(xml_response(&response).map_err(StsError::from)?)
+        Ok(response)
     }
 
     async fn resolve_authorization_typed(
@@ -94,7 +134,10 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
-    use hiraeth_core::{AuthContext, AwsAction, TypedAwsActionAdapter};
+    use hiraeth_core::{
+        AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter,
+        tracing::{NoopTraceRecorder, TraceContext},
+    };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
 
@@ -133,8 +176,9 @@ mod tests {
         )
     }
 
-    fn resolved_request(body: &[u8]) -> hiraeth_core::ResolvedRequest {
-        hiraeth_core::ResolvedRequest {
+    fn resolved_request(body: &[u8]) -> ResolvedRequest {
+        ResolvedRequest {
+            request_id: "test-request-id".to_string(),
             request: IncomingRequest {
                 host: "sts.amazonaws.com".to_string(),
                 method: "POST".to_string(),
@@ -165,6 +209,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=GetCallerIdentity&Version=2011-06-15"),
                 &store(),
+                &TraceContext::new("test-request-id"),
+                &NoopTraceRecorder,
             )
             .await;
 
@@ -176,6 +222,7 @@ mod tests {
         assert!(
             body.contains("<Arn>arn:aws:iam::123456789012:user/engineering/signing-user</Arn>")
         );
+        assert!(body.contains("<ResponseMetadata><RequestId>test-request-id</RequestId>"));
     }
 
     #[tokio::test]

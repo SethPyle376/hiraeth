@@ -1,4 +1,5 @@
 use askama::Template;
+use hiraeth_store::sqs::SqsQueue;
 
 use crate::iam::{
     IamManagedPolicyDetailView, IamManagedPolicyPrincipalView, IamManagedPolicySummary,
@@ -6,6 +7,10 @@ use crate::iam::{
     IamPrincipalInlinePolicyView, IamPrincipalSummary,
 };
 use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
+use crate::traces::{
+    TraceDetailView, TraceFilterOptionView, TraceFiltersView, TraceGraphView, TraceSpanView,
+    TraceSummaryView,
+};
 
 #[derive(Template)]
 #[template(path = "home.html")]
@@ -17,6 +22,26 @@ pub(crate) struct ErrorTemplate<'a> {
     pub(crate) status_code: u16,
     pub(crate) title: &'a str,
     pub(crate) message: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "traces/list.html")]
+pub(crate) struct TraceListTemplate<'a> {
+    pub(crate) page_header_html: &'a str,
+    pub(crate) stats_html: &'a str,
+    pub(crate) filters: &'a TraceFiltersView,
+    pub(crate) traces: &'a [TraceSummaryView],
+    pub(crate) has_traces: bool,
+}
+
+#[derive(Template)]
+#[template(path = "traces/detail.html")]
+pub(crate) struct TraceDetailTemplate<'a> {
+    pub(crate) page_header_html: &'a str,
+    pub(crate) trace: &'a TraceDetailView,
+    pub(crate) graph: &'a TraceGraphView,
+    pub(crate) spans: &'a [TraceSpanView],
+    pub(crate) has_spans: bool,
 }
 
 #[derive(Template)]
@@ -147,7 +172,7 @@ pub(crate) struct SqsQueueDetailTemplate<'a> {
     pub(crate) action_card_html: &'a str,
     pub(crate) metadata_list_html: &'a str,
     pub(crate) queue_id: i64,
-    pub(crate) queue: &'a hiraeth_store::sqs::SqsQueue,
+    pub(crate) queue: &'a SqsQueue,
     pub(crate) queue_arn: &'a str,
     pub(crate) queue_url: &'a str,
     pub(crate) feedback_message: &'a str,
