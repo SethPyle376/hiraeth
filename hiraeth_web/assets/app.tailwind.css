@@ -7,6 +7,7 @@
 
 @source "../templates";
 @source "../src";
+@source "./app.js";
 
 [data-theme="gruvbox"] {
   color-scheme: dark;

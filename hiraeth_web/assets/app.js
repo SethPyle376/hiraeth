@@ -150,10 +150,88 @@ function hiraethSelectTraceSpan(detailId, nodeId) {
     node.setAttribute("aria-pressed", isSelected ? "true" : "false");
   });
 
+  window.hiraethSelectedTraceNodeId = nodeId;
+  hiraethHighlightTraceConnections(nodeId, true);
+
   const empty = document.getElementById("trace-span-empty");
   if (empty) {
     empty.classList.add("hidden");
   }
+}
+
+function hiraethTraceConnectionIds(nodeId) {
+  const ids = new Set([nodeId]);
+  const node = document.getElementById(nodeId);
+  const parentId = node ? node.dataset.parentNode : null;
+  if (parentId) {
+    ids.add(parentId);
+  }
+
+  const escapedNodeId = window.CSS && CSS.escape ? CSS.escape(nodeId) : nodeId;
+  document.querySelectorAll(`[data-parent-node="${escapedNodeId}"]`).forEach((child) => {
+    if (child.id) {
+      ids.add(child.id);
+    }
+    if (child.dataset.childNode) {
+      ids.add(child.dataset.childNode);
+    }
+  });
+
+  return ids;
+}
+
+function hiraethClearTraceConnections() {
+  document.querySelectorAll(".trace-graph-node").forEach((node) => {
+    node.classList.remove("ring-1", "ring-accent", "brightness-110");
+  });
+
+  document.querySelectorAll("[data-trace-edge]").forEach((edge) => {
+    edge.classList.remove("stroke-primary", "fill-primary");
+    edge.classList.add(
+      edge.tagName.toLowerCase() === "path"
+        ? "stroke-base-content/35"
+        : "fill-base-content/45",
+    );
+  });
+}
+
+function hiraethHighlightTraceConnections(nodeId, enabled) {
+  if (!nodeId) {
+    return;
+  }
+
+  if (!enabled) {
+    hiraethClearTraceConnections();
+    if (window.hiraethSelectedTraceNodeId && window.hiraethSelectedTraceNodeId !== nodeId) {
+      hiraethHighlightTraceConnections(window.hiraethSelectedTraceNodeId, true);
+    }
+    return;
+  }
+
+  hiraethClearTraceConnections();
+  const connectedIds = hiraethTraceConnectionIds(nodeId);
+
+  connectedIds.forEach((connectedId) => {
+    const connectedNode = document.getElementById(connectedId);
+    if (connectedNode && connectedId !== nodeId) {
+      connectedNode.classList.add("ring-1", "ring-accent", "brightness-110");
+    }
+  });
+
+  document.querySelectorAll("[data-trace-edge]").forEach((edge) => {
+    const parentId = edge.dataset.parentNode;
+    const childId = edge.dataset.childNode;
+    const isConnected =
+      (parentId === nodeId && connectedIds.has(childId)) ||
+      (childId === nodeId && connectedIds.has(parentId));
+
+    if (isConnected) {
+      edge.classList.remove("stroke-base-content/35", "fill-base-content/45");
+      edge.classList.add(
+        edge.tagName.toLowerCase() === "path" ? "stroke-primary" : "fill-primary",
+      );
+    }
+  });
 }
 
 function hiraethCollapseStorageKey(detail) {

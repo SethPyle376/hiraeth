@@ -88,6 +88,8 @@ pub(crate) struct TraceGraphView {
 pub(crate) struct TraceGraphNodeView {
     pub(crate) graph_id: String,
     pub(crate) detail_id: String,
+    pub(crate) parent_graph_id: String,
+    pub(crate) has_parent_graph_id: bool,
     pub(crate) label: String,
     pub(crate) meta: String,
     pub(crate) status: String,
@@ -98,10 +100,13 @@ pub(crate) struct TraceGraphNodeView {
     pub(crate) width: i32,
     pub(crate) height: i32,
     pub(crate) is_span: bool,
+    pub(crate) is_tiny: bool,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct TraceGraphEdgeView {
+    pub(crate) parent_graph_id: String,
+    pub(crate) child_graph_id: String,
     pub(crate) x1: i32,
     pub(crate) y1: i32,
     pub(crate) y_mid: i32,
@@ -297,6 +302,7 @@ fn trace_graph_view(trace: &TraceDetailView, spans: &[TraceSpanView]) -> TraceGr
 
     const NODE_WIDTH: i32 = 168;
     const NODE_HEIGHT: i32 = 52;
+    const TINY_NODE_HEIGHT: i32 = 34;
     const X_GAP: i32 = 42;
     const Y_GAP: i32 = 54;
     const MARGIN: i32 = 24;
@@ -331,16 +337,19 @@ fn trace_graph_view(trace: &TraceDetailView, spans: &[TraceSpanView]) -> TraceGr
     let root = TraceGraphNodeView {
         graph_id: "trace-root-node".to_string(),
         detail_id: String::new(),
+        parent_graph_id: String::new(),
+        has_parent_graph_id: false,
         label: format!("{} {}", trace.method, trace.path),
         meta: format!("{} ms total", trace.duration_ms),
         status: trace.response_status_code.to_string(),
         status_class: trace.response_status_class,
-        node_class: graph_node_class_for_http_status(trace.response_status_code),
+        node_class: graph_root_node_class_for_http_status(trace.response_status_code),
         x: root_x,
         y: MARGIN,
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
         is_span: false,
+        is_tiny: false,
     };
 
     let mut nodes = vec![root];
@@ -352,47 +361,79 @@ fn trace_graph_view(trace: &TraceDetailView, spans: &[TraceSpanView]) -> TraceGr
         let x = MARGIN + row * (NODE_WIDTH + X_GAP);
         let y = MARGIN + depth * (NODE_HEIGHT + Y_GAP);
 
-        nodes.push(TraceGraphNodeView {
-            graph_id: span.graph_id.clone(),
-            detail_id: span.detail_id.clone(),
-            label: span.name.clone(),
-            meta: format!("{} / {} ms", span.layer, span.duration_ms),
-            status: span.status.clone(),
-            status_class: span.status_class,
-            node_class: graph_node_class_for_span_status(&span.status),
-            x,
-            y,
-            width: NODE_WIDTH,
-            height: NODE_HEIGHT,
-            is_span: true,
-        });
-
         let parent_node = if has_parent_links {
             span_index_by_id
                 .get(span.parent_span_id.as_str())
                 .map(|parent_index| {
                     let parent_depth = depths[*parent_index] as i32;
                     let parent_row = rows[*parent_index] as i32;
+                    let parent_height = if spans[*parent_index].duration_ms == "0" {
+                        TINY_NODE_HEIGHT
+                    } else {
+                        NODE_HEIGHT
+                    };
                     (
                         MARGIN + parent_row * (NODE_WIDTH + X_GAP),
                         MARGIN + parent_depth * (NODE_HEIGHT + Y_GAP),
+                        parent_height,
+                        spans[*parent_index].graph_id.clone(),
                     )
                 })
         } else if index > 0 {
             let parent_depth = depths[index - 1] as i32;
             let parent_row = rows[index - 1] as i32;
+            let parent_height = if spans[index - 1].duration_ms == "0" {
+                TINY_NODE_HEIGHT
+            } else {
+                NODE_HEIGHT
+            };
             Some((
                 MARGIN + parent_row * (NODE_WIDTH + X_GAP),
                 MARGIN + parent_depth * (NODE_HEIGHT + Y_GAP),
+                parent_height,
+                spans[index - 1].graph_id.clone(),
             ))
         } else {
             None
         };
 
-        let (parent_x, parent_y) = parent_node.unwrap_or((root_x, MARGIN));
-        let y1 = parent_y + NODE_HEIGHT;
+        let parent_graph_id = parent_node
+            .as_ref()
+            .map(|(_, _, _, parent_graph_id)| parent_graph_id.clone())
+            .unwrap_or_else(|| "trace-root-node".to_string());
+        let is_tiny = span.duration_ms == "0";
+        let node_height = if is_tiny {
+            TINY_NODE_HEIGHT
+        } else {
+            NODE_HEIGHT
+        };
+
+        nodes.push(TraceGraphNodeView {
+            graph_id: span.graph_id.clone(),
+            detail_id: span.detail_id.clone(),
+            parent_graph_id: parent_graph_id.clone(),
+            has_parent_graph_id: true,
+            label: span.name.clone(),
+            meta: format!("{} / {} ms", span.layer, span.duration_ms),
+            status: span.status.clone(),
+            status_class: span.status_class,
+            node_class: graph_node_class_for_span_status(&span.status, is_tiny),
+            x,
+            y,
+            width: NODE_WIDTH,
+            height: node_height,
+            is_span: true,
+            is_tiny,
+        });
+
+        let (parent_x, parent_y, parent_height) = parent_node
+            .map(|(parent_x, parent_y, parent_height, _)| (parent_x, parent_y, parent_height))
+            .unwrap_or((root_x, MARGIN, NODE_HEIGHT));
+        let y1 = parent_y + parent_height;
         let y2 = y - 8;
         edges.push(TraceGraphEdgeView {
+            parent_graph_id,
+            child_graph_id: span.graph_id.clone(),
             x1: parent_x + NODE_WIDTH / 2,
             y1,
             y_mid: y1 + ((y2 - y1) / 2),
@@ -447,13 +488,13 @@ fn status_class(status_code: u16) -> &'static str {
     }
 }
 
-fn graph_node_class_for_http_status(status_code: u16) -> &'static str {
+fn graph_root_node_class_for_http_status(status_code: u16) -> &'static str {
     if status_code >= 500 {
-        "border-error/70 bg-error/10 hover:border-error hover:bg-error/15"
+        "border-error/80 bg-error/15 text-error-content shadow-[0_0_0_1px_rgba(0,0,0,0.2)]"
     } else if status_code >= 400 {
-        "border-warning/70 bg-warning/10 hover:border-warning hover:bg-warning/15"
+        "border-warning/80 bg-warning/15 text-warning-content shadow-[0_0_0_1px_rgba(0,0,0,0.2)]"
     } else {
-        "border-success/60 bg-success/10 hover:border-success hover:bg-success/15"
+        "border-primary/80 bg-primary/15 shadow-[0_0_0_1px_rgba(0,0,0,0.2)]"
     }
 }
 
@@ -465,12 +506,21 @@ fn span_status_class(status: &str) -> &'static str {
     }
 }
 
-fn graph_node_class_for_span_status(status: &str) -> &'static str {
-    match status {
-        "ok" | "allow" => {
+fn graph_node_class_for_span_status(status: &str, is_tiny: bool) -> &'static str {
+    match (status, is_tiny) {
+        ("ok" | "allow", true) => {
+            "border-success/40 bg-success/5 opacity-80 hover:border-success hover:bg-success/10"
+        }
+        ("ok" | "allow", false) => {
             "border-success/60 bg-success/10 hover:border-success hover:bg-success/15"
         }
-        "deny" | "error" => "border-error/70 bg-error/10 hover:border-error hover:bg-error/15",
-        _ => "border-base-300 bg-base-100 hover:border-primary hover:bg-base-200",
+        ("deny" | "error", true) => {
+            "border-error/60 bg-error/10 opacity-90 hover:border-error hover:bg-error/15"
+        }
+        ("deny" | "error", false) => {
+            "border-error/70 bg-error/10 hover:border-error hover:bg-error/15"
+        }
+        (_, true) => "border-base-300/70 bg-base-100/70 hover:border-primary hover:bg-base-200",
+        (_, false) => "border-base-300 bg-base-100 hover:border-primary hover:bg-base-200",
     }
 }
