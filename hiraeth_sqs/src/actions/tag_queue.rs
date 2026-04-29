@@ -71,6 +71,15 @@ where
         parse_payload_error(error)
     }
 
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        request_body: &TagQueueRequest,
+        _store: &S,
+    ) -> Result<(), SqsError> {
+        validate_tags(&request_body.tags, false)
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

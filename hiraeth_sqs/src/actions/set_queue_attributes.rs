@@ -67,6 +67,16 @@ where
         parse_payload_error(error)
     }
 
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        request_body: &SetQueueAttributesRequest,
+        _store: &S,
+    ) -> Result<(), SqsError> {
+        parse_queue_attribute_update(&request_body.attributes)?;
+        Ok(())
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

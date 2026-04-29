@@ -15,6 +15,8 @@ use crate::{
 pub trait AwsAction<S>: Send + Sync {
     fn name(&self) -> &'static str;
 
+    async fn validate(&self, request: &ResolvedRequest, store: &S) -> Result<(), ServiceResponse>;
+
     async fn handle(
         &self,
         request: ResolvedRequest,
@@ -32,7 +34,7 @@ pub trait AwsAction<S>: Send + Sync {
 
 #[async_trait]
 pub trait TypedAwsAction<S>: Send + Sync {
-    type Request: DeserializeOwned + Send;
+    type Request: DeserializeOwned + Send + Sync;
     type Response: Serialize + Send;
     type Error: From<ResponseSerializationError> + Into<ServiceResponse> + Send;
 
@@ -47,6 +49,15 @@ pub trait TypedAwsAction<S>: Send + Sync {
     }
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error;
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        _payload: &Self::Request,
+        _store: &S,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     async fn handle(
         &self,
@@ -102,6 +113,16 @@ where
 {
     fn name(&self) -> &'static str {
         self.action.name()
+    }
+
+    async fn validate(&self, request: &ResolvedRequest, store: &S) -> Result<(), ServiceResponse> {
+        let payload = parse_payload::<A::Request>(self.action.payload_format(), request)
+            .map_err(|error| self.action.parse_error(error).into())?;
+
+        self.action
+            .validate(request, &payload, store)
+            .await
+            .map_err(Into::into)
     }
 
     async fn handle(
@@ -252,6 +273,53 @@ impl<S> AwsActionRegistry<S> {
 
         Some(response)
     }
+
+    pub async fn validate(
+        &self,
+        action_name: &str,
+        request: &ResolvedRequest,
+        store: &S,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Option<Result<(), ServiceResponse>> {
+        let action = self.get(action_name)?;
+        let timer = trace_context.start_span();
+        let service = request.service.clone();
+        let region = request.region.clone();
+        let account_id = request.auth_context.principal.account_id.clone();
+        let principal = request.auth_context.principal.name.clone();
+        let action_name = action.name();
+
+        let result = action.validate(request, store).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        let mut attributes = std::collections::HashMap::from([
+            ("service".to_string(), service.clone()),
+            ("action".to_string(), format!("{service}:{action_name}")),
+            ("action_name".to_string(), action_name.to_string()),
+            ("region".to_string(), region),
+            ("account_id".to_string(), account_id),
+            ("principal".to_string(), principal),
+        ]);
+        if let Err(response) = &result {
+            attributes.insert("status_code".to_string(), response.status_code.to_string());
+        }
+
+        if let Err(error) = trace_context
+            .record_span(
+                trace_recorder,
+                timer,
+                "action.validate",
+                "action",
+                status,
+                attributes,
+            )
+            .await
+        {
+            tracing::warn!(error = ?error, span = "action.validate", "failed to record trace span");
+        }
+
+        Some(result)
+    }
 }
 
 impl<S> Default for AwsActionRegistry<S> {
@@ -292,6 +360,14 @@ mod tests {
             self.0
         }
 
+        async fn validate(
+            &self,
+            _request: &ResolvedRequest,
+            _store: &(),
+        ) -> Result<(), ServiceResponse> {
+            Ok(())
+        }
+
         async fn handle(
             &self,
             _request: ResolvedRequest,
@@ -321,6 +397,14 @@ mod tests {
     impl AwsAction<()> for ChildSpanAction {
         fn name(&self) -> &'static str {
             "SendMessage"
+        }
+
+        async fn validate(
+            &self,
+            _request: &ResolvedRequest,
+            _store: &(),
+        ) -> Result<(), ServiceResponse> {
+            Ok(())
         }
 
         async fn handle(

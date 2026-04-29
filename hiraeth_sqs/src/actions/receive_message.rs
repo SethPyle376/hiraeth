@@ -286,6 +286,15 @@ where
         parse_payload_error(error)
     }
 
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        receive_request: &ReceiveMessageRequest,
+        _store: &S,
+    ) -> Result<(), SqsError> {
+        validate_receive_request(receive_request)
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

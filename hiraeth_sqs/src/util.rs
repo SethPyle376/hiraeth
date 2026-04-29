@@ -90,6 +90,133 @@ pub(crate) fn validate_batch_request<'a>(
     Ok(())
 }
 
+pub(crate) fn validate_batch_entry_id(entry_id: &str) -> Result<(), SqsError> {
+    if entry_id.is_empty() || entry_id.len() > 80 {
+        return Err(SqsError::BadRequest(
+            "Batch entry Id must be between 1 and 80 characters".to_string(),
+        ));
+    }
+
+    if !entry_id
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err(SqsError::BadRequest(
+            "Batch entry Id may only contain alphanumeric characters, hyphens, and underscores"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_message_attributes<'a>(
+    message_attributes: impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
+) -> Result<(), SqsError> {
+    let message_attributes = message_attributes.into_iter().collect::<Vec<_>>();
+    if message_attributes.len() > 10 {
+        return Err(SqsError::BadRequest(
+            "A message can contain at most 10 message attributes".to_string(),
+        ));
+    }
+
+    for (name, value) in message_attributes {
+        validate_message_attribute_name(name)?;
+        validate_message_attribute_value(name, value)?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_message_system_attributes<'a>(
+    message_system_attributes: impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
+) -> Result<(), SqsError> {
+    for (name, value) in message_system_attributes {
+        if name != "AWSTraceHeader" {
+            return Err(SqsError::BadRequest(format!(
+                "Unsupported message system attribute: {name}"
+            )));
+        }
+        if value.data_type != "String" {
+            return Err(SqsError::BadRequest(
+                "AWSTraceHeader must use DataType=String".to_string(),
+            ));
+        }
+        validate_message_attribute_value(name, value)?;
+    }
+
+    Ok(())
+}
+
+fn validate_message_attribute_name(name: &str) -> Result<(), SqsError> {
+    if name.is_empty() || name.len() > 256 {
+        return Err(SqsError::BadRequest(
+            "Message attribute names must be between 1 and 256 characters".to_string(),
+        ));
+    }
+
+    if name.starts_with('.') || name.ends_with('.') || name.contains("..") {
+        return Err(SqsError::BadRequest(
+            "Message attribute names may not start or end with a period or contain consecutive periods"
+                .to_string(),
+        ));
+    }
+
+    if name
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("aws."))
+    {
+        return Err(SqsError::BadRequest(
+            "Message attribute names cannot start with the reserved AWS. prefix".to_string(),
+        ));
+    }
+
+    if !name
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.')
+    {
+        return Err(SqsError::BadRequest(
+            "Message attribute names may only contain alphanumeric characters, hyphens, underscores, and periods"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_message_attribute_value(
+    name: &str,
+    value: &MessageAttributeValue,
+) -> Result<(), SqsError> {
+    if value.data_type.is_empty() || value.data_type.len() > 256 {
+        return Err(SqsError::BadRequest(format!(
+            "Message attribute '{name}' DataType must be between 1 and 256 characters"
+        )));
+    }
+
+    if value.data_type.starts_with("Binary") {
+        if value.binary_value.is_none() {
+            return Err(SqsError::BadRequest(format!(
+                "Binary message attribute '{name}' is missing BinaryValue"
+            )));
+        }
+        return Ok(());
+    }
+
+    if value.data_type.starts_with("String") || value.data_type.starts_with("Number") {
+        if value.string_value.is_none() {
+            return Err(SqsError::BadRequest(format!(
+                "String/Number message attribute '{name}' is missing StringValue"
+            )));
+        }
+        return Ok(());
+    }
+
+    Err(SqsError::BadRequest(format!(
+        "Message attribute '{name}' DataType must start with String, Number, or Binary"
+    )))
+}
+
 pub(crate) fn calculate_message_attributes_md5<'a>(
     message_attributes: impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
 ) -> Result<String, SqsError> {

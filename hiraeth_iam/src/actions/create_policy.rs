@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions::util::{
         IAM_XMLNS, IamPolicyXml, ResponseMetadata, new_id, normalize_policy_path,
-        parse_payload_error, response_metadata,
+        parse_payload_error, response_metadata, validate_iam_path, validate_policy_document,
+        validate_policy_name,
     },
     error::IamError,
 };
@@ -61,6 +62,19 @@ where
 
     fn response_format(&self) -> AwsActionResponseFormat {
         AwsActionResponseFormat::Xml
+    }
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        create_policy_request: &CreatePolicyRequest,
+        _store: &S,
+    ) -> Result<(), IamError> {
+        validate_policy_name(&create_policy_request.policy_name)?;
+        let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
+        validate_iam_path("Path", &policy_path)?;
+        validate_policy_document(&create_policy_request.policy_document)?;
+        Ok(())
     }
 
     async fn handle(

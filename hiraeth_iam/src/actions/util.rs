@@ -217,6 +217,77 @@ pub(super) fn default_user_path() -> String {
     "/".to_string()
 }
 
+pub(super) fn validate_user_name(user_name: &str) -> Result<(), IamError> {
+    validate_iam_name("UserName", user_name, 64)
+}
+
+pub(super) fn validate_policy_name(policy_name: &str) -> Result<(), IamError> {
+    validate_iam_name("PolicyName", policy_name, 128)
+}
+
+pub(super) fn validate_iam_path(field_name: &str, path: &str) -> Result<(), IamError> {
+    if path.is_empty() || path.len() > 512 {
+        return Err(IamError::BadRequest(format!(
+            "{field_name} must be between 1 and 512 characters"
+        )));
+    }
+
+    if !path.starts_with('/') || !path.ends_with('/') {
+        return Err(IamError::BadRequest(format!(
+            "{field_name} must begin and end with /"
+        )));
+    }
+
+    if !path
+        .chars()
+        .all(|ch| ch == '/' || ('!'..='~').contains(&ch))
+    {
+        return Err(IamError::BadRequest(format!(
+            "{field_name} contains unsupported characters"
+        )));
+    }
+
+    Ok(())
+}
+
+pub(super) fn validate_policy_document(policy_document: &str) -> Result<(), IamError> {
+    if policy_document.trim().is_empty() {
+        return Err(IamError::BadRequest(
+            "PolicyDocument must not be empty".to_string(),
+        ));
+    }
+
+    let value = serde_json::from_str::<serde_json::Value>(policy_document).map_err(|error| {
+        IamError::BadRequest(format!("PolicyDocument must be valid JSON: {error}"))
+    })?;
+    if !value.is_object() {
+        return Err(IamError::BadRequest(
+            "PolicyDocument must be a JSON object".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_iam_name(field_name: &str, value: &str, max_len: usize) -> Result<(), IamError> {
+    if value.is_empty() || value.len() > max_len {
+        return Err(IamError::BadRequest(format!(
+            "{field_name} must be between 1 and {max_len} characters"
+        )));
+    }
+
+    if !value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || "_+=,.@-".contains(ch))
+    {
+        return Err(IamError::BadRequest(format!(
+            "{field_name} contains unsupported characters"
+        )));
+    }
+
+    Ok(())
+}
+
 pub(super) fn normalize_policy_path(path: Option<&str>) -> String {
     match path {
         Some(path) if !path.trim().is_empty() => {

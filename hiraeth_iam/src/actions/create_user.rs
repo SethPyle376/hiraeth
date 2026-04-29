@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions::util::{
         IAM_XMLNS, IamUserXml, ResponseMetadata, default_user_path, new_id, parse_payload_error,
-        response_metadata,
+        response_metadata, validate_iam_path, validate_user_name,
     },
     error::IamError,
 };
@@ -65,6 +65,23 @@ where
 
     fn response_format(&self) -> AwsActionResponseFormat {
         AwsActionResponseFormat::Xml
+    }
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        create_user_request: &CreateUserRequest,
+        _store: &S,
+    ) -> Result<(), IamError> {
+        validate_user_name(&create_user_request.user_name)?;
+        validate_iam_path("Path", &create_user_request.path)?;
+        if create_user_request.permissions_boundary.is_some() {
+            return Err(IamError::BadRequest(
+                "PermissionsBoundary is not supported yet".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 
     async fn handle(

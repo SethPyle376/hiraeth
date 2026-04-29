@@ -87,6 +87,28 @@ where
 
         action.resolve_authorization(request, &self.store).await
     }
+
+    async fn validate_request(
+        &self,
+        request: &ResolvedRequest,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<(), ServiceResponse> {
+        let action_name =
+            auth::get_action_name_for_request(request).map_err(ServiceResponse::from)?;
+        self.actions
+            .validate(
+                &action_name,
+                request,
+                &self.store,
+                trace_context,
+                trace_recorder,
+            )
+            .await
+            .ok_or_else(|| {
+                ServiceResponse::from(error::SqsError::UnsupportedOperation(action_name.clone()))
+            })?
+    }
 }
 
 #[cfg(test)]

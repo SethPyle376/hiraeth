@@ -107,6 +107,22 @@ where
         parse_payload_error(error)
     }
 
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        delete_request: &DeleteMessageBatchRequest,
+        _store: &S,
+    ) -> Result<(), SqsError> {
+        crate::util::validate_batch_request(
+            delete_request.entries.iter().map(|entry| entry.id.as_str()),
+        )?;
+        for entry in &delete_request.entries {
+            crate::util::validate_batch_entry_id(&entry.id)?;
+        }
+
+        Ok(())
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

@@ -10,7 +10,10 @@ use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::util::{self, ResponseMetadata, parse_payload_error, response_metadata},
+    actions::util::{
+        self, ResponseMetadata, parse_payload_error, response_metadata, validate_policy_document,
+        validate_policy_name, validate_user_name,
+    },
     error::IamError,
 };
 
@@ -51,6 +54,18 @@ where
 
     fn response_format(&self) -> AwsActionResponseFormat {
         AwsActionResponseFormat::Xml
+    }
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        put_policy_request: &PutUserPolicyRequest,
+        _store: &S,
+    ) -> Result<(), Self::Error> {
+        validate_user_name(&put_policy_request.user_name)?;
+        validate_policy_name(&put_policy_request.policy_name)?;
+        validate_policy_document(&put_policy_request.policy_document)?;
+        Ok(())
     }
 
     async fn handle(

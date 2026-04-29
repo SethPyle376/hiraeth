@@ -86,4 +86,30 @@ where
 
         action.resolve_authorization(request, &self.store).await
     }
+
+    async fn validate_request(
+        &self,
+        request: &ResolvedRequest,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<(), ServiceResponse> {
+        let action_name = hiraeth_core::get_query_request_action_name(request)
+            .map_err(|error| ServiceResponse::from(StsError::from(error)))?
+            .ok_or_else(|| {
+                ServiceResponse::from(StsError::BadRequest("Missing Action parameter".to_string()))
+            })?;
+
+        self.actions
+            .validate(
+                &action_name,
+                request,
+                &self.store,
+                trace_context,
+                trace_recorder,
+            )
+            .await
+            .ok_or_else(|| {
+                ServiceResponse::from(StsError::UnsupportedOperation(action_name.clone()))
+            })?
+    }
 }

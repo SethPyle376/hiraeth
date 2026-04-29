@@ -79,6 +79,15 @@ where
         parse_payload_error(error)
     }
 
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        change_request: &ChangeMessageVisibilityRequest,
+        _store: &S,
+    ) -> Result<(), SqsError> {
+        validate_visibility_timeout(change_request.visibility_timeout)
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

@@ -20,4 +20,10 @@ pub trait Service {
         &self,
         request: &ResolvedRequest,
     ) -> Result<AuthorizationCheck, ServiceResponse>;
+    async fn validate_request(
+        &self,
+        request: &ResolvedRequest,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<(), ServiceResponse>;
 }

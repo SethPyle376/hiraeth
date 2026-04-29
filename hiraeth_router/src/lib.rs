@@ -167,8 +167,53 @@ impl ServiceRouter {
 
         match auth_result.result {
             AuthorizationResult::Allow => {
-                let service_timer = auth_result.trace_context.start_span();
-                let service_trace_context = auth_result.trace_context.child_context(&service_timer);
+                let validate_timer = auth_result.trace_context.start_span();
+                let validate_trace_context =
+                    auth_result.trace_context.child_context(&validate_timer);
+                let validation = service
+                    .validate_request(&request, &validate_trace_context, trace_recorder)
+                    .await;
+                if let Err(response) = validation {
+                    record_router_span(
+                        &auth_result.trace_context,
+                        trace_recorder,
+                        validate_timer,
+                        "service.validate",
+                        "error",
+                        [
+                            ("action".to_string(), check.action.clone()),
+                            ("status_code".to_string(), response.status_code.to_string()),
+                        ],
+                    )
+                    .await;
+                    record_router_span(
+                        trace_context,
+                        trace_recorder,
+                        route_timer,
+                        "router.route",
+                        "error",
+                        route_span_attributes(
+                            &request,
+                            Some(response.status_code),
+                            Some(&check.action),
+                        ),
+                    )
+                    .await;
+                    return Ok(response);
+                }
+
+                record_router_span(
+                    &auth_result.trace_context,
+                    trace_recorder,
+                    validate_timer,
+                    "service.validate",
+                    "ok",
+                    [("action".to_string(), check.action.clone())],
+                )
+                .await;
+
+                let service_timer = validate_trace_context.start_span();
+                let service_trace_context = validate_trace_context.child_context(&service_timer);
                 let mut route_attributes =
                     route_span_attributes(&request, None, Some(&check.action));
                 let result = service
@@ -360,6 +405,15 @@ mod tests {
                 resource_policy: None,
             })
         }
+
+        async fn validate_request(
+            &self,
+            _request: &ResolvedRequest,
+            _trace_context: &TraceContext,
+            _trace_recorder: &dyn TraceRecorder,
+        ) -> Result<(), ServiceResponse> {
+            Ok(())
+        }
     }
 
     struct AuthorizationErrorService;
@@ -388,6 +442,15 @@ mod tests {
                 body: Vec::new(),
                 headers: Vec::new(),
             })
+        }
+
+        async fn validate_request(
+            &self,
+            _request: &ResolvedRequest,
+            _trace_context: &TraceContext,
+            _trace_recorder: &dyn TraceRecorder,
+        ) -> Result<(), ServiceResponse> {
+            panic!("service should not validate when authorization resolution fails");
         }
     }
 
@@ -528,7 +591,8 @@ mod tests {
             ("router.resolve_service", "router.route"),
             ("authz.resolve_check", "router.resolve_service"),
             ("authz.evaluate", "authz.resolve_check"),
-            ("service.handle", "authz.evaluate"),
+            ("service.validate", "authz.evaluate"),
+            ("service.handle", "service.validate"),
         ] {
             let child_span = spans
                 .iter()

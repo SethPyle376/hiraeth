@@ -200,6 +200,33 @@ where
         parse_payload_error(error)
     }
 
+    async fn validate(
+        &self,
+        request: &ResolvedRequest,
+        request_body: &SendMessageBatchRequest,
+        store: &S,
+    ) -> Result<(), SqsError> {
+        let queue =
+            crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
+        crate::util::validate_batch_request(
+            request_body.entries.iter().map(|entry| entry.id.as_str()),
+        )?;
+
+        for entry in &request_body.entries {
+            crate::util::validate_batch_entry_id(&entry.id)?;
+            resolve_delay_seconds(entry.delay_seconds, queue.delay_seconds)?;
+            validate_message_body(&entry.message_body, queue.maximum_message_size)?;
+            if let Some(message_attributes) = &entry.message_attributes {
+                util::validate_message_attributes(message_attributes)?;
+            }
+            if let Some(message_system_attributes) = &entry.message_system_attributes {
+                util::validate_message_system_attributes(message_system_attributes)?;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

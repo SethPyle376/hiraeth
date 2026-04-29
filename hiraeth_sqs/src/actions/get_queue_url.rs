@@ -85,6 +85,18 @@ where
         parse_payload_error(error)
     }
 
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        request_body: &GetQueueUrlRequest,
+        _store: &S,
+    ) -> Result<(), SqsError> {
+        queue_support::validate_queue_name(
+            &request_body.queue_name,
+            request_body.queue_name.ends_with(".fifo"),
+        )
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::{
     actions::util::{
         IAM_XMLNS, ResponseMetadata, parse_payload_error, requested_or_signing_user,
-        response_metadata,
+        response_metadata, validate_user_name,
     },
     error::IamError,
 };
@@ -77,6 +77,19 @@ where
 
     fn response_format(&self) -> AwsActionResponseFormat {
         AwsActionResponseFormat::Xml
+    }
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        create_access_key_request: &CreateAccessKeyRequest,
+        _store: &S,
+    ) -> Result<(), IamError> {
+        if let Some(user_name) = &create_access_key_request.user_name {
+            validate_user_name(user_name)?;
+        }
+
+        Ok(())
     }
 
     async fn handle(

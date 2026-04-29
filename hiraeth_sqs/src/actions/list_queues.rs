@@ -35,13 +35,7 @@ async fn handle_list_queues_typed<S: SqsStore>(
     store: &S,
     request_body: ListQueuesRequest,
 ) -> Result<ListQueuesResponse, SqsError> {
-    if let Some(max_results) = request_body.max_results
-        && !(1..=1000).contains(&max_results)
-    {
-        return Err(SqsError::BadRequest(
-            "MaxResults must be between 1 and 1000".to_string(),
-        ));
-    }
+    validate_list_queues_request(&request_body)?;
 
     let region = &request.region;
     let account_id = request.auth_context.principal.account_id.clone();
@@ -84,6 +78,18 @@ async fn handle_list_queues_typed<S: SqsStore>(
     })
 }
 
+fn validate_list_queues_request(request_body: &ListQueuesRequest) -> Result<(), SqsError> {
+    if let Some(max_results) = request_body.max_results
+        && !(1..=1000).contains(&max_results)
+    {
+        return Err(SqsError::BadRequest(
+            "MaxResults must be between 1 and 1000".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 #[async_trait]
 impl<S> TypedAwsAction<S> for ListQueuesAction
 where
@@ -103,6 +109,15 @@ where
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
+    }
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        request_body: &ListQueuesRequest,
+        _store: &S,
+    ) -> Result<(), SqsError> {
+        validate_list_queues_request(request_body)
     }
 
     async fn handle(

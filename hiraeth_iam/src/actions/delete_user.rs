@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions::util::{
         IAM_XMLNS, ResponseMetadata, existing_user_by_name, parse_payload_error, response_metadata,
+        validate_user_name,
     },
     error::IamError,
 };
@@ -65,6 +66,15 @@ where
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
         parse_payload_error(error)
+    }
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        delete_request: &DeleteUserRequest,
+        _store: &S,
+    ) -> Result<(), IamError> {
+        validate_user_name(&delete_request.user_name)
     }
 
     async fn handle(

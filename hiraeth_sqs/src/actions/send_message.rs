@@ -132,6 +132,12 @@ pub(super) fn validate_message_body(
     message_body: &str,
     maximum_message_size: i64,
 ) -> Result<(), SqsError> {
+    if message_body.is_empty() {
+        return Err(SqsError::BadRequest(
+            "MessageBody must contain at least one character".to_string(),
+        ));
+    }
+
     if message_body.len() > maximum_message_size as usize {
         return Err(SqsError::BadRequest(format!(
             "MessageBody exceeds the queue MaximumMessageSize of {} bytes",
@@ -139,7 +145,20 @@ pub(super) fn validate_message_body(
         )));
     }
 
+    if !message_body.chars().all(is_valid_sqs_message_character) {
+        return Err(SqsError::BadRequest(
+            "MessageBody contains characters that are not allowed by SQS".to_string(),
+        ));
+    }
+
     Ok(())
+}
+
+fn is_valid_sqs_message_character(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
+    )
 }
 
 #[async_trait]
@@ -161,6 +180,26 @@ where
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
         parse_payload_error(error)
+    }
+
+    async fn validate(
+        &self,
+        request: &ResolvedRequest,
+        request_body: &SendMessageRequest,
+        store: &S,
+    ) -> Result<(), SqsError> {
+        let queue =
+            crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
+        validate_message_body(&request_body.message_body, queue.maximum_message_size)?;
+        resolve_delay_seconds(request_body.delay_seconds, queue.delay_seconds)?;
+        if let Some(message_attributes) = &request_body.message_attributes {
+            util::validate_message_attributes(message_attributes)?;
+        }
+        if let Some(message_system_attributes) = &request_body.message_system_attributes {
+            util::validate_message_system_attributes(message_system_attributes)?;
+        }
+
+        Ok(())
     }
 
     async fn handle(

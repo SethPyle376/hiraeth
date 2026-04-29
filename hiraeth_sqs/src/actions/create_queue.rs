@@ -169,6 +169,18 @@ where
         parse_payload_error(error)
     }
 
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        request_body: &CreateQueueRequest,
+        _store: &S,
+    ) -> Result<(), SqsError> {
+        let queue_attributes = QueueAttributeValues::from_attribute_map(&request_body.attributes)?;
+        queue_support::validate_queue_name(&request_body.queue_name, queue_attributes.fifo_queue)?;
+        validate_tags(&request_body.tags, true)?;
+        Ok(())
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

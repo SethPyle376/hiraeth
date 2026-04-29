@@ -51,6 +51,16 @@ where
         AwsActionResponseFormat::Xml
     }
 
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        delete_request: &DeletePolicyRequest,
+        _store: &S,
+    ) -> Result<(), IamError> {
+        util::parse_policy_arn(&delete_request.policy_arn)?;
+        Ok(())
+    }
+
     async fn handle(
         &self,
         request: ResolvedRequest,

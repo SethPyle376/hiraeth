@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions::util::{
         IAM_XMLNS, IamUserXml, ResponseMetadata, optional_target_user, parse_payload_error,
-        response_metadata,
+        response_metadata, validate_user_name,
     },
     error::IamError,
 };
@@ -61,6 +61,19 @@ where
 
     fn response_format(&self) -> AwsActionResponseFormat {
         AwsActionResponseFormat::Xml
+    }
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        get_user_request: &GetUserRequest,
+        _store: &S,
+    ) -> Result<(), IamError> {
+        if let Some(user_name) = &get_user_request.user_name {
+            validate_user_name(user_name)?;
+        }
+
+        Ok(())
     }
 
     async fn handle(
