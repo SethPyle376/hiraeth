@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use askama::Template;
 use axum::{
     Router,
@@ -60,6 +62,11 @@ pub(crate) struct TraceDetailView {
 
 #[derive(Debug, Clone)]
 pub(crate) struct TraceSpanView {
+    pub(crate) detail_id: String,
+    pub(crate) graph_id: String,
+    pub(crate) span_id: String,
+    pub(crate) parent_span_id: String,
+    pub(crate) has_parent_span_id: bool,
     pub(crate) name: String,
     pub(crate) layer: String,
     pub(crate) status: String,
@@ -67,6 +74,42 @@ pub(crate) struct TraceSpanView {
     pub(crate) duration_ms: String,
     pub(crate) attributes: String,
     pub(crate) has_attributes: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TraceGraphView {
+    pub(crate) width: i32,
+    pub(crate) height: i32,
+    pub(crate) nodes: Vec<TraceGraphNodeView>,
+    pub(crate) edges: Vec<TraceGraphEdgeView>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TraceGraphNodeView {
+    pub(crate) graph_id: String,
+    pub(crate) detail_id: String,
+    pub(crate) label: String,
+    pub(crate) meta: String,
+    pub(crate) status: String,
+    pub(crate) status_class: &'static str,
+    pub(crate) node_class: &'static str,
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+    pub(crate) width: i32,
+    pub(crate) height: i32,
+    pub(crate) is_span: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TraceGraphEdgeView {
+    pub(crate) x1: i32,
+    pub(crate) y1: i32,
+    pub(crate) y_mid: i32,
+    pub(crate) x2: i32,
+    pub(crate) y2: i32,
+    pub(crate) arrow_left_x: i32,
+    pub(crate) arrow_right_x: i32,
+    pub(crate) arrow_base_y: i32,
 }
 
 pub(crate) fn router() -> Router<WebState> {
@@ -143,7 +186,12 @@ async fn trace_detail(
     let spans = state.trace_store.list_trace_spans(&request_id).await?;
 
     let detail = trace_detail_view(trace);
-    let span_views = spans.into_iter().map(trace_span_view).collect::<Vec<_>>();
+    let span_views = spans
+        .into_iter()
+        .enumerate()
+        .map(|(index, span)| trace_span_view(index, span))
+        .collect::<Vec<_>>();
+    let graph = trace_graph_view(&detail, &span_views);
 
     let page_header_html = PageHeader {
         eyebrow: "Request Trace".to_string(),
@@ -163,6 +211,7 @@ async fn trace_detail(
         TraceDetailTemplate {
             page_header_html: &page_header_html,
             trace: &detail,
+            graph: &graph,
             spans: &span_views,
             has_spans: !span_views.is_empty(),
         }
@@ -223,8 +272,14 @@ fn trace_detail_view(trace: StoredRequestTrace) -> TraceDetailView {
     }
 }
 
-fn trace_span_view(span: StoredTraceSpan) -> TraceSpanView {
+fn trace_span_view(index: usize, span: StoredTraceSpan) -> TraceSpanView {
+    let parent_span_id = span.parent_span_id.clone().unwrap_or_default();
     TraceSpanView {
+        detail_id: format!("trace-span-detail-{index}"),
+        graph_id: format!("trace-span-node-{index}"),
+        span_id: span.span_id,
+        has_parent_span_id: !parent_span_id.is_empty(),
+        parent_span_id,
         name: span.name,
         layer: span.layer,
         status_class: span_status_class(&span.status),
@@ -233,6 +288,145 @@ fn trace_span_view(span: StoredTraceSpan) -> TraceSpanView {
         attributes: pretty_json(&span.attributes),
         has_attributes: !span.attributes.is_empty(),
     }
+}
+
+fn trace_graph_view(trace: &TraceDetailView, spans: &[TraceSpanView]) -> TraceGraphView {
+    if spans.is_empty() {
+        return TraceGraphView::default();
+    }
+
+    const NODE_WIDTH: i32 = 168;
+    const NODE_HEIGHT: i32 = 52;
+    const X_GAP: i32 = 42;
+    const Y_GAP: i32 = 54;
+    const MARGIN: i32 = 24;
+
+    let has_parent_links = spans.iter().any(|span| span.has_parent_span_id);
+    let span_index_by_id = spans
+        .iter()
+        .enumerate()
+        .map(|(index, span)| (span.span_id.as_str(), index))
+        .collect::<HashMap<_, _>>();
+
+    let depths = if has_parent_links {
+        spans
+            .iter()
+            .enumerate()
+            .map(|(index, _)| span_depth(index, spans, &span_index_by_id))
+            .collect::<Vec<_>>()
+    } else {
+        (0..spans.len()).map(|index| index + 1).collect::<Vec<_>>()
+    };
+
+    let mut row_counts_by_depth = HashMap::<usize, usize>::new();
+    let mut rows = Vec::with_capacity(spans.len());
+    for depth in &depths {
+        let row = row_counts_by_depth.entry(*depth).or_default();
+        rows.push(*row);
+        *row += 1;
+    }
+
+    let max_row = rows.iter().copied().max().unwrap_or_default() as i32;
+    let root_x = MARGIN + ((max_row * (NODE_WIDTH + X_GAP)) / 2);
+    let root = TraceGraphNodeView {
+        graph_id: "trace-root-node".to_string(),
+        detail_id: String::new(),
+        label: format!("{} {}", trace.method, trace.path),
+        meta: format!("{} ms total", trace.duration_ms),
+        status: trace.response_status_code.to_string(),
+        status_class: trace.response_status_class,
+        node_class: graph_node_class_for_http_status(trace.response_status_code),
+        x: root_x,
+        y: MARGIN,
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT,
+        is_span: false,
+    };
+
+    let mut nodes = vec![root];
+    let mut edges = Vec::new();
+
+    for (index, span) in spans.iter().enumerate() {
+        let depth = depths[index] as i32;
+        let row = rows[index] as i32;
+        let x = MARGIN + row * (NODE_WIDTH + X_GAP);
+        let y = MARGIN + depth * (NODE_HEIGHT + Y_GAP);
+
+        nodes.push(TraceGraphNodeView {
+            graph_id: span.graph_id.clone(),
+            detail_id: span.detail_id.clone(),
+            label: span.name.clone(),
+            meta: format!("{} / {} ms", span.layer, span.duration_ms),
+            status: span.status.clone(),
+            status_class: span.status_class,
+            node_class: graph_node_class_for_span_status(&span.status),
+            x,
+            y,
+            width: NODE_WIDTH,
+            height: NODE_HEIGHT,
+            is_span: true,
+        });
+
+        let parent_node = if has_parent_links {
+            span_index_by_id
+                .get(span.parent_span_id.as_str())
+                .map(|parent_index| {
+                    let parent_depth = depths[*parent_index] as i32;
+                    let parent_row = rows[*parent_index] as i32;
+                    (
+                        MARGIN + parent_row * (NODE_WIDTH + X_GAP),
+                        MARGIN + parent_depth * (NODE_HEIGHT + Y_GAP),
+                    )
+                })
+        } else if index > 0 {
+            let parent_depth = depths[index - 1] as i32;
+            let parent_row = rows[index - 1] as i32;
+            Some((
+                MARGIN + parent_row * (NODE_WIDTH + X_GAP),
+                MARGIN + parent_depth * (NODE_HEIGHT + Y_GAP),
+            ))
+        } else {
+            None
+        };
+
+        let (parent_x, parent_y) = parent_node.unwrap_or((root_x, MARGIN));
+        let y1 = parent_y + NODE_HEIGHT;
+        let y2 = y - 8;
+        edges.push(TraceGraphEdgeView {
+            x1: parent_x + NODE_WIDTH / 2,
+            y1,
+            y_mid: y1 + ((y2 - y1) / 2),
+            x2: x + NODE_WIDTH / 2,
+            y2,
+            arrow_left_x: x + NODE_WIDTH / 2 - 5,
+            arrow_right_x: x + NODE_WIDTH / 2 + 5,
+            arrow_base_y: y2 - 8,
+        });
+    }
+
+    let max_depth = depths.iter().copied().max().unwrap_or_default() as i32;
+    TraceGraphView {
+        width: MARGIN * 2 + (max_row + 1) * NODE_WIDTH + max_row * X_GAP,
+        height: MARGIN * 2 + (max_depth + 1) * NODE_HEIGHT + max_depth * Y_GAP,
+        nodes,
+        edges,
+    }
+}
+
+fn span_depth(
+    index: usize,
+    spans: &[TraceSpanView],
+    span_index_by_id: &HashMap<&str, usize>,
+) -> usize {
+    let span = &spans[index];
+    if !span.has_parent_span_id {
+        return 1;
+    }
+
+    span_index_by_id
+        .get(span.parent_span_id.as_str())
+        .map(|parent_index| span_depth(*parent_index, spans, span_index_by_id) + 1)
+        .unwrap_or(1)
 }
 
 fn pretty_json<T: serde::Serialize>(value: &T) -> String {
@@ -253,10 +447,30 @@ fn status_class(status_code: u16) -> &'static str {
     }
 }
 
+fn graph_node_class_for_http_status(status_code: u16) -> &'static str {
+    if status_code >= 500 {
+        "border-error/70 bg-error/10 hover:border-error hover:bg-error/15"
+    } else if status_code >= 400 {
+        "border-warning/70 bg-warning/10 hover:border-warning hover:bg-warning/15"
+    } else {
+        "border-success/60 bg-success/10 hover:border-success hover:bg-success/15"
+    }
+}
+
 fn span_status_class(status: &str) -> &'static str {
     match status {
         "ok" | "allow" => "badge-success",
         "deny" | "error" => "badge-error",
         _ => "badge-outline",
+    }
+}
+
+fn graph_node_class_for_span_status(status: &str) -> &'static str {
+    match status {
+        "ok" | "allow" => {
+            "border-success/60 bg-success/10 hover:border-success hover:bg-success/15"
+        }
+        "deny" | "error" => "border-error/70 bg-error/10 hover:border-error hover:bg-error/15",
+        _ => "border-base-300 bg-base-100 hover:border-primary hover:bg-base-200",
     }
 }

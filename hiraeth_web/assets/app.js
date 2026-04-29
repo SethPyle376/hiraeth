@@ -134,6 +134,28 @@ function hiraethFilterTraceRequests(input) {
   }
 }
 
+function hiraethSelectTraceSpan(detailId, nodeId) {
+  document.querySelectorAll("[data-trace-span-detail]").forEach((detail) => {
+    detail.classList.toggle("hidden", detail.id !== detailId);
+    detail.classList.toggle("block", detail.id === detailId);
+  });
+
+  document.querySelectorAll(".trace-graph-node").forEach((node) => {
+    const isSelected = node.id === nodeId;
+    node.classList.toggle("ring-2", isSelected);
+    node.classList.toggle("ring-primary", isSelected);
+    node.classList.toggle("ring-offset-1", isSelected);
+    node.classList.toggle("ring-offset-base-100", isSelected);
+    node.classList.toggle("shadow-md", isSelected);
+    node.setAttribute("aria-pressed", isSelected ? "true" : "false");
+  });
+
+  const empty = document.getElementById("trace-span-empty");
+  if (empty) {
+    empty.classList.add("hidden");
+  }
+}
+
 function hiraethCollapseStorageKey(detail) {
   const collapseKey = detail.dataset.collapseKey || detail.id;
   if (!collapseKey) {

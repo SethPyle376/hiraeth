@@ -6,7 +6,7 @@ use crate::iam::{
     IamPrincipalInlinePolicyView, IamPrincipalSummary,
 };
 use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
-use crate::traces::{TraceDetailView, TraceSpanView, TraceSummaryView};
+use crate::traces::{TraceDetailView, TraceGraphView, TraceSpanView, TraceSummaryView};
 
 #[derive(Template)]
 #[template(path = "home.html")]
@@ -34,6 +34,7 @@ pub(crate) struct TraceListTemplate<'a> {
 pub(crate) struct TraceDetailTemplate<'a> {
     pub(crate) page_header_html: &'a str,
     pub(crate) trace: &'a TraceDetailView,
+    pub(crate) graph: &'a TraceGraphView,
     pub(crate) spans: &'a [TraceSpanView],
     pub(crate) has_spans: bool,
 }
