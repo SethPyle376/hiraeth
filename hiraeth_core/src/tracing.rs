@@ -128,7 +128,7 @@ impl TraceContext {
         attributes: HashMap<String, String>,
     ) -> Result<(), TraceRecordError>
     where
-        R: TraceRecorder + Sync,
+        R: TraceRecorder + Sync + ?Sized,
     {
         recorder
             .record_span(TraceSpanRecord {

@@ -60,7 +60,12 @@
                   <span class="badge {{ span.status_class }}">{{ span.status }}</span>
                 </div>
                 {% if span.has_attributes %}
-                <pre class="mt-3 overflow-x-auto rounded bg-neutral p-3 text-xs text-neutral-content">{{ span.attributes }}</pre>
+                <details class="collapse collapse-arrow mt-3 border border-base-300 bg-base-100">
+                  <summary class="collapse-title min-h-0 px-3 py-2 text-sm font-bold">Attributes</summary>
+                  <div class="collapse-content px-3 pb-3">
+                    <pre class="overflow-x-auto rounded bg-neutral p-3 text-xs text-neutral-content">{{ span.attributes }}</pre>
+                  </div>
+                </details>
                 {% endif %}
               </div>
               <div class="font-mono text-sm text-base-content/70">{{ span.duration_ms }} ms</div>

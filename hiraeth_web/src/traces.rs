@@ -116,7 +116,7 @@ async fn list_traces(State(state): State<WebState>) -> Result<Html<String>, WebE
         title: "Request traces".to_string(),
         description: "Review recent AWS endpoint requests, stored payloads, and lifecycle spans."
             .to_string(),
-        actions: vec![HeaderAction::link("Reload", "/traces", "btn-outline")],
+        actions: vec![HeaderAction::link("Reload", "/traces", "btn btn-outline")],
     }
     .render()?;
 
@@ -153,8 +153,8 @@ async fn trace_detail(
             detail.method, detail.path, detail.response_status_code, detail.duration_ms
         ),
         actions: vec![
-            HeaderAction::link("Back", "/traces", "btn-ghost"),
-            HeaderAction::link("Reload", format!("/traces/{request_id}"), "btn-outline"),
+            HeaderAction::link("Back", "/traces", "btn btn-ghost"),
+            HeaderAction::link("Reload", format!("/traces/{request_id}"), "btn btn-outline"),
         ],
     }
     .render()?;

@@ -98,30 +98,23 @@ impl ServiceRouter {
                     resolve_check_timer,
                     "authz.resolve_check",
                     "error",
-                    [("status_code".to_string(), response.status_code.to_string())],
+                    [
+                        ("status_code".to_string(), response.status_code.to_string()),
+                        (
+                            "response".to_string(),
+                            String::from_utf8_lossy(&response.body).to_string(),
+                        ),
+                    ],
                 )
                 .await;
                 return Ok(response);
             }
         };
 
-        let authz_timer = trace_context.start_span();
-        let auth_result = self.authorizer.authorize(&request, &check).await;
-        record_router_span(
-            trace_context,
-            trace_recorder,
-            authz_timer,
-            "authz.evaluate",
-            match auth_result {
-                AuthorizationResult::Allow => "allow",
-                AuthorizationResult::Deny => "deny",
-            },
-            [
-                ("action".to_string(), check.action.clone()),
-                ("resource".to_string(), check.resource.clone()),
-            ],
-        )
-        .await;
+        let auth_result = self
+            .authorizer
+            .authorize(&request, &check, trace_context, trace_recorder)
+            .await;
 
         match auth_result {
             AuthorizationResult::Allow => {
@@ -182,7 +175,9 @@ mod tests {
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
     use hiraeth_core::{
-        ApiError, AuthContext, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
+        ApiError, AuthContext, ResolvedRequest, ServiceResponse,
+        auth::AuthorizationCheck,
+        tracing::{TraceContext, TraceRecorder},
     };
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::principal::Principal;
@@ -289,6 +284,8 @@ mod tests {
             &self,
             _request: &ResolvedRequest,
             _check: &AuthorizationCheck,
+            _trace_context: &TraceContext,
+            _trace_recorder: &(dyn TraceRecorder + Sync),
         ) -> AuthorizationResult {
             self.result
         }

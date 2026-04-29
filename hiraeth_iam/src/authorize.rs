@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
     AuthContext, ResolvedRequest, ServiceResponse,
@@ -5,6 +7,7 @@ use hiraeth_core::{
         AuthorizationCheck, Policy, PolicyEvalResult, PolicyPrincipal, evaluate_identity_policy,
         evaluate_resource_policy,
     },
+    tracing::{TraceContext, TraceRecorder, TraceSpanTimer},
 };
 use hiraeth_router::{AuthorizationResult, Authorizer};
 use hiraeth_store::{IamStore, iam::PrincipalInlinePolicyStore};
@@ -20,7 +23,10 @@ where
         &self,
         request: &ResolvedRequest,
         check: &AuthorizationCheck,
+        trace_context: &TraceContext,
+        trace_recorder: &(dyn TraceRecorder + Sync),
     ) -> AuthorizationResult {
+        let authz_timer = trace_context.start_span();
         let resource_principal = policy_principal_from_request(request);
         let identity_policy_result = evaluate_principal_inline_policies(
             &self.store,
@@ -73,7 +79,7 @@ where
             PolicyEvalResult::Denied | PolicyEvalResult::NotApplicable => AuthorizationResult::Deny,
         };
 
-        match self.mode {
+        let effective_result = match self.mode {
             AuthorizationMode::Enforce => authz_result,
             AuthorizationMode::Audit => {
                 tracing::info!(
@@ -86,7 +92,20 @@ where
                 AuthorizationResult::Allow // allow the request but log the result
             }
             AuthorizationMode::Off => AuthorizationResult::Allow, // allow all requests
-        }
+        };
+
+        record_authz_span(
+            trace_context,
+            trace_recorder,
+            authz_timer,
+            &self.mode,
+            authz_result,
+            effective_result,
+            check,
+        )
+        .await;
+
+        effective_result
     }
 
     fn unauthorized_response(&self) -> ServiceResponse {
@@ -95,6 +114,49 @@ where
             body: vec![],
             headers: vec![],
         }
+    }
+}
+
+async fn record_authz_span(
+    trace_context: &TraceContext,
+    trace_recorder: &(dyn TraceRecorder + Sync),
+    timer: TraceSpanTimer,
+    mode: &AuthorizationMode,
+    evaluated_result: AuthorizationResult,
+    effective_result: AuthorizationResult,
+    check: &AuthorizationCheck,
+) {
+    if let Err(error) = trace_context
+        .record_span(
+            trace_recorder,
+            timer,
+            "authz.evaluate",
+            "iam",
+            evaluated_result.as_trace_status(),
+            HashMap::from([
+                ("action".to_string(), check.action.clone()),
+                ("resource".to_string(), check.resource.clone()),
+                (
+                    "mode".to_string(),
+                    authorization_mode_name(mode).to_string(),
+                ),
+                (
+                    "effective_result".to_string(),
+                    effective_result.as_trace_status().to_string(),
+                ),
+            ]),
+        )
+        .await
+    {
+        tracing::warn!(error = ?error, span = "authz.evaluate", "failed to record trace span");
+    }
+}
+
+fn authorization_mode_name(mode: &AuthorizationMode) -> &'static str {
+    match mode {
+        AuthorizationMode::Enforce => "enforce",
+        AuthorizationMode::Audit => "audit",
+        AuthorizationMode::Off => "off",
     }
 }
 
@@ -181,13 +243,17 @@ fn policy_principal_from_request(request: &ResolvedRequest) -> Option<PolicyPrin
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, sync::Mutex};
 
     use async_trait::async_trait;
     use chrono::{TimeZone, Utc};
     use hiraeth_core::{
         AuthContext, ResolvedRequest,
         auth::{AuthorizationCheck, Policy, PolicyPrincipal},
+        tracing::{
+            CompletedRequestTrace, NoopTraceRecorder, TraceContext, TraceRecordError,
+            TraceRecorder, TraceSpanRecord,
+        },
     };
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::{AuthorizationResult, Authorizer};
@@ -208,6 +274,29 @@ mod tests {
     struct TestIamStore {
         inline_policies: Vec<PrincipalInlinePolicy>,
         managed_policies: Vec<ManagedPolicy>,
+    }
+
+    #[derive(Default)]
+    struct RecordingTraceRecorder {
+        spans: Mutex<Vec<TraceSpanRecord>>,
+    }
+
+    #[async_trait]
+    impl TraceRecorder for RecordingTraceRecorder {
+        async fn record_request_trace(
+            &self,
+            _trace: CompletedRequestTrace,
+        ) -> Result<(), TraceRecordError> {
+            unreachable!("authorization tests only record spans")
+        }
+
+        async fn record_span(&self, span: TraceSpanRecord) -> Result<(), TraceRecordError> {
+            self.spans
+                .lock()
+                .expect("trace recorder mutex should not be poisoned")
+                .push(span);
+            Ok(())
+        }
     }
 
     #[async_trait]
@@ -488,6 +577,17 @@ mod tests {
         }
     }
 
+    async fn authorize(
+        authorizer: &impl Authorizer,
+        request: ResolvedRequest,
+        check: AuthorizationCheck,
+    ) -> AuthorizationResult {
+        let trace_context = TraceContext::new(request.request_id.clone());
+        authorizer
+            .authorize(&request, &check, &trace_context, &NoopTraceRecorder)
+            .await
+    }
+
     fn auth_check(
         action: &str,
         resource: &str,
@@ -584,32 +684,32 @@ mod tests {
 
     #[tokio::test]
     async fn enforce_mode_allows_matching_resource_policy() {
-        let result = service(AuthorizationMode::Enforce, [])
-            .authorize(
-                &resolved_request("user"),
-                &check(Some(policy(
-                    "Allow",
-                    "sqs:SendMessage",
-                    "arn:aws:sqs:us-east-1:123456789012:orders",
-                ))),
-            )
-            .await;
+        let result = authorize(
+            &service(AuthorizationMode::Enforce, []),
+            resolved_request("user"),
+            check(Some(policy(
+                "Allow",
+                "sqs:SendMessage",
+                "arn:aws:sqs:us-east-1:123456789012:orders",
+            ))),
+        )
+        .await;
 
         assert_eq!(result, AuthorizationResult::Allow);
     }
 
     #[tokio::test]
     async fn enforce_mode_denies_matching_deny_policy() {
-        let result = service(AuthorizationMode::Enforce, [])
-            .authorize(
-                &resolved_request("user"),
-                &check(Some(policy(
-                    "Deny",
-                    "sqs:SendMessage",
-                    "arn:aws:sqs:us-east-1:123456789012:orders",
-                ))),
-            )
-            .await;
+        let result = authorize(
+            &service(AuthorizationMode::Enforce, []),
+            resolved_request("user"),
+            check(Some(policy(
+                "Deny",
+                "sqs:SendMessage",
+                "arn:aws:sqs:us-east-1:123456789012:orders",
+            ))),
+        )
+        .await;
 
         assert_eq!(result, AuthorizationResult::Deny);
     }
@@ -617,19 +717,17 @@ mod tests {
     #[tokio::test]
     async fn enforce_mode_denies_missing_or_not_applicable_resource_policy() {
         let authorizer = service(AuthorizationMode::Enforce, []);
-        let no_policy_result = authorizer
-            .authorize(&resolved_request("user"), &check(None))
-            .await;
-        let not_applicable_result = authorizer
-            .authorize(
-                &resolved_request("user"),
-                &check(Some(policy(
-                    "Allow",
-                    "sqs:ReceiveMessage",
-                    "arn:aws:sqs:us-east-1:123456789012:orders",
-                ))),
-            )
-            .await;
+        let no_policy_result = authorize(&authorizer, resolved_request("user"), check(None)).await;
+        let not_applicable_result = authorize(
+            &authorizer,
+            resolved_request("user"),
+            check(Some(policy(
+                "Allow",
+                "sqs:ReceiveMessage",
+                "arn:aws:sqs:us-east-1:123456789012:orders",
+            ))),
+        )
+        .await;
 
         assert_eq!(no_policy_result, AuthorizationResult::Deny);
         assert_eq!(not_applicable_result, AuthorizationResult::Deny);
@@ -637,34 +735,82 @@ mod tests {
 
     #[tokio::test]
     async fn audit_mode_allows_even_when_policy_would_deny() {
-        let result = service(AuthorizationMode::Audit, [])
-            .authorize(&resolved_request("user"), &check(None))
-            .await;
+        let result = authorize(
+            &service(AuthorizationMode::Audit, []),
+            resolved_request("user"),
+            check(None),
+        )
+        .await;
 
         assert_eq!(result, AuthorizationResult::Allow);
     }
 
     #[tokio::test]
-    async fn off_mode_allows_without_evaluating_policy() {
-        let result = service(AuthorizationMode::Off, [])
-            .authorize(&resolved_request("user"), &check(None))
+    async fn audit_mode_records_evaluated_result_separately_from_effective_result() {
+        let authorizer = service(AuthorizationMode::Audit, []);
+        let request = resolved_request("user");
+        let check = check(None);
+        let trace_context = TraceContext::new("trace-request-id");
+        let trace_recorder = RecordingTraceRecorder::default();
+
+        let result = authorizer
+            .authorize(&request, &check, &trace_context, &trace_recorder)
             .await;
+
+        assert_eq!(result, AuthorizationResult::Allow);
+
+        let spans = trace_recorder
+            .spans
+            .lock()
+            .expect("trace recorder mutex should not be poisoned");
+        assert_eq!(spans.len(), 1);
+
+        let span = &spans[0];
+        assert_eq!(span.name, "authz.evaluate");
+        assert_eq!(span.layer, "iam");
+        assert_eq!(span.status, "deny");
+        assert_eq!(
+            span.attributes.get("mode").map(String::as_str),
+            Some("audit")
+        );
+        assert_eq!(
+            span.attributes.get("effective_result").map(String::as_str),
+            Some("allow")
+        );
+        assert_eq!(
+            span.attributes.get("action").map(String::as_str),
+            Some("sqs:SendMessage")
+        );
+        assert_eq!(
+            span.attributes.get("resource").map(String::as_str),
+            Some("arn:aws:sqs:us-east-1:123456789012:orders")
+        );
+    }
+
+    #[tokio::test]
+    async fn off_mode_allows_without_evaluating_policy() {
+        let result = authorize(
+            &service(AuthorizationMode::Off, []),
+            resolved_request("user"),
+            check(None),
+        )
+        .await;
 
         assert_eq!(result, AuthorizationResult::Allow);
     }
 
     #[tokio::test]
     async fn authorization_denies_when_project_principal_cannot_map_to_policy_principal() {
-        let result = service(AuthorizationMode::Enforce, [])
-            .authorize(
-                &resolved_request("unknown"),
-                &check(Some(policy(
-                    "Allow",
-                    "sqs:SendMessage",
-                    "arn:aws:sqs:us-east-1:123456789012:orders",
-                ))),
-            )
-            .await;
+        let result = authorize(
+            &service(AuthorizationMode::Enforce, []),
+            resolved_request("unknown"),
+            check(Some(policy(
+                "Allow",
+                "sqs:SendMessage",
+                "arn:aws:sqs:us-east-1:123456789012:orders",
+            ))),
+        )
+        .await;
 
         assert_eq!(result, AuthorizationResult::Deny);
     }
@@ -679,16 +825,19 @@ mod tests {
 
     #[tokio::test]
     async fn enforce_mode_allows_matching_inline_identity_policy_without_resource_policy() {
-        let result = service(
-            AuthorizationMode::Enforce,
-            [inline_policy(
-                "Allow",
-                "sqs:SendMessage",
-                "arn:aws:sqs:us-east-1:123456789012:orders",
-                1,
-            )],
+        let result = authorize(
+            &service(
+                AuthorizationMode::Enforce,
+                [inline_policy(
+                    "Allow",
+                    "sqs:SendMessage",
+                    "arn:aws:sqs:us-east-1:123456789012:orders",
+                    1,
+                )],
+            ),
+            resolved_request("user"),
+            check(None),
         )
-        .authorize(&resolved_request("user"), &check(None))
         .await;
 
         assert_eq!(result, AuthorizationResult::Allow);
@@ -696,17 +845,20 @@ mod tests {
 
     #[tokio::test]
     async fn enforce_mode_allows_matching_managed_policy_without_resource_policy() {
-        let result = service_with_managed(
-            AuthorizationMode::Enforce,
-            [],
-            [managed_policy(
-                "Allow",
-                "sqs:SendMessage",
-                "arn:aws:sqs:us-east-1:123456789012:orders",
-                1,
-            )],
+        let result = authorize(
+            &service_with_managed(
+                AuthorizationMode::Enforce,
+                [],
+                [managed_policy(
+                    "Allow",
+                    "sqs:SendMessage",
+                    "arn:aws:sqs:us-east-1:123456789012:orders",
+                    1,
+                )],
+            ),
+            resolved_request("user"),
+            check(None),
         )
-        .authorize(&resolved_request("user"), &check(None))
         .await;
 
         assert_eq!(result, AuthorizationResult::Allow);
@@ -715,18 +867,18 @@ mod tests {
     #[tokio::test]
     async fn enforce_mode_denies_when_inline_identity_policy_denies_resource_allowed_by_resource_policy()
      {
-        let result = service(
-            AuthorizationMode::Enforce,
-            [inline_policy(
-                "Deny",
-                "sqs:SendMessage",
-                "arn:aws:sqs:us-east-1:123456789012:orders",
-                1,
-            )],
-        )
-        .authorize(
-            &resolved_request("user"),
-            &check(Some(policy(
+        let result = authorize(
+            &service(
+                AuthorizationMode::Enforce,
+                [inline_policy(
+                    "Deny",
+                    "sqs:SendMessage",
+                    "arn:aws:sqs:us-east-1:123456789012:orders",
+                    1,
+                )],
+            ),
+            resolved_request("user"),
+            check(Some(policy(
                 "Allow",
                 "sqs:SendMessage",
                 "arn:aws:sqs:us-east-1:123456789012:orders",
@@ -739,16 +891,19 @@ mod tests {
 
     #[tokio::test]
     async fn enforce_mode_allows_inline_identity_policy_even_without_resource_principal_mapping() {
-        let result = service(
-            AuthorizationMode::Enforce,
-            [inline_policy(
-                "Allow",
-                "sqs:SendMessage",
-                "arn:aws:sqs:us-east-1:123456789012:orders",
-                1,
-            )],
+        let result = authorize(
+            &service(
+                AuthorizationMode::Enforce,
+                [inline_policy(
+                    "Allow",
+                    "sqs:SendMessage",
+                    "arn:aws:sqs:us-east-1:123456789012:orders",
+                    1,
+                )],
+            ),
+            resolved_request("unknown"),
+            check(None),
         )
-        .authorize(&resolved_request("unknown"), &check(None))
         .await;
 
         assert_eq!(result, AuthorizationResult::Allow);
@@ -756,11 +911,14 @@ mod tests {
 
     #[tokio::test]
     async fn enforce_mode_allows_seeded_admin_style_inline_policy_for_send_message() {
-        let result = service(
-            AuthorizationMode::Enforce,
-            [inline_policy("Allow", "*", "arn:aws:*:*:123456789012:*", 1)],
+        let result = authorize(
+            &service(
+                AuthorizationMode::Enforce,
+                [inline_policy("Allow", "*", "arn:aws:*:*:123456789012:*", 1)],
+            ),
+            resolved_request("user"),
+            check(None),
         )
-        .authorize(&resolved_request("user"), &check(None))
         .await;
 
         assert_eq!(result, AuthorizationResult::Allow);
@@ -768,13 +926,13 @@ mod tests {
 
     #[tokio::test]
     async fn enforce_mode_allows_seeded_admin_style_inline_policy_for_create_queue() {
-        let result = service(
-            AuthorizationMode::Enforce,
-            [inline_policy("Allow", "*", "arn:aws:*:*:123456789012:*", 1)],
-        )
-        .authorize(
-            &resolved_request("user"),
-            &auth_check(
+        let result = authorize(
+            &service(
+                AuthorizationMode::Enforce,
+                [inline_policy("Allow", "*", "arn:aws:*:*:123456789012:*", 1)],
+            ),
+            resolved_request("user"),
+            auth_check(
                 "sqs:CreateQueue",
                 "arn:aws:sqs:us-east-1:123456789012:*",
                 None,
