@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
@@ -52,10 +54,12 @@ where
         request: ResolvedRequest,
         put_policy_request: Self::Request,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, Self::Error> {
         let account_id = &request.auth_context.principal.account_id;
         let user = store
-            .get_principal_by_identity(&account_id, "user", &put_policy_request.user_name)
+            .get_principal_by_identity(account_id, "user", &put_policy_request.user_name)
             .await?
             .ok_or_else(|| {
                 IamError::NoSuchEntity(format!(
@@ -64,13 +68,39 @@ where
                 ))
             })?;
 
-        store
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("account_id".to_string(), account_id.clone()),
+            ("user_name".to_string(), user.name.clone()),
+            ("user_id".to_string(), user.id.to_string()),
+            (
+                "policy_name".to_string(),
+                put_policy_request.policy_name.clone(),
+            ),
+            (
+                "policy_document_bytes".to_string(),
+                put_policy_request.policy_document.len().to_string(),
+            ),
+        ]);
+        let result = store
             .put_inline_policy(
                 user.id,
                 &put_policy_request.policy_name,
                 &put_policy_request.policy_document,
             )
-            .await?;
+            .await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.user_policy.put",
+                "iam",
+                status,
+                attributes,
+            )
+            .await;
+        result?;
 
         let response = PutUserPolicyResponse {
             xmlns: util::IAM_XMLNS,
@@ -88,7 +118,7 @@ where
     ) -> Result<AuthorizationCheck, Self::Error> {
         let account_id = &request.auth_context.principal.account_id;
         let user = store
-            .get_principal_by_identity(&account_id, "user", &put_policy_request.user_name)
+            .get_principal_by_identity(account_id, "user", &put_policy_request.user_name)
             .await?
             .ok_or_else(|| {
                 IamError::NoSuchEntity(format!(
@@ -190,6 +220,8 @@ mod tests {
                     b"Action=PutUserPolicy&Version=2010-05-08&UserName=alice&PolicyName=sqs-read&PolicyDocument=%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Action%22%3A%22sqs%3AReceiveMessage%22%2C%22Resource%22%3A%22*%22%7D%5D%7D",
                 ),
                 &store,
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 
@@ -212,6 +244,8 @@ mod tests {
                     b"Action=PutUserPolicy&Version=2010-05-08&UserName=missing&PolicyName=sqs-read&PolicyDocument=%7B%22Version%22%3A%222012-10-17%22%7D",
                 ),
                 &store(),
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 

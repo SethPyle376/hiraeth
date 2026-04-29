@@ -128,7 +128,7 @@ impl TraceContext {
         attributes: HashMap<String, String>,
     ) -> Result<(), TraceRecordError>
     where
-        R: TraceRecorder + Sync + ?Sized,
+        R: TraceRecorder + ?Sized,
     {
         recorder
             .record_span(TraceSpanRecord {
@@ -148,6 +148,30 @@ impl TraceContext {
                 attributes,
             })
             .await
+    }
+
+    pub async fn record_span_or_warn<R>(
+        &self,
+        recorder: &R,
+        timer: TraceSpanTimer,
+        name: &'static str,
+        layer: &'static str,
+        status: &'static str,
+        attributes: HashMap<String, String>,
+    ) where
+        R: TraceRecorder + ?Sized,
+    {
+        if let Err(error) = self
+            .record_span(recorder, timer, name, layer, status, attributes)
+            .await
+        {
+            tracing::warn!(
+                request_id = %self.request_id,
+                span = name,
+                error = %error,
+                "failed to record trace span"
+            );
+        }
     }
 }
 
@@ -175,7 +199,7 @@ impl Display for TraceRecordError {
 impl std::error::Error for TraceRecordError {}
 
 #[async_trait]
-pub trait TraceRecorder {
+pub trait TraceRecorder: Sync {
     async fn record_request_trace(
         &self,
         trace: CompletedRequestTrace,

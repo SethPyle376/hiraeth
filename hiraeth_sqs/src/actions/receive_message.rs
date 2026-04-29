@@ -1,4 +1,7 @@
-use std::{cmp::min, collections::BTreeMap};
+use std::{
+    cmp::min,
+    collections::{BTreeMap, HashMap},
+};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -287,8 +290,61 @@ where
         request: ResolvedRequest,
         receive_request: ReceiveMessageRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
-        handle_receive_message_typed(&request, store, receive_request).await
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), receive_request.queue_url.clone()),
+            (
+                "max_number_of_messages".to_string(),
+                receive_request.max_number_of_messages.to_string(),
+            ),
+            (
+                "visibility_timeout_seconds".to_string(),
+                receive_request
+                    .visibility_timeout
+                    .map(|visibility_timeout| visibility_timeout.to_string())
+                    .unwrap_or_else(|| "queue_default".to_string()),
+            ),
+            (
+                "wait_time_seconds".to_string(),
+                receive_request
+                    .wait_time_seconds
+                    .map(|wait_time_seconds| wait_time_seconds.to_string())
+                    .unwrap_or_else(|| "queue_default".to_string()),
+            ),
+            (
+                "requested_system_attribute_count".to_string(),
+                receive_request.attribute_names.len().to_string(),
+            ),
+            (
+                "requested_message_attribute_count".to_string(),
+                receive_request.message_attribute_names.len().to_string(),
+            ),
+            (
+                "requested_message_system_attribute_count".to_string(),
+                receive_request
+                    .message_system_attribute_names
+                    .len()
+                    .to_string(),
+            ),
+        ]);
+
+        let result = handle_receive_message_typed(&request, store, receive_request).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.receive_message.poll",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(

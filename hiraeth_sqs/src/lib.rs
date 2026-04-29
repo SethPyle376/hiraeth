@@ -42,7 +42,7 @@ where
         &self,
         request: ResolvedRequest,
         trace_context: &TraceContext,
-        trace_recorder: &(dyn TraceRecorder + Sync),
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
         let action_name = match auth::get_action_name_for_request(&request) {
             Ok(action_name) => action_name,

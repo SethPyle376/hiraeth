@@ -43,7 +43,7 @@ where
         &self,
         request: ResolvedRequest,
         trace_context: &TraceContext,
-        trace_recorder: &(dyn TraceRecorder + Sync),
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, ApiError> {
         let action_name = get_query_request_action_name(&request)
             .map_err(|error| ApiError::BadRequest(error.to_string()))?

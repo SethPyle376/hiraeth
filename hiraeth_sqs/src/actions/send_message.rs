@@ -166,8 +166,65 @@ where
         request: ResolvedRequest,
         request_body: SendMessageRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
-        handle_send_message_typed(&request, store, request_body).await
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), request_body.queue_url.clone()),
+            (
+                "body_bytes".to_string(),
+                request_body.message_body.len().to_string(),
+            ),
+            (
+                "delay_seconds".to_string(),
+                request_body
+                    .delay_seconds
+                    .map(|delay_seconds| delay_seconds.to_string())
+                    .unwrap_or_else(|| "queue_default".to_string()),
+            ),
+            (
+                "message_attribute_count".to_string(),
+                request_body
+                    .message_attributes
+                    .as_ref()
+                    .map(HashMap::len)
+                    .unwrap_or_default()
+                    .to_string(),
+            ),
+            (
+                "system_attribute_count".to_string(),
+                request_body
+                    .message_system_attributes
+                    .as_ref()
+                    .map(HashMap::len)
+                    .unwrap_or_default()
+                    .to_string(),
+            ),
+            (
+                "has_message_group_id".to_string(),
+                request_body.message_group_id.is_some().to_string(),
+            ),
+            (
+                "has_message_deduplication_id".to_string(),
+                request_body.message_deduplication_id.is_some().to_string(),
+            ),
+        ]);
+
+        let result = handle_send_message_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.send_message.persist",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(

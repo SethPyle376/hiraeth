@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
@@ -107,8 +109,47 @@ where
         request: ResolvedRequest,
         request_body: ListQueuesRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
-        handle_list_queues_typed(&request, store, request_body).await
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("region".to_string(), request.region.clone()),
+            (
+                "account_id".to_string(),
+                request.auth_context.principal.account_id.clone(),
+            ),
+            (
+                "max_results".to_string(),
+                request_body
+                    .max_results
+                    .map(|max_results| max_results.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+            ),
+            (
+                "has_next_token".to_string(),
+                request_body.next_token.is_some().to_string(),
+            ),
+            (
+                "queue_name_prefix".to_string(),
+                request_body.queue_name_prefix.clone().unwrap_or_default(),
+            ),
+        ]);
+
+        let result = handle_list_queues_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.queue.list",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(

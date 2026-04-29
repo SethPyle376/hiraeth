@@ -67,8 +67,39 @@ where
         request: ResolvedRequest,
         attributes_request: GetQueueAttributesRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
-        handle_get_queue_attributes_typed(&request, store, attributes_request).await
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            (
+                "queue_url".to_string(),
+                attributes_request.queue_url.clone(),
+            ),
+            (
+                "requested_attribute_count".to_string(),
+                attributes_request.attribute_names.len().to_string(),
+            ),
+            (
+                "requested_attributes".to_string(),
+                attributes_request.attribute_names.join(","),
+            ),
+        ]);
+
+        let result = handle_get_queue_attributes_typed(&request, store, attributes_request).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.queue.get_attributes",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(

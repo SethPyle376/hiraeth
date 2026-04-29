@@ -27,7 +27,7 @@ pub trait Authorizer {
         request: &ResolvedRequest,
         check: &AuthorizationCheck,
         trace_context: &TraceContext,
-        trace_recorder: &(dyn TraceRecorder + Sync),
+        trace_recorder: &dyn TraceRecorder,
     ) -> AuthorizationResult;
 
     fn unauthorized_response(&self) -> ServiceResponse;

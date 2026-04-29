@@ -53,7 +53,7 @@ impl ServiceRouter {
         trace_recorder: &R,
     ) -> Result<ServiceResponse, ApiError>
     where
-        R: TraceRecorder + Sync,
+        R: TraceRecorder,
     {
         let resolve_service_timer = trace_context.start_span();
         let service = self
@@ -153,7 +153,7 @@ async fn record_router_span<R, const N: usize>(
     status: &'static str,
     attributes: [(String, String); N],
 ) where
-    R: TraceRecorder + Sync,
+    R: TraceRecorder,
 {
     if let Err(error) = trace_context
         .record_span(
@@ -230,7 +230,7 @@ mod tests {
             &self,
             _request: ResolvedRequest,
             _trace_context: &TraceContext,
-            _trace_recorder: &(dyn TraceRecorder + Sync),
+            _trace_recorder: &dyn TraceRecorder,
         ) -> Result<ServiceResponse, ApiError> {
             Ok(ServiceResponse {
                 status_code: 200,
@@ -263,7 +263,7 @@ mod tests {
             &self,
             _request: ResolvedRequest,
             _trace_context: &TraceContext,
-            _trace_recorder: &(dyn TraceRecorder + Sync),
+            _trace_recorder: &dyn TraceRecorder,
         ) -> Result<ServiceResponse, ApiError> {
             panic!("service should not execute when authorization resolution fails");
         }
@@ -291,7 +291,7 @@ mod tests {
             _request: &ResolvedRequest,
             _check: &AuthorizationCheck,
             _trace_context: &TraceContext,
-            _trace_recorder: &(dyn TraceRecorder + Sync),
+            _trace_recorder: &dyn TraceRecorder,
         ) -> AuthorizationResult {
             self.result
         }

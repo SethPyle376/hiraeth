@@ -173,8 +173,47 @@ where
         request: ResolvedRequest,
         request_body: CreateQueueRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
-        handle_create_queue_typed(&request, store, request_body).await
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_name".to_string(), request_body.queue_name.clone()),
+            ("region".to_string(), request.region.clone()),
+            (
+                "account_id".to_string(),
+                request.auth_context.principal.account_id.clone(),
+            ),
+            (
+                "requested_attribute_count".to_string(),
+                request_body.attributes.len().to_string(),
+            ),
+            ("tag_count".to_string(), request_body.tags.len().to_string()),
+            (
+                "fifo_queue".to_string(),
+                request_body
+                    .attributes
+                    .get("FifoQueue")
+                    .map(String::as_str)
+                    .unwrap_or("false")
+                    .to_string(),
+            ),
+        ]);
+
+        let result = handle_create_queue_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.queue.create",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(

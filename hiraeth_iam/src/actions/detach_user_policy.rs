@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
@@ -52,6 +54,8 @@ where
         request: ResolvedRequest,
         detach_policy_request: DetachUserPolicyRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
         let user = store
@@ -81,9 +85,35 @@ where
                     detach_policy_request.policy_arn
                 ))
             })?;
-        store
-            .detach_policy_from_principal(policy.id, user.id)
-            .await?;
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("account_id".to_string(), account_id.clone()),
+            ("user_name".to_string(), user.name.clone()),
+            ("user_id".to_string(), user.id.to_string()),
+            (
+                "policy_arn".to_string(),
+                detach_policy_request.policy_arn.clone(),
+            ),
+            ("policy_id".to_string(), policy.id.to_string()),
+            ("policy_name".to_string(), policy.policy_name.clone()),
+            (
+                "policy_path".to_string(),
+                policy.policy_path.clone().unwrap_or_default(),
+            ),
+        ]);
+        let result = store.detach_policy_from_principal(policy.id, user.id).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.policy.detach_user",
+                "iam",
+                status,
+                attributes,
+            )
+            .await;
+        result?;
 
         let response = DetachUserPolicyResponse {
             xmlns: IAM_XMLNS,
@@ -227,6 +257,8 @@ mod tests {
                     b"Action=DetachUserPolicy&Version=2010-05-08&UserName=alice&PolicyArn=arn%3Aaws%3Aiam%3A%3A123456789012%3Apolicy%2Fdev%2Forders-readonly",
                 ),
                 &store,
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 
@@ -248,6 +280,8 @@ mod tests {
                     b"Action=DetachUserPolicy&Version=2010-05-08&UserName=alice&PolicyArn=arn%3Aaws%3Aiam%3A%3A999999999999%3Apolicy%2Fdev%2Forders-readonly",
                 ),
                 &store(),
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 

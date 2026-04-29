@@ -12,7 +12,13 @@ use crate::{
 pub trait AwsAction<S>: Send + Sync {
     fn name(&self) -> &'static str;
 
-    async fn handle(&self, request: ResolvedRequest, store: &S) -> ServiceResponse;
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        store: &S,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> ServiceResponse;
 
     async fn resolve_authorization(
         &self,
@@ -39,6 +45,8 @@ pub trait TypedAwsAction<S>: Send + Sync {
         request: ResolvedRequest,
         payload: Self::Request,
         store: &S,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, Self::Error>;
 
     async fn resolve_authorization_typed(
@@ -81,13 +89,23 @@ where
         self.action.name()
     }
 
-    async fn handle(&self, request: ResolvedRequest, store: &S) -> ServiceResponse {
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        store: &S,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> ServiceResponse {
         let payload = match parse_payload::<A::Request>(self.action.payload_format(), &request) {
             Ok(payload) => payload,
             Err(error) => return self.action.parse_error(error).into(),
         };
 
-        match self.action.handle(request, payload, store).await {
+        match self
+            .action
+            .handle(request, payload, store, trace_context, trace_recorder)
+            .await
+        {
             Ok(response) => response,
             Err(error) => error.into(),
         }
@@ -161,7 +179,7 @@ impl<S> AwsActionRegistry<S> {
         request: ResolvedRequest,
         store: &S,
         trace_context: &TraceContext,
-        trace_recorder: &(dyn TraceRecorder + Sync),
+        trace_recorder: &dyn TraceRecorder,
     ) -> Option<ServiceResponse> {
         let action = self.get(action_name)?;
         let timer = trace_context.start_span();
@@ -171,7 +189,9 @@ impl<S> AwsActionRegistry<S> {
         let principal = request.auth_context.principal.name.clone();
         let action_name = action.name();
 
-        let response = action.handle(request, store).await;
+        let response = action
+            .handle(request, store, trace_context, trace_recorder)
+            .await;
         let status_code = response.status_code;
         let status = if status_code >= 400 { "error" } else { "ok" };
 
@@ -239,7 +259,13 @@ mod tests {
             self.0
         }
 
-        async fn handle(&self, _request: ResolvedRequest, _store: &()) -> ServiceResponse {
+        async fn handle(
+            &self,
+            _request: ResolvedRequest,
+            _store: &(),
+            _trace_context: &TraceContext,
+            _trace_recorder: &dyn TraceRecorder,
+        ) -> ServiceResponse {
             ServiceResponse {
                 status_code: 200,
                 body: Vec::new(),

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use hiraeth_core::{
@@ -75,8 +77,36 @@ where
         request: ResolvedRequest,
         change_request: ChangeMessageVisibilityRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
-        handle_change_message_visibility_typed(&request, store, change_request).await
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), change_request.queue_url.clone()),
+            (
+                "receipt_handle".to_string(),
+                change_request.receipt_handle.clone(),
+            ),
+            (
+                "visibility_timeout_seconds".to_string(),
+                change_request.visibility_timeout.to_string(),
+            ),
+        ]);
+
+        let result = handle_change_message_visibility_typed(&request, store, change_request).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.message.change_visibility",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(

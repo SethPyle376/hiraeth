@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadParseError, ResolvedRequest, ServiceResponse, TypedAwsAction, arn_util,
@@ -60,7 +62,11 @@ where
         request: ResolvedRequest,
         get_user_request: GetUserRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, IamError> {
+        let timer = trace_context.start_span();
+        let requested_user_name = get_user_request.user_name.clone();
         let principal =
             match optional_target_user(&request, store, get_user_request.user_name.as_deref())
                 .await?
@@ -77,6 +83,26 @@ where
                     )));
                 }
             };
+        let attributes = HashMap::from([
+            (
+                "requested_user_name".to_string(),
+                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+            ),
+            ("user_name".to_string(), principal.name.clone()),
+            ("user_id".to_string(), principal.id.to_string()),
+            ("account_id".to_string(), principal.account_id.clone()),
+            ("path".to_string(), principal.path.clone()),
+        ]);
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.user.lookup",
+                "iam",
+                "ok",
+                attributes,
+            )
+            .await;
 
         iam_xml_response(&get_user_response(principal.into(), request.request_id))
     }
@@ -196,6 +222,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=GetUser&Version=2010-05-08&UserName=alice"),
                 &store(),
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 
@@ -215,6 +243,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=GetUser&Version=2010-05-08"),
                 &store(),
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 

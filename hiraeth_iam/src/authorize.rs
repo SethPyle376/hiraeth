@@ -24,7 +24,7 @@ where
         request: &ResolvedRequest,
         check: &AuthorizationCheck,
         trace_context: &TraceContext,
-        trace_recorder: &(dyn TraceRecorder + Sync),
+        trace_recorder: &dyn TraceRecorder,
     ) -> AuthorizationResult {
         let authz_timer = trace_context.start_span();
         let resource_principal = policy_principal_from_request(request);
@@ -119,7 +119,7 @@ where
 
 async fn record_authz_span(
     trace_context: &TraceContext,
-    trace_recorder: &(dyn TraceRecorder + Sync),
+    trace_recorder: &dyn TraceRecorder,
     timer: TraceSpanTimer,
     mode: &AuthorizationMode,
     evaluated_result: AuthorizationResult,

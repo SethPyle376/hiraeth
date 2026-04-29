@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
@@ -64,11 +66,29 @@ where
         request: ResolvedRequest,
         create_user_request: CreateUserRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, IamError> {
+        let timer = trace_context.start_span();
         let account_id = &request.auth_context.principal.account_id;
+        let attributes = HashMap::from([
+            ("account_id".to_string(), account_id.clone()),
+            (
+                "user_name".to_string(),
+                create_user_request.user_name.clone(),
+            ),
+            ("path".to_string(), create_user_request.path.clone()),
+            (
+                "has_permissions_boundary".to_string(),
+                create_user_request
+                    .permissions_boundary
+                    .is_some()
+                    .to_string(),
+            ),
+        ]);
 
         let path = arn_util::normalize_user_path(&create_user_request.path);
-        let created_principal = store
+        let result = store
             .create_principal(NewPrincipal {
                 account_id: account_id.clone(),
                 kind: "user".to_string(),
@@ -76,7 +96,19 @@ where
                 path,
                 user_id: new_id(),
             })
-            .await?;
+            .await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.user.create",
+                "iam",
+                status,
+                attributes,
+            )
+            .await;
+        let created_principal = result?;
 
         iam_xml_response(&create_user_response(
             created_principal.into(),
@@ -236,6 +268,8 @@ mod tests {
                     b"Action=CreateUser&Version=2010-05-08&UserName=alice&Path=%2Fengineering%2Fdev%2F",
                 ),
                 &store(),
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 

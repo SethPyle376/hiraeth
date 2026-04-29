@@ -14,7 +14,7 @@ pub trait Service {
         &self,
         request: ResolvedRequest,
         trace_context: &TraceContext,
-        trace_recorder: &(dyn TraceRecorder + Sync),
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, ApiError>;
     async fn resolve_authorization(
         &self,

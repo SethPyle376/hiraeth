@@ -25,7 +25,7 @@ pub struct AppRequestOutcome {
 
 pub async fn resolve_and_route(
     trace_context: &TraceContext,
-    trace_recorder: &(impl TraceRecorder + Sync),
+    trace_recorder: &(impl TraceRecorder),
     incoming_request: IncomingRequest,
     iam: &IamService<impl hiraeth_store::IamStore + Send + Sync + 'static>,
     router: &ServiceRouter,
@@ -144,7 +144,7 @@ pub async fn resolve_and_route(
 
 async fn record_runtime_span(
     trace_context: &TraceContext,
-    trace_recorder: &(impl TraceRecorder + Sync),
+    trace_recorder: &(impl TraceRecorder),
     timer: hiraeth_core::tracing::TraceSpanTimer,
     name: &'static str,
     status: &'static str,

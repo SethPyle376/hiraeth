@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
@@ -64,13 +66,31 @@ where
         request: ResolvedRequest,
         delete_request: DeleteUserRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("account_id".to_string(), account_id.clone()),
+            ("user_name".to_string(), delete_request.user_name.clone()),
+        ]);
 
-        store
+        let result = store
             .delete_user(account_id, &delete_request.user_name)
-            .await
-            .map(|_| iam_xml_response(&delete_user_response(request.request_id)))?
+            .await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "iam.user.delete",
+                "iam",
+                status,
+                attributes,
+            )
+            .await;
+        result.map(|_| iam_xml_response(&delete_user_response(request.request_id)))?
     }
 
     async fn resolve_authorization_typed(
@@ -175,6 +195,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=DeleteUser&Version=2010-05-08&UserName=alice"),
                 &store,
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 
@@ -217,6 +239,8 @@ mod tests {
             .handle(
                 resolved_request(b"Action=DeleteUser&Version=2010-05-08&UserName=missing"),
                 &store(),
+                &hiraeth_core::tracing::TraceContext::new("test-request-id"),
+                &hiraeth_core::tracing::NoopTraceRecorder,
             )
             .await;
 

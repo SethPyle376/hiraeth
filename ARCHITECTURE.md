@@ -69,6 +69,8 @@ pub trait TypedAwsAction<S>: Send + Sync {
         request: ResolvedRequest,
         payload: Self::Request,
         store: &S,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, Self::Error>;
 
     async fn resolve_authorization_typed(
@@ -104,6 +106,8 @@ impl<S: SqsStore> TypedAwsAction<S> for CreateQueueAction {
         request: ResolvedRequest,
         payload: CreateQueueRequest,
         store: &S,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
         // Implementation
     }

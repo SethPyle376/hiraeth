@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use hiraeth_core::{
     AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, ServiceResponse,
@@ -58,8 +60,32 @@ where
         request: ResolvedRequest,
         delete_request: DeleteMessageRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
-        handle_delete_message_typed(&request, store, delete_request).await
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), delete_request.queue_url.clone()),
+            (
+                "receipt_handle".to_string(),
+                delete_request.receipt_handle.clone(),
+            ),
+        ]);
+
+        let result = handle_delete_message_typed(&request, store, delete_request).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.message.delete",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(

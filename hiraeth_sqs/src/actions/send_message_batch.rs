@@ -203,8 +203,69 @@ where
         request: ResolvedRequest,
         request_body: SendMessageBatchRequest,
         store: &S,
+        trace_context: &hiraeth_core::tracing::TraceContext,
+        trace_recorder: &dyn hiraeth_core::tracing::TraceRecorder,
     ) -> Result<ServiceResponse, SqsError> {
-        handle_send_message_batch_typed(&request, store, request_body).await
+        let timer = trace_context.start_span();
+        let attributes = HashMap::from([
+            ("queue_url".to_string(), request_body.queue_url.clone()),
+            (
+                "entry_count".to_string(),
+                request_body.entries.len().to_string(),
+            ),
+            (
+                "total_body_bytes".to_string(),
+                request_body
+                    .entries
+                    .iter()
+                    .map(|entry| entry.message_body.len())
+                    .sum::<usize>()
+                    .to_string(),
+            ),
+            (
+                "entries_with_message_attributes".to_string(),
+                request_body
+                    .entries
+                    .iter()
+                    .filter(|entry| {
+                        entry
+                            .message_attributes
+                            .as_ref()
+                            .is_some_and(|attributes| !attributes.is_empty())
+                    })
+                    .count()
+                    .to_string(),
+            ),
+            (
+                "entries_with_system_attributes".to_string(),
+                request_body
+                    .entries
+                    .iter()
+                    .filter(|entry| {
+                        entry
+                            .message_system_attributes
+                            .as_ref()
+                            .is_some_and(|attributes| !attributes.is_empty())
+                    })
+                    .count()
+                    .to_string(),
+            ),
+        ]);
+
+        let result = handle_send_message_batch_typed(&request, store, request_body).await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        trace_context
+            .record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sqs.send_message_batch.persist",
+                "sqs",
+                status,
+                attributes,
+            )
+            .await;
+
+        result
     }
 
     async fn resolve_authorization_typed(
