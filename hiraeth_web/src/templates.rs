@@ -7,7 +7,10 @@ use crate::iam::{
     IamPrincipalInlinePolicyView, IamPrincipalSummary,
 };
 use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
-use crate::traces::{TraceDetailView, TraceGraphView, TraceSpanView, TraceSummaryView};
+use crate::traces::{
+    TraceDetailView, TraceFilterOptionView, TraceFiltersView, TraceGraphView, TraceSpanView,
+    TraceSummaryView,
+};
 
 #[derive(Template)]
 #[template(path = "home.html")]
@@ -26,6 +29,7 @@ pub(crate) struct ErrorTemplate<'a> {
 pub(crate) struct TraceListTemplate<'a> {
     pub(crate) page_header_html: &'a str,
     pub(crate) stats_html: &'a str,
+    pub(crate) filters: &'a TraceFiltersView,
     pub(crate) traces: &'a [TraceSummaryView],
     pub(crate) has_traces: bool,
 }

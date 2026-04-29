@@ -3,11 +3,15 @@ use std::collections::HashMap;
 use askama::Template;
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     response::{Html, Redirect},
     routing::{get, post},
 };
-use hiraeth_core::tracing::{RequestTraceSummary, StoredRequestTrace, StoredTraceSpan};
+use hiraeth_core::tracing::{
+    RequestTraceSummary, StoredRequestTrace, StoredTraceSpan, TraceRequestFilters,
+    TraceRequestStatusFilter,
+};
+use serde::Deserialize;
 
 use crate::{
     WebState,
@@ -22,6 +26,7 @@ pub(crate) struct TraceSummaryView {
     pub(crate) started_at: String,
     pub(crate) duration_ms: String,
     pub(crate) service: String,
+    pub(crate) action: String,
     pub(crate) region: String,
     pub(crate) account_id: String,
     pub(crate) principal: String,
@@ -31,6 +36,21 @@ pub(crate) struct TraceSummaryView {
     pub(crate) status_class: &'static str,
     pub(crate) error_message: String,
     pub(crate) has_error: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TraceFilterOptionView {
+    pub(crate) value: String,
+    pub(crate) label: String,
+    pub(crate) selected: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TraceFiltersView {
+    pub(crate) service_options: Vec<TraceFilterOptionView>,
+    pub(crate) action_options: Vec<TraceFilterOptionView>,
+    pub(crate) status_options: Vec<TraceFilterOptionView>,
+    pub(crate) has_active_filters: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -124,8 +144,25 @@ pub(crate) fn router() -> Router<WebState> {
         .route("/{request_id}", get(trace_detail))
 }
 
-async fn list_traces(State(state): State<WebState>) -> Result<Html<String>, WebError> {
-    let traces = state.trace_store.list_request_traces(100).await?;
+#[derive(Debug, Clone, Default, Deserialize)]
+struct TraceListQuery {
+    service: Option<String>,
+    action: Option<String>,
+    status: Option<String>,
+}
+
+async fn list_traces(
+    State(state): State<WebState>,
+    Query(query): Query<TraceListQuery>,
+) -> Result<Html<String>, WebError> {
+    let filters = trace_request_filters(&query);
+    let traces = state
+        .trace_store
+        .list_request_traces_filtered(100, &filters)
+        .await?;
+    let services = state.trace_store.list_trace_services().await?;
+    let actions = state.trace_store.list_trace_actions().await?;
+    let filters_view = trace_filters_view(&query, services, actions);
     let views = traces
         .into_iter()
         .map(trace_summary_view)
@@ -167,6 +204,7 @@ async fn list_traces(State(state): State<WebState>) -> Result<Html<String>, WebE
         TraceListTemplate {
             page_header_html: &page_header_html,
             stats_html: &stats_html,
+            filters: &filters_view,
             traces: &views,
             has_traces: !views.is_empty(),
         }
@@ -230,6 +268,7 @@ fn trace_summary_view(trace: RequestTraceSummary) -> TraceSummaryView {
         started_at: trace.started_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
         duration_ms: trace.duration_ms.to_string(),
         service: trace.service.unwrap_or_else(|| "-".to_string()),
+        action: trace.action.unwrap_or_else(|| "-".to_string()),
         region: trace.region.unwrap_or_else(|| "-".to_string()),
         account_id: trace.account_id.unwrap_or_else(|| "-".to_string()),
         principal: trace.principal.unwrap_or_else(|| "-".to_string()),
@@ -240,6 +279,80 @@ fn trace_summary_view(trace: RequestTraceSummary) -> TraceSummaryView {
         error_message: trace.error_message.clone().unwrap_or_default(),
         has_error: trace.error_message.is_some(),
     }
+}
+
+fn trace_request_filters(query: &TraceListQuery) -> TraceRequestFilters {
+    TraceRequestFilters {
+        service: non_empty_filter(query.service.as_deref()),
+        action: non_empty_filter(query.action.as_deref()),
+        status: match non_empty_filter(query.status.as_deref()).as_deref() {
+            Some("ok") => Some(TraceRequestStatusFilter::Ok),
+            Some("error") => Some(TraceRequestStatusFilter::Error),
+            _ => None,
+        },
+    }
+}
+
+fn trace_filters_view(
+    query: &TraceListQuery,
+    services: Vec<String>,
+    actions: Vec<String>,
+) -> TraceFiltersView {
+    let selected_service = non_empty_filter(query.service.as_deref()).unwrap_or_default();
+    let selected_action = non_empty_filter(query.action.as_deref()).unwrap_or_default();
+    let selected_status = non_empty_filter(query.status.as_deref()).unwrap_or_default();
+
+    TraceFiltersView {
+        service_options: trace_options("Any service", services, &selected_service),
+        action_options: trace_options("Any action", actions, &selected_action),
+        status_options: vec![
+            TraceFilterOptionView {
+                value: String::new(),
+                label: "Any status".to_string(),
+                selected: selected_status.is_empty(),
+            },
+            TraceFilterOptionView {
+                value: "ok".to_string(),
+                label: "OK".to_string(),
+                selected: selected_status == "ok",
+            },
+            TraceFilterOptionView {
+                value: "error".to_string(),
+                label: "Error".to_string(),
+                selected: selected_status == "error",
+            },
+        ],
+        has_active_filters: !selected_service.is_empty()
+            || !selected_action.is_empty()
+            || !selected_status.is_empty(),
+    }
+}
+
+fn trace_options(
+    empty_label: &str,
+    values: Vec<String>,
+    selected_value: &str,
+) -> Vec<TraceFilterOptionView> {
+    let mut options = vec![TraceFilterOptionView {
+        value: String::new(),
+        label: empty_label.to_string(),
+        selected: selected_value.is_empty(),
+    }];
+
+    options.extend(values.into_iter().map(|value| TraceFilterOptionView {
+        selected: value == selected_value,
+        label: value.clone(),
+        value,
+    }));
+
+    options
+}
+
+fn non_empty_filter(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn trace_detail_view(trace: StoredRequestTrace) -> TraceDetailView {

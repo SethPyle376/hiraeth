@@ -10,25 +10,54 @@
 
   <section class="card border border-base-300 bg-base-100">
     <div class="card-body">
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+      <div class="grid gap-4">
         <div>
-          <h2 class="card-title text-xl">Recent requests</h2>
-          <p class="text-sm text-base-content/60">Newest request traces are shown first.</p>
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 class="card-title text-xl">Recent requests</h2>
+              <p class="text-sm text-base-content/60">Newest request traces are shown first.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <div id="trace-request-count" class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded border border-base-content/60 px-3 text-xs font-bold" data-total-count="{{ traces.len() }}">{{ traces.len() }} shown</div>
+              <form method="post" action="/traces/clear" onsubmit="return hiraethConfirmSubmit(this, 'Clear all stored request traces?', 'Clearing')">
+                <button class="btn btn-sm btn-error whitespace-nowrap" type="submit">Clear traces</button>
+              </form>
+            </div>
+          </div>
         </div>
-        <div class="grid gap-2 sm:grid-cols-[minmax(18rem,24rem)_auto_auto] sm:items-center">
-          <label class="input input-bordered input-sm flex w-full items-center gap-2">
-            <span class="text-xs font-bold uppercase tracking-wider text-base-content/50">Search</span>
-            <input
-              class="min-w-0 grow font-mono"
-              type="search"
-              placeholder="request id"
-              autocomplete="off"
-              oninput="hiraethFilterTraceRequests(this)"
-            >
-          </label>
-          <div id="trace-request-count" class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded border border-base-content/60 px-3 text-xs font-bold" data-total-count="{{ traces.len() }}">{{ traces.len() }} shown</div>
-          <form class="contents" method="post" action="/traces/clear" onsubmit="return hiraethConfirmSubmit(this, 'Clear all stored request traces?', 'Clearing')">
-            <button class="btn btn-sm btn-error whitespace-nowrap" type="submit">Clear traces</button>
+        <div>
+          <form class="flex w-full flex-wrap items-center justify-between gap-2" method="get" action="/traces">
+            <label class="input input-bordered input-sm flex min-w-64 max-w-xl grow items-center gap-2 lg:max-w-2xl">
+              <span class="text-xs font-bold uppercase tracking-wider text-base-content/50">Search</span>
+              <input
+                class="min-w-0 grow font-mono"
+                type="search"
+                placeholder="request id"
+                autocomplete="off"
+                oninput="hiraethFilterTraceRequests(this)"
+              >
+            </label>
+            <div class="flex flex-wrap items-center gap-2 sm:ml-auto">
+              <select class="select select-bordered select-sm w-full sm:w-40" name="service" aria-label="Filter by service">
+                {% for option in filters.service_options %}
+                <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+              <select class="select select-bordered select-sm w-full sm:w-44" name="action" aria-label="Filter by action">
+                {% for option in filters.action_options %}
+                <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+              <select class="select select-bordered select-sm w-full sm:w-40" name="status" aria-label="Filter by status">
+                {% for option in filters.status_options %}
+                <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-sm btn-primary whitespace-nowrap" type="submit">Apply filters</button>
+              {% if filters.has_active_filters %}
+              <a class="btn btn-sm btn-outline whitespace-nowrap" href="/traces">Reset</a>
+              {% endif %}
+            </div>
           </form>
         </div>
       </div>
@@ -40,6 +69,7 @@
             <tr>
               <th>Request</th>
               <th>Service</th>
+              <th>Action</th>
               <th>Principal</th>
               <th>Status</th>
               <th class="text-right">Duration</th>
@@ -58,6 +88,7 @@
                 <div class="font-bold">{{ trace.service }}</div>
                 <div class="font-mono text-xs text-base-content/50">{{ trace.region }}</div>
               </td>
+              <td class="font-mono text-xs font-bold">{{ trace.action }}</td>
               <td>
                 <div class="font-bold">{{ trace.principal }}</div>
                 <div class="font-mono text-xs text-base-content/50">{{ trace.account_id }}</div>
@@ -80,7 +111,7 @@
       </div>
       <div id="trace-request-no-matches" class="mt-4 hidden rounded border border-dashed border-base-300 p-6 text-center">
         <h3 class="text-base font-bold">No matching traces</h3>
-        <p class="mt-1 text-sm text-base-content/60">Try a shorter request id search.</p>
+        <p class="mt-1 text-sm text-base-content/60">Try a shorter request id search or loosen the filters.</p>
       </div>
       {% else %}
       <div class="rounded border border-dashed border-base-300 p-8 text-center">

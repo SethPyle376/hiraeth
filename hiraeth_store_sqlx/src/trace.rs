@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use hiraeth_core::tracing::{
     CompletedRequestTrace, RequestTraceSummary, StoredRequestTrace, StoredTraceSpan,
-    TraceHttpRequest, TraceHttpResponse, TraceRecordError, TraceRecorder, TraceSpanRecord,
+    TraceHttpRequest, TraceHttpResponse, TraceRecordError, TraceRecorder, TraceRequestFilters,
+    TraceRequestStatusFilter, TraceSpanRecord,
 };
-use sqlx::Row;
+use sqlx::{QueryBuilder, Row, Sqlite};
 
 #[derive(Clone)]
 pub struct SqliteTraceStore {
@@ -22,13 +23,30 @@ impl SqliteTraceStore {
         &self,
         limit: i64,
     ) -> Result<Vec<RequestTraceSummary>, TraceRecordError> {
-        let rows = sqlx::query(
+        self.list_request_traces_filtered(limit, &TraceRequestFilters::default())
+            .await
+    }
+
+    pub async fn list_request_traces_filtered(
+        &self,
+        limit: i64,
+        filters: &TraceRequestFilters,
+    ) -> Result<Vec<RequestTraceSummary>, TraceRecordError> {
+        let mut query = QueryBuilder::<Sqlite>::new(
             r#"
             SELECT
                 request_id,
                 started_at,
                 duration_ms,
                 service,
+                (
+                    SELECT json_extract(span.attributes_json, '$.action_name')
+                    FROM hiraeth_trace_span span
+                    WHERE span.request_id = hiraeth_trace_request.request_id
+                      AND span.name = 'action.handle'
+                    ORDER BY span.started_at ASC, span.id ASC
+                    LIMIT 1
+                ) AS action,
                 region,
                 account_id,
                 principal,
@@ -37,14 +55,18 @@ impl SqliteTraceStore {
                 response_status_code,
                 error_message
             FROM hiraeth_trace_request
-            ORDER BY started_at DESC, request_id DESC
-            LIMIT ?
             "#,
-        )
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_trace_error)?;
+        );
+
+        append_request_trace_filters(&mut query, filters);
+        query.push(" ORDER BY started_at DESC, request_id DESC LIMIT ");
+        query.push_bind(limit);
+
+        let rows = query
+            .build()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_trace_error)?;
 
         rows.into_iter()
             .map(|row| {
@@ -53,6 +75,7 @@ impl SqliteTraceStore {
                     started_at: parse_datetime(row.get::<String, _>("started_at"))?,
                     duration_ms: row.get::<i64, _>("duration_ms") as u128,
                     service: row.get("service"),
+                    action: row.get("action"),
                     region: row.get("region"),
                     account_id: row.get("account_id"),
                     principal: row.get("principal"),
@@ -63,6 +86,40 @@ impl SqliteTraceStore {
                 })
             })
             .collect()
+    }
+
+    pub async fn list_trace_services(&self) -> Result<Vec<String>, TraceRecordError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT DISTINCT service
+            FROM hiraeth_trace_request
+            WHERE service IS NOT NULL AND service != ''
+            ORDER BY service
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_trace_error)?;
+
+        Ok(rows.into_iter().map(|row| row.get("service")).collect())
+    }
+
+    pub async fn list_trace_actions(&self) -> Result<Vec<String>, TraceRecordError> {
+        let rows = sqlx::query(
+            r#"
+            SELECT DISTINCT json_extract(attributes_json, '$.action_name') AS action
+            FROM hiraeth_trace_span
+            WHERE name = 'action.handle'
+              AND json_extract(attributes_json, '$.action_name') IS NOT NULL
+              AND json_extract(attributes_json, '$.action_name') != ''
+            ORDER BY action
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_trace_error)?;
+
+        Ok(rows.into_iter().map(|row| row.get("action")).collect())
     }
 
     pub async fn get_request_trace(
@@ -208,6 +265,50 @@ fn parse_json<T: serde::de::DeserializeOwned>(value: String) -> Result<T, TraceR
     serde_json::from_str(&value).map_err(|err| TraceRecordError::StorageFailure(err.to_string()))
 }
 
+fn append_request_trace_filters(
+    query: &mut QueryBuilder<'_, Sqlite>,
+    filters: &TraceRequestFilters,
+) {
+    let mut separator = " WHERE ";
+
+    if let Some(service) = filters.service.as_deref() {
+        query.push(separator);
+        query.push("service = ");
+        query.push_bind(service.to_string());
+        separator = " AND ";
+    }
+
+    match filters.status {
+        Some(TraceRequestStatusFilter::Ok) => {
+            query.push(separator);
+            query.push("response_status_code < 400");
+            separator = " AND ";
+        }
+        Some(TraceRequestStatusFilter::Error) => {
+            query.push(separator);
+            query.push("response_status_code >= 400");
+            separator = " AND ";
+        }
+        None => {}
+    }
+
+    if let Some(action) = filters.action.as_deref() {
+        query.push(separator);
+        query.push(
+            r#"
+            EXISTS (
+                SELECT 1
+                FROM hiraeth_trace_span span
+                WHERE span.request_id = hiraeth_trace_request.request_id
+                  AND span.name = 'action.handle'
+                  AND json_extract(span.attributes_json, '$.action_name') =
+            "#,
+        );
+        query.push_bind(action.to_string());
+        query.push(")");
+    }
+}
+
 fn map_trace_error(error: sqlx::Error) -> TraceRecordError {
     TraceRecordError::StorageFailure(error.to_string())
 }
@@ -324,7 +425,8 @@ mod tests {
 
     use chrono::Utc;
     use hiraeth_core::tracing::{
-        CompletedRequestTrace, TraceHttpRequest, TraceHttpResponse, TraceRecorder, TraceSpanRecord,
+        CompletedRequestTrace, TraceHttpRequest, TraceHttpResponse, TraceRecorder,
+        TraceRequestFilters, TraceRequestStatusFilter, TraceSpanRecord,
     };
     use sqlx::Row;
     use tempfile::TempDir;
@@ -344,6 +446,62 @@ mod tests {
 
         let store = SqliteTraceStore::new(&pool);
         (temp_dir, pool, store)
+    }
+
+    fn completed_trace(request_id: &str, service: &str, status_code: u16) -> CompletedRequestTrace {
+        CompletedRequestTrace {
+            request_id: request_id.to_string(),
+            started_at: Utc::now(),
+            completed_at: Utc::now(),
+            duration_ms: 12,
+            auth_ms: 3,
+            route_ms: Some(8),
+            service: Some(service.to_string()),
+            region: Some("us-east-1".to_string()),
+            account_id: Some("000000000000".to_string()),
+            principal: Some("test".to_string()),
+            access_key: Some("test".to_string()),
+            request: TraceHttpRequest {
+                method: "POST".to_string(),
+                host: "localhost:4566".to_string(),
+                path: "/".to_string(),
+                query: None,
+                headers: HashMap::new(),
+                body: Vec::new(),
+            },
+            response: TraceHttpResponse {
+                status_code,
+                headers: Vec::new(),
+                body: Vec::new(),
+            },
+            error_message: (status_code >= 400).then(|| "request failed".to_string()),
+        }
+    }
+
+    async fn record_action_span(store: &SqliteTraceStore, request_id: &str, action_name: &str) {
+        let mut attributes = HashMap::new();
+        attributes.insert("action_name".to_string(), action_name.to_string());
+        attributes.insert("action".to_string(), format!("test:{action_name}"));
+
+        store
+            .record_span(TraceSpanRecord {
+                request_id: request_id.to_string(),
+                span_id: format!("{request_id}-action"),
+                parent_span_id: None,
+                name: "action.handle".to_string(),
+                layer: "action".to_string(),
+                started_at: Utc::now(),
+                completed_at: Utc::now(),
+                duration_ms: 2,
+                status: if action_name == "SendMessage" {
+                    "ok".to_string()
+                } else {
+                    "error".to_string()
+                },
+                attributes,
+            })
+            .await
+            .expect("action span should be recorded");
     }
 
     #[tokio::test]
@@ -468,6 +626,101 @@ mod tests {
             spans[0].attributes.get("action").map(String::as_str),
             Some("sqs:SendMessage")
         );
+    }
+
+    #[tokio::test]
+    async fn list_request_traces_filters_by_service_action_and_status() {
+        let (_temp_dir, _pool, store) = test_store().await;
+
+        for trace in [
+            completed_trace("request-ok-sqs", "sqs", 200),
+            completed_trace("request-error-sqs", "sqs", 500),
+            completed_trace("request-ok-iam", "iam", 200),
+        ] {
+            store
+                .record_request_trace(trace)
+                .await
+                .expect("request trace should be recorded");
+        }
+        record_action_span(&store, "request-ok-sqs", "SendMessage").await;
+        record_action_span(&store, "request-error-sqs", "SendMessage").await;
+        record_action_span(&store, "request-ok-iam", "CreateUser").await;
+
+        let services = store
+            .list_trace_services()
+            .await
+            .expect("services should load");
+        assert_eq!(services, ["iam".to_string(), "sqs".to_string()]);
+
+        let actions = store
+            .list_trace_actions()
+            .await
+            .expect("actions should load");
+        assert_eq!(
+            actions,
+            ["CreateUser".to_string(), "SendMessage".to_string()]
+        );
+
+        let sqs_traces = store
+            .list_request_traces_filtered(
+                10,
+                &TraceRequestFilters {
+                    service: Some("sqs".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("service-filtered traces should load");
+        assert_eq!(sqs_traces.len(), 2);
+        assert!(
+            sqs_traces
+                .iter()
+                .all(|trace| trace.service.as_deref() == Some("sqs"))
+        );
+
+        let send_message_traces = store
+            .list_request_traces_filtered(
+                10,
+                &TraceRequestFilters {
+                    action: Some("SendMessage".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("action-filtered traces should load");
+        assert_eq!(send_message_traces.len(), 2);
+        assert!(
+            send_message_traces
+                .iter()
+                .all(|trace| trace.action.as_deref() == Some("SendMessage"))
+        );
+
+        let error_traces = store
+            .list_request_traces_filtered(
+                10,
+                &TraceRequestFilters {
+                    status: Some(TraceRequestStatusFilter::Error),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("status-filtered traces should load");
+        assert_eq!(error_traces.len(), 1);
+        assert_eq!(error_traces[0].request_id, "request-error-sqs");
+
+        let ok_send_message_traces = store
+            .list_request_traces_filtered(
+                10,
+                &TraceRequestFilters {
+                    service: Some("sqs".to_string()),
+                    action: Some("SendMessage".to_string()),
+                    status: Some(TraceRequestStatusFilter::Ok),
+                },
+            )
+            .await
+            .expect("combined-filtered traces should load");
+        assert_eq!(ok_send_message_traces.len(), 1);
+        assert_eq!(ok_send_message_traces[0].request_id, "request-ok-sqs");
     }
 
     #[tokio::test]

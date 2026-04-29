@@ -44,6 +44,7 @@ pub struct RequestTraceSummary {
     pub started_at: DateTime<Utc>,
     pub duration_ms: u128,
     pub service: Option<String>,
+    pub action: Option<String>,
     pub region: Option<String>,
     pub account_id: Option<String>,
     pub principal: Option<String>,
@@ -51,6 +52,19 @@ pub struct RequestTraceSummary {
     pub path: String,
     pub response_status_code: u16,
     pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TraceRequestFilters {
+    pub service: Option<String>,
+    pub action: Option<String>,
+    pub status: Option<TraceRequestStatusFilter>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceRequestStatusFilter {
+    Ok,
+    Error,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -20,6 +20,7 @@ environments, not as a production AWS replacement.
 - Partial IAM Query API support for users, access keys, inline user policies,
   managed policies, and policy attachments.
 - STS `GetCallerIdentity` support.
+- SQLite-backed request tracing with span flow visualization in the web UI.
 - Web admin UI on a separate port for inspecting local service state.
 - Docker and Docker Compose support.
 - SQLx offline query metadata for checked SQL builds.
@@ -29,6 +30,7 @@ environments, not as a production AWS replacement.
 - [Service docs](docs/README.md)
 - [IAM](docs/iam/README.md)
 - [SQS](docs/sqs/README.md)
+- [Tracing](docs/tracing/README.md)
 
 ## Quickstart
 
@@ -104,6 +106,11 @@ When running from source, prefer setting `HIRAETH_DATABASE_URL` to a path under
 The web UI is an admin/debug surface for local service state. Current
 service-specific UI coverage is documented under [docs/iam](docs/iam/README.md)
 and [docs/sqs](docs/sqs/README.md).
+
+The tracing dashboard records local AWS requests, spans through the runtime and
+service layers, and full request/response bodies. See the
+[tracing docs](docs/tracing/README.md) for usage notes and data exposure
+details.
 
 The web UI does not use SigV4 authentication. Keep `HIRAETH_WEB_HOST` bound to a
 trusted interface unless you intentionally want to expose local test state.
