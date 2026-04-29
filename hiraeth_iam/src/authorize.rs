@@ -9,7 +9,7 @@ use hiraeth_core::{
     },
     tracing::{TraceContext, TraceRecorder, TraceSpanTimer},
 };
-use hiraeth_router::{AuthorizationResult, Authorizer};
+use hiraeth_router::{AuthorizationOutcome, AuthorizationResult, Authorizer};
 use hiraeth_store::{IamStore, iam::PrincipalInlinePolicyStore};
 
 use crate::{AuthorizationMode, IamService};
@@ -25,8 +25,9 @@ where
         check: &AuthorizationCheck,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> AuthorizationResult {
+    ) -> AuthorizationOutcome {
         let authz_timer = trace_context.start_span();
+        let authz_trace_context = trace_context.child_context(&authz_timer);
         let resource_principal = policy_principal_from_request(request);
         let identity_policy_result = evaluate_principal_inline_policies(
             &self.store,
@@ -105,7 +106,7 @@ where
         )
         .await;
 
-        effective_result
+        AuthorizationOutcome::new(effective_result, authz_trace_context)
     }
 
     fn unauthorized_response(&self) -> ServiceResponse {
@@ -586,6 +587,7 @@ mod tests {
         authorizer
             .authorize(&request, &check, &trace_context, &NoopTraceRecorder)
             .await
+            .result
     }
 
     fn auth_check(

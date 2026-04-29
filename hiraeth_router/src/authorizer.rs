@@ -20,6 +20,27 @@ impl AuthorizationResult {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorizationOutcome {
+    pub result: AuthorizationResult,
+    pub trace_context: TraceContext,
+}
+
+impl AuthorizationOutcome {
+    pub fn new(result: AuthorizationResult, trace_context: TraceContext) -> Self {
+        Self {
+            result,
+            trace_context,
+        }
+    }
+}
+
+impl PartialEq<AuthorizationResult> for AuthorizationOutcome {
+    fn eq(&self, other: &AuthorizationResult) -> bool {
+        self.result == *other
+    }
+}
+
 #[async_trait]
 pub trait Authorizer {
     async fn authorize(
@@ -28,7 +49,7 @@ pub trait Authorizer {
         check: &AuthorizationCheck,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> AuthorizationResult;
+    ) -> AuthorizationOutcome;
 
     fn unauthorized_response(&self) -> ServiceResponse;
 }

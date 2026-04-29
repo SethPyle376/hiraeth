@@ -102,19 +102,30 @@ pub struct TraceSpanRecord {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceContext {
     pub request_id: String,
+    parent_span_id: Option<String>,
 }
 
 impl TraceContext {
     pub fn new(request_id: impl Into<String>) -> Self {
         Self {
             request_id: request_id.into(),
+            parent_span_id: None,
         }
     }
 
     pub fn start_span(&self) -> TraceSpanTimer {
         TraceSpanTimer {
+            span_id: new_span_id(&self.request_id),
+            parent_span_id: self.parent_span_id.clone(),
             started_at: Utc::now(),
             started_instant: Instant::now(),
+        }
+    }
+
+    pub fn child_context(&self, timer: &TraceSpanTimer) -> Self {
+        Self {
+            request_id: self.request_id.clone(),
+            parent_span_id: Some(timer.span_id.clone()),
         }
     }
 
@@ -133,12 +144,8 @@ impl TraceContext {
         recorder
             .record_span(TraceSpanRecord {
                 request_id: self.request_id.clone(),
-                span_id: format!(
-                    "{}-{}",
-                    self.request_id,
-                    Utc::now().timestamp_nanos_opt().unwrap_or_default()
-                ),
-                parent_span_id: None,
+                span_id: timer.span_id,
+                parent_span_id: timer.parent_span_id,
                 name: name.into(),
                 layer: layer.into(),
                 started_at: timer.started_at,
@@ -175,8 +182,18 @@ impl TraceContext {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+fn new_span_id(request_id: &str) -> String {
+    format!(
+        "{}-{}",
+        request_id,
+        Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    )
+}
+
+#[derive(Debug, Clone)]
 pub struct TraceSpanTimer {
+    span_id: String,
+    parent_span_id: Option<String>,
     started_at: DateTime<Utc>,
     started_instant: Instant,
 }

@@ -188,9 +188,10 @@ impl<S> AwsActionRegistry<S> {
         let account_id = request.auth_context.principal.account_id.clone();
         let principal = request.auth_context.principal.name.clone();
         let action_name = action.name();
+        let action_trace_context = trace_context.child_context(&timer);
 
         let response = action
-            .handle(request, store, trace_context, trace_recorder)
+            .handle(request, store, &action_trace_context, trace_recorder)
             .await;
         let status_code = response.status_code;
         let status = if status_code >= 400 { "error" } else { "ok" };
@@ -266,6 +267,50 @@ mod tests {
             _trace_context: &TraceContext,
             _trace_recorder: &dyn TraceRecorder,
         ) -> ServiceResponse {
+            ServiceResponse {
+                status_code: 200,
+                body: Vec::new(),
+                headers: Vec::new(),
+            }
+        }
+
+        async fn resolve_authorization(
+            &self,
+            _request: &ResolvedRequest,
+            _store: &(),
+        ) -> Result<AuthorizationCheck, ServiceResponse> {
+            unreachable!("test action registry does not execute auth checks")
+        }
+    }
+
+    struct ChildSpanAction;
+
+    #[async_trait]
+    impl AwsAction<()> for ChildSpanAction {
+        fn name(&self) -> &'static str {
+            "SendMessage"
+        }
+
+        async fn handle(
+            &self,
+            _request: ResolvedRequest,
+            _store: &(),
+            trace_context: &TraceContext,
+            trace_recorder: &dyn TraceRecorder,
+        ) -> ServiceResponse {
+            let timer = trace_context.start_span();
+            trace_context
+                .record_span(
+                    trace_recorder,
+                    timer,
+                    "sqs.send_message.persist",
+                    "sqs",
+                    "ok",
+                    HashMap::new(),
+                )
+                .await
+                .expect("child span should record");
+
             ServiceResponse {
                 status_code: 200,
                 body: Vec::new(),
@@ -391,6 +436,47 @@ mod tests {
         assert_eq!(
             span.attributes.get("status_code").map(String::as_str),
             Some("200")
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_passes_action_span_as_child_context() {
+        let mut registry = AwsActionRegistry::new();
+        registry.register(Box::new(ChildSpanAction));
+        let trace_recorder = RecordingTraceRecorder::default();
+        let trace_context = TraceContext::new("trace-request-id");
+
+        let response = registry
+            .handle(
+                "SendMessage",
+                resolved_request(),
+                &(),
+                &trace_context,
+                &trace_recorder,
+            )
+            .await
+            .expect("registered action should be handled");
+
+        assert_eq!(response.status_code, 200);
+
+        let spans = trace_recorder
+            .spans
+            .lock()
+            .expect("trace recorder mutex should not be poisoned");
+        assert_eq!(spans.len(), 2);
+
+        let child_span = spans
+            .iter()
+            .find(|span| span.name == "sqs.send_message.persist")
+            .expect("child action span should be recorded");
+        let action_span = spans
+            .iter()
+            .find(|span| span.name == "action.handle")
+            .expect("action handle span should be recorded");
+
+        assert_eq!(
+            child_span.parent_span_id.as_deref(),
+            Some(action_span.span_id.as_str())
         );
     }
 }
