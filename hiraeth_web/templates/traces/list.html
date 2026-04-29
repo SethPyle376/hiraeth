@@ -10,18 +10,33 @@
 
   <section class="card border border-base-300 bg-base-100">
     <div class="card-body">
-      <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
         <div>
           <h2 class="card-title text-xl">Recent requests</h2>
           <p class="text-sm text-base-content/60">Newest request traces are shown first.</p>
         </div>
-        <div class="badge badge-outline">{{ traces.len() }} shown</div>
+        <div class="grid gap-2 sm:grid-cols-[minmax(18rem,24rem)_auto_auto] sm:items-center">
+          <label class="input input-bordered input-sm flex w-full items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-base-content/50">Search</span>
+            <input
+              class="min-w-0 grow font-mono"
+              type="search"
+              placeholder="request id"
+              autocomplete="off"
+              oninput="hiraethFilterTraceRequests(this)"
+            >
+          </label>
+          <div id="trace-request-count" class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded border border-base-content/60 px-3 text-xs font-bold" data-total-count="{{ traces.len() }}">{{ traces.len() }} shown</div>
+          <form class="contents" method="post" action="/traces/clear" onsubmit="return hiraethConfirmSubmit(this, 'Clear all stored request traces?', 'Clearing')">
+            <button class="btn btn-sm btn-error whitespace-nowrap" type="submit">Clear traces</button>
+          </form>
+        </div>
       </div>
 
       {% if has_traces %}
-      <div class="overflow-x-auto rounded border border-base-300 bg-base-100">
+      <div class="max-h-[34rem] overflow-auto rounded border border-base-300 bg-base-100">
         <table class="table table-sm">
-          <thead>
+          <thead class="sticky top-0 z-10 bg-base-100">
             <tr>
               <th>Request</th>
               <th>Service</th>
@@ -34,7 +49,7 @@
           </thead>
           <tbody>
             {% for trace in traces %}
-            <tr class="hover:bg-base-200/70">
+            <tr class="hover:bg-base-200/70" data-trace-row data-trace-request-id="{{ trace.request_id }}">
               <td>
                 <div class="font-mono text-sm font-bold">{{ trace.method }} {{ trace.path }}</div>
                 <div class="text-xs text-base-content/50">request {{ trace.request_id }}</div>
@@ -62,6 +77,10 @@
             {% endfor %}
           </tbody>
         </table>
+      </div>
+      <div id="trace-request-no-matches" class="mt-4 hidden rounded border border-dashed border-base-300 p-6 text-center">
+        <h3 class="text-base font-bold">No matching traces</h3>
+        <p class="mt-1 text-sm text-base-content/60">Try a shorter request id search.</p>
       </div>
       {% else %}
       <div class="rounded border border-dashed border-base-300 p-8 text-center">

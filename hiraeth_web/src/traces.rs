@@ -2,8 +2,8 @@ use askama::Template;
 use axum::{
     Router,
     extract::{Path, State},
-    response::Html,
-    routing::get,
+    response::{Html, Redirect},
+    routing::{get, post},
 };
 use hiraeth_core::tracing::{RequestTraceSummary, StoredRequestTrace, StoredTraceSpan};
 
@@ -72,6 +72,7 @@ pub(crate) struct TraceSpanView {
 pub(crate) fn router() -> Router<WebState> {
     Router::new()
         .route("/", get(list_traces))
+        .route("/clear", post(clear_traces))
         .route("/{request_id}", get(trace_detail))
 }
 
@@ -83,7 +84,7 @@ async fn list_traces(State(state): State<WebState>) -> Result<Html<String>, WebE
         .collect::<Vec<_>>();
 
     let stats_html = StatBlockGrid {
-        grid_class: "grid-cols-1 sm:grid-cols-3",
+        grid_class: "grid-cols-1 sm:grid-cols-2",
         blocks: vec![
             StatBlock {
                 title: "Requests".to_string(),
@@ -100,12 +101,6 @@ async fn list_traces(State(state): State<WebState>) -> Result<Html<String>, WebE
                     .to_string(),
                 value_class: "text-error",
                 description: "responses with error status".to_string(),
-            },
-            StatBlock {
-                title: "Window".to_string(),
-                value: "100".to_string(),
-                value_class: "text-accent",
-                description: "most recent requests shown".to_string(),
             },
         ],
     }
@@ -129,6 +124,11 @@ async fn list_traces(State(state): State<WebState>) -> Result<Html<String>, WebE
         }
         .render()?,
     ))
+}
+
+async fn clear_traces(State(state): State<WebState>) -> Result<Redirect, WebError> {
+    state.trace_store.clear_traces().await?;
+    Ok(Redirect::to("/traces"))
 }
 
 async fn trace_detail(

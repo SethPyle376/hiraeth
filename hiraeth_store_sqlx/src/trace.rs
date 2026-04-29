@@ -180,6 +180,22 @@ impl SqliteTraceStore {
             })
             .collect()
     }
+
+    pub async fn clear_traces(&self) -> Result<(), TraceRecordError> {
+        let mut transaction = self.pool.begin().await.map_err(map_trace_error)?;
+
+        sqlx::query("DELETE FROM hiraeth_trace_span")
+            .execute(&mut *transaction)
+            .await
+            .map_err(map_trace_error)?;
+
+        sqlx::query("DELETE FROM hiraeth_trace_request")
+            .execute(&mut *transaction)
+            .await
+            .map_err(map_trace_error)?;
+
+        transaction.commit().await.map_err(map_trace_error)
+    }
 }
 
 fn parse_datetime(value: String) -> Result<DateTime<Utc>, TraceRecordError> {
@@ -451,6 +467,75 @@ mod tests {
         assert_eq!(
             spans[0].attributes.get("action").map(String::as_str),
             Some("sqs:SendMessage")
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_traces_removes_requests_and_spans() {
+        let (_temp_dir, _pool, store) = test_store().await;
+
+        store
+            .record_request_trace(CompletedRequestTrace {
+                request_id: "request-7".to_string(),
+                started_at: Utc::now(),
+                completed_at: Utc::now(),
+                duration_ms: 12,
+                auth_ms: 3,
+                route_ms: Some(8),
+                service: Some("sqs".to_string()),
+                region: Some("us-east-1".to_string()),
+                account_id: Some("000000000000".to_string()),
+                principal: Some("test".to_string()),
+                access_key: Some("test".to_string()),
+                request: TraceHttpRequest {
+                    method: "POST".to_string(),
+                    host: "localhost:4566".to_string(),
+                    path: "/".to_string(),
+                    query: None,
+                    headers: HashMap::new(),
+                    body: Vec::new(),
+                },
+                response: TraceHttpResponse {
+                    status_code: 200,
+                    headers: Vec::new(),
+                    body: Vec::new(),
+                },
+                error_message: None,
+            })
+            .await
+            .expect("trace should be recorded");
+
+        store
+            .record_span(TraceSpanRecord {
+                request_id: "request-7".to_string(),
+                span_id: "span-1".to_string(),
+                parent_span_id: None,
+                name: "action.handle".to_string(),
+                layer: "router".to_string(),
+                started_at: Utc::now(),
+                completed_at: Utc::now(),
+                duration_ms: 4,
+                status: "ok".to_string(),
+                attributes: HashMap::new(),
+            })
+            .await
+            .expect("span should be recorded");
+
+        store.clear_traces().await.expect("traces should clear");
+
+        assert!(
+            store
+                .list_request_traces(10)
+                .await
+                .expect("request traces should load")
+                .is_empty()
+        );
+        assert!(
+            store
+                .list_trace_spans("request-7")
+                .await
+                .expect("trace spans should load")
+                .is_empty()
         );
     }
 }

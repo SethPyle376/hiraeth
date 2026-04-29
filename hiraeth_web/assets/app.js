@@ -83,6 +83,57 @@ function hiraethToggleSecret(button) {
   button.setAttribute("aria-pressed", isVisible ? "false" : "true");
 }
 
+function hiraethFuzzyMatches(value, query) {
+  if (!query) {
+    return true;
+  }
+
+  let valueIndex = 0;
+  let queryIndex = 0;
+  const normalizedValue = value.toLowerCase();
+  const normalizedQuery = query.toLowerCase().trim();
+
+  while (
+    valueIndex < normalizedValue.length &&
+    queryIndex < normalizedQuery.length
+  ) {
+    if (normalizedValue[valueIndex] === normalizedQuery[queryIndex]) {
+      queryIndex += 1;
+    }
+    valueIndex += 1;
+  }
+
+  return queryIndex === normalizedQuery.length;
+}
+
+function hiraethFilterTraceRequests(input) {
+  const query = input.value || "";
+  const rows = Array.from(document.querySelectorAll("[data-trace-row]"));
+  let visibleCount = 0;
+
+  rows.forEach((row) => {
+    const requestId = row.dataset.traceRequestId || "";
+    const isVisible = hiraethFuzzyMatches(requestId, query);
+    row.classList.toggle("hidden", !isVisible);
+    if (isVisible) {
+      visibleCount += 1;
+    }
+  });
+
+  const count = document.getElementById("trace-request-count");
+  if (count) {
+    const totalCount = count.dataset.totalCount || rows.length.toString();
+    count.textContent = query.trim()
+      ? `${visibleCount} / ${totalCount} shown`
+      : `${totalCount} shown`;
+  }
+
+  const noMatches = document.getElementById("trace-request-no-matches");
+  if (noMatches) {
+    noMatches.classList.toggle("hidden", visibleCount !== 0 || rows.length === 0);
+  }
+}
+
 function hiraethCollapseStorageKey(detail) {
   const collapseKey = detail.dataset.collapseKey || detail.id;
   if (!collapseKey) {
