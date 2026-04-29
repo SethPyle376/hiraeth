@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AwsActionRegistry, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
+    ApiError, AwsActionRegistry, ResolvedRequest, ServiceResponse,
+    auth::AuthorizationCheck,
     get_query_request_action_name, parse_aws_query_params,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_router::Service;
 use hiraeth_store::IamStore;
@@ -37,13 +39,28 @@ where
         request.service == "sts"
     }
 
-    async fn handle_request(&self, request: ResolvedRequest) -> Result<ServiceResponse, ApiError> {
+    async fn handle_request(
+        &self,
+        request: ResolvedRequest,
+        trace_context: &TraceContext,
+        trace_recorder: &(dyn TraceRecorder + Sync),
+    ) -> Result<ServiceResponse, ApiError> {
         let action_name = get_query_request_action_name(&request)
             .map_err(|error| ApiError::BadRequest(error.to_string()))?
             .ok_or_else(|| ApiError::BadRequest("Missing Action parameter".to_string()))?;
 
-        let action = match self.actions.get(&action_name) {
-            Some(action) => action,
+        let response = match self
+            .actions
+            .handle(
+                &action_name,
+                request,
+                &self.store,
+                trace_context,
+                trace_recorder,
+            )
+            .await
+        {
+            Some(response) => response,
             None => {
                 return Ok(ServiceResponse::from(
                     error::StsError::UnsupportedOperation(action_name.to_string()),
@@ -51,7 +68,7 @@ where
             }
         };
 
-        Ok(action.handle(request, &self.store).await)
+        Ok(response)
     }
 
     async fn resolve_authorization(

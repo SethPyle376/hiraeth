@@ -198,7 +198,7 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         request_body: SendMessageBatchRequest,

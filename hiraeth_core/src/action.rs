@@ -3,7 +3,9 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     AwsQueryParseError, RequestBodyParseError, ResolvedRequest, ServiceResponse,
-    auth::AuthorizationCheck, parse_aws_query_params, parse_aws_query_request, parse_json_body,
+    auth::AuthorizationCheck,
+    parse_aws_query_params, parse_aws_query_request, parse_json_body,
+    tracing::{TraceContext, TraceRecorder},
 };
 
 #[async_trait]
@@ -32,7 +34,7 @@ pub trait TypedAwsAction<S>: Send + Sync {
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error;
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         payload: Self::Request,
@@ -85,7 +87,7 @@ where
             Err(error) => return self.action.parse_error(error).into(),
         };
 
-        match self.action.handle_typed(request, payload, store).await {
+        match self.action.handle(request, payload, store).await {
             Ok(response) => response,
             Err(error) => error.into(),
         }
@@ -152,6 +154,51 @@ impl<S> AwsActionRegistry<S> {
             .find(|action| action.name() == name)
             .map(|action| action.as_ref())
     }
+
+    pub async fn handle(
+        &self,
+        action_name: &str,
+        request: ResolvedRequest,
+        store: &S,
+        trace_context: &TraceContext,
+        trace_recorder: &(dyn TraceRecorder + Sync),
+    ) -> Option<ServiceResponse> {
+        let action = self.get(action_name)?;
+        let timer = trace_context.start_span();
+        let service = request.service.clone();
+        let region = request.region.clone();
+        let account_id = request.auth_context.principal.account_id.clone();
+        let principal = request.auth_context.principal.name.clone();
+        let action_name = action.name();
+
+        let response = action.handle(request, store).await;
+        let status_code = response.status_code;
+        let status = if status_code >= 400 { "error" } else { "ok" };
+
+        if let Err(error) = trace_context
+            .record_span(
+                trace_recorder,
+                timer,
+                "action.handle",
+                "action",
+                status,
+                std::collections::HashMap::from([
+                    ("service".to_string(), service.clone()),
+                    ("action".to_string(), format!("{service}:{action_name}")),
+                    ("action_name".to_string(), action_name.to_string()),
+                    ("region".to_string(), region),
+                    ("account_id".to_string(), account_id),
+                    ("principal".to_string(), principal),
+                    ("status_code".to_string(), status_code.to_string()),
+                ]),
+            )
+            .await
+        {
+            tracing::warn!(error = ?error, span = "action.handle", "failed to record trace span");
+        }
+
+        Some(response)
+    }
 }
 
 impl<S> Default for AwsActionRegistry<S> {
@@ -169,11 +216,20 @@ pub fn get_query_request_action_name(
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, sync::Mutex};
+
     use async_trait::async_trait;
+    use chrono::{TimeZone, Utc};
 
     use crate::{
-        AwsAction, AwsActionRegistry, ResolvedRequest, ServiceResponse, auth::AuthorizationCheck,
+        AuthContext, AwsAction, AwsActionRegistry, ResolvedRequest, ServiceResponse,
+        auth::AuthorizationCheck,
+        tracing::{
+            CompletedRequestTrace, TraceContext, TraceRecordError, TraceRecorder, TraceSpanRecord,
+        },
     };
+    use hiraeth_http::IncomingRequest;
+    use hiraeth_store::principal::Principal;
 
     struct TestAction(&'static str);
 
@@ -184,7 +240,11 @@ mod tests {
         }
 
         async fn handle(&self, _request: ResolvedRequest, _store: &()) -> ServiceResponse {
-            unreachable!("test action registry does not execute handlers")
+            ServiceResponse {
+                status_code: 200,
+                body: Vec::new(),
+                headers: Vec::new(),
+            }
         }
 
         async fn resolve_authorization(
@@ -193,6 +253,61 @@ mod tests {
             _store: &(),
         ) -> Result<AuthorizationCheck, ServiceResponse> {
             unreachable!("test action registry does not execute auth checks")
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingTraceRecorder {
+        spans: Mutex<Vec<TraceSpanRecord>>,
+    }
+
+    #[async_trait]
+    impl TraceRecorder for RecordingTraceRecorder {
+        async fn record_request_trace(
+            &self,
+            _trace: CompletedRequestTrace,
+        ) -> Result<(), TraceRecordError> {
+            unreachable!("action registry tests only record spans")
+        }
+
+        async fn record_span(&self, span: TraceSpanRecord) -> Result<(), TraceRecordError> {
+            self.spans
+                .lock()
+                .expect("trace recorder mutex should not be poisoned")
+                .push(span);
+            Ok(())
+        }
+    }
+
+    fn resolved_request() -> ResolvedRequest {
+        ResolvedRequest {
+            request_id: "test-request-id".to_string(),
+            request: IncomingRequest {
+                host: "sqs.us-east-1.amazonaws.com".to_string(),
+                method: "POST".to_string(),
+                path: "/".to_string(),
+                query: None,
+                headers: HashMap::new(),
+                body: Vec::new(),
+            },
+            service: "sqs".to_string(),
+            region: "us-east-1".to_string(),
+            auth_context: AuthContext {
+                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal: Principal {
+                    id: 1,
+                    account_id: "123456789012".to_string(),
+                    kind: "user".to_string(),
+                    name: "test-user".to_string(),
+                    path: "/".to_string(),
+                    user_id: "AIDATESTUSER000001".to_string(),
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 28, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
+                },
+            },
+            date: Utc.with_ymd_and_hms(2026, 4, 28, 12, 0, 0).unwrap(),
         }
     }
 
@@ -207,5 +322,49 @@ mod tests {
             Some("DeleteThing")
         );
         assert!(registry.get("MissingThing").is_none());
+    }
+
+    #[tokio::test]
+    async fn registry_records_action_handle_span() {
+        let mut registry = AwsActionRegistry::new();
+        registry.register(Box::new(TestAction("SendMessage")));
+        let trace_recorder = RecordingTraceRecorder::default();
+        let trace_context = TraceContext::new("trace-request-id");
+
+        let response = registry
+            .handle(
+                "SendMessage",
+                resolved_request(),
+                &(),
+                &trace_context,
+                &trace_recorder,
+            )
+            .await
+            .expect("registered action should be handled");
+
+        assert_eq!(response.status_code, 200);
+
+        let spans = trace_recorder
+            .spans
+            .lock()
+            .expect("trace recorder mutex should not be poisoned");
+        assert_eq!(spans.len(), 1);
+
+        let span = &spans[0];
+        assert_eq!(span.name, "action.handle");
+        assert_eq!(span.layer, "action");
+        assert_eq!(span.status, "ok");
+        assert_eq!(
+            span.attributes.get("action").map(String::as_str),
+            Some("sqs:SendMessage")
+        );
+        assert_eq!(
+            span.attributes.get("action_name").map(String::as_str),
+            Some("SendMessage")
+        );
+        assert_eq!(
+            span.attributes.get("status_code").map(String::as_str),
+            Some("200")
+        );
     }
 }

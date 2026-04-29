@@ -53,7 +53,7 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         delete_request: DeleteMessageRequest,

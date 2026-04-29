@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use hiraeth_auth::AuthenticatedRequest;
 use hiraeth_core::{
     ApiError, AuthContext, AuthMode, AwsActionRegistry, ResolvedRequest, ServiceResponse,
-    auth::AuthorizationCheck, get_query_request_action_name,
+    auth::AuthorizationCheck,
+    get_query_request_action_name,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_router::Service;
 use hiraeth_store::{IamStore, StoreError, iam::PrincipalStore};
@@ -108,12 +110,24 @@ where
     async fn handle_request(
         &self,
         request: ResolvedRequest,
+        trace_context: &TraceContext,
+        trace_recorder: &(dyn TraceRecorder + Sync),
     ) -> Result<ServiceResponse, hiraeth_core::ApiError> {
         let action_name = get_query_request_action_name(&request)
             .map_err(|error| ApiError::BadRequest(error.to_string()))?
             .ok_or_else(|| ApiError::BadRequest("Missing Action parameter".to_string()))?;
-        let action = match self.actions.get(&action_name) {
-            Some(action) => action,
+        let response = match self
+            .actions
+            .handle(
+                &action_name,
+                request,
+                &self.store,
+                trace_context,
+                trace_recorder,
+            )
+            .await
+        {
+            Some(response) => response,
             None => {
                 return Ok(ServiceResponse::from(
                     error::IamError::UnsupportedOperation(action_name),
@@ -121,7 +135,7 @@ where
             }
         };
 
-        Ok(action.handle(request, &self.store).await)
+        Ok(response)
     }
 
     async fn resolve_authorization(
@@ -149,7 +163,7 @@ mod tests {
 
     use chrono::{TimeZone, Utc};
     use hiraeth_auth::{AuthContext as AuthenticatedAuthContext, AuthenticatedRequest};
-    use hiraeth_core::{AuthContext, ResolvedRequest};
+    use hiraeth_core::{AuthContext, ResolvedRequest, tracing::NoopTraceRecorder};
     use hiraeth_http::IncomingRequest;
     use hiraeth_router::Service;
     use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
@@ -268,6 +282,16 @@ mod tests {
         }
     }
 
+    async fn handle_request(
+        service: &IamService<InMemoryIamStore>,
+        request: ResolvedRequest,
+    ) -> Result<hiraeth_core::ServiceResponse, hiraeth_core::ApiError> {
+        let trace_context = hiraeth_core::tracing::TraceContext::new(request.request_id.clone());
+        service
+            .handle_request(request, &trace_context, &NoopTraceRecorder)
+            .await
+    }
+
     #[tokio::test]
     async fn iam_service_claims_iam_requests() {
         let iam = IamService::new(
@@ -306,12 +330,12 @@ mod tests {
             InMemoryIamStore::new([access_key(1)], [principal(1)], [], [], []),
         );
 
-        let response = iam
-            .handle_request(iam_request(
-                b"Action=CreateUser&Version=2010-05-08&UserName=test-user",
-            ))
-            .await
-            .expect("create user response should be returned");
+        let response = handle_request(
+            &iam,
+            iam_request(b"Action=CreateUser&Version=2010-05-08&UserName=test-user"),
+        )
+        .await
+        .expect("create user response should be returned");
 
         let body = String::from_utf8(response.body).expect("response body should be utf-8");
 

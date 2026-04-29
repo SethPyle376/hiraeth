@@ -119,7 +119,9 @@ impl ServiceRouter {
         match auth_result {
             AuthorizationResult::Allow => {
                 let service_timer = trace_context.start_span();
-                let result = service.handle_request(request).await;
+                let result = service
+                    .handle_request(request, trace_context, trace_recorder)
+                    .await;
                 record_router_span(
                     trace_context,
                     trace_recorder,
@@ -227,6 +229,8 @@ mod tests {
         async fn handle_request(
             &self,
             _request: ResolvedRequest,
+            _trace_context: &TraceContext,
+            _trace_recorder: &(dyn TraceRecorder + Sync),
         ) -> Result<ServiceResponse, ApiError> {
             Ok(ServiceResponse {
                 status_code: 200,
@@ -258,6 +262,8 @@ mod tests {
         async fn handle_request(
             &self,
             _request: ResolvedRequest,
+            _trace_context: &TraceContext,
+            _trace_recorder: &(dyn TraceRecorder + Sync),
         ) -> Result<ServiceResponse, ApiError> {
             panic!("service should not execute when authorization resolution fails");
         }

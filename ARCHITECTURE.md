@@ -64,7 +64,7 @@ pub trait TypedAwsAction<S>: Send + Sync {
     fn payload_format(&self) -> AwsActionPayloadFormat;
     fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error;
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         payload: Self::Request,
@@ -99,7 +99,7 @@ impl<S: SqsStore> TypedAwsAction<S> for CreateQueueAction {
 
     fn name(&self) -> &'static str { "CreateQueue" }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         payload: CreateQueueRequest,

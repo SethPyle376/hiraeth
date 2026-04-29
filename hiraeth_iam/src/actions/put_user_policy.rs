@@ -47,7 +47,7 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         put_policy_request: Self::Request,

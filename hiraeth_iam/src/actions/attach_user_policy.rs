@@ -46,7 +46,7 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         attach_policy_request: AttachUserPolicyRequest,

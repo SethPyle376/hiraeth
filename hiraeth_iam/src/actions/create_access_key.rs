@@ -71,7 +71,7 @@ where
         parse_payload_error(error)
     }
 
-    async fn handle_typed(
+    async fn handle(
         &self,
         request: ResolvedRequest,
         create_access_key_request: CreateAccessKeyRequest,
