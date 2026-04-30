@@ -69,7 +69,7 @@ impl From<Principal> for IamUserXml {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct IamPolicyXml {
     pub path: Option<String>,

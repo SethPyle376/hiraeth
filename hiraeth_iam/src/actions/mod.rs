@@ -5,7 +5,9 @@ mod create_user;
 mod delete_policy;
 mod delete_user;
 mod detach_user_policy;
+mod get_policy;
 mod get_user;
+mod get_user_policy;
 mod put_user_policy;
 mod util;
 
@@ -16,7 +18,8 @@ use crate::actions::{
     attach_user_policy::AttachUserPolicyAction, create_access_key::CreateAccessKeyAction,
     create_policy::CreatePolicyAction, create_user::CreateUserAction,
     delete_policy::DeletePolicyAction, delete_user::DeleteUserAction,
-    detach_user_policy::DetachUserPolicyAction, get_user::GetUserAction,
+    detach_user_policy::DetachUserPolicyAction, get_policy::GetPolicyAction,
+    get_user::GetUserAction, get_user_policy::GetUserPolicyAction,
     put_user_policy::PutUserPolicyAction,
 };
 
@@ -34,5 +37,7 @@ where
     registry.register_typed(AttachUserPolicyAction);
     registry.register_typed(DetachUserPolicyAction);
     registry.register_typed(DeletePolicyAction);
+    registry.register_typed(GetUserPolicyAction);
+    registry.register_typed(GetPolicyAction);
     registry
 }

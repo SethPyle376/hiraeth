@@ -154,6 +154,16 @@ impl PrincipalInlinePolicyStore for SqliteIamStore {
             .delete_inline_policy(principal_id, policy_name)
             .await
     }
+
+    async fn get_principal_policy(
+        &self,
+        principle_id: i64,
+        policy_name: &str,
+    ) -> Result<Option<PrincipalInlinePolicy>, StoreError> {
+        self.principal_inline_policy_store
+            .get_principal_policy(principle_id, policy_name)
+            .await
+    }
 }
 
 #[async_trait]
