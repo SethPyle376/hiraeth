@@ -176,7 +176,7 @@ async fn get_user_for_missing_user_returns_no_such_entity() -> anyhow::Result<()
 #[tokio::test]
 async fn delete_user_removes_user_from_iam() -> anyhow::Result<()> {
     let server = iam_test_server().await?;
-    let user_name = unique_name("integration-test-delete-user");
+    let user_name = unique_name("integration-test");
 
     server
         .client

@@ -31,18 +31,18 @@ where
     S: IamStore + Send + Sync + 'static,
 {
     let mut registry = AwsActionRegistry::new();
-    registry.register_typed(CreateAccessKeyAction);
-    registry.register_typed(CreateUserAction);
-    registry.register_typed(GetUserAction);
-    registry.register_typed(DeleteUserAction);
-    registry.register_typed(CreatePolicyAction);
-    registry.register_typed(PutUserPolicyAction);
-    registry.register_typed(AttachUserPolicyAction);
-    registry.register_typed(DetachUserPolicyAction);
-    registry.register_typed(DeletePolicyAction);
-    registry.register_typed(GetUserPolicyAction);
-    registry.register_typed(GetPolicyAction);
-    registry.register_typed(GetPolicyVersionAction);
-    registry.register_typed(ListAccessKeysAction);
+    registry.register(CreateAccessKeyAction);
+    registry.register(CreateUserAction);
+    registry.register(GetUserAction);
+    registry.register(DeleteUserAction);
+    registry.register(CreatePolicyAction);
+    registry.register(PutUserPolicyAction);
+    registry.register(AttachUserPolicyAction);
+    registry.register(DetachUserPolicyAction);
+    registry.register(DeletePolicyAction);
+    registry.register(GetUserPolicyAction);
+    registry.register(GetPolicyAction);
+    registry.register(GetPolicyVersionAction);
+    registry.register(ListAccessKeysAction);
     registry
 }
