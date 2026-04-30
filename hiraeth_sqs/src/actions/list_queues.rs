@@ -128,7 +128,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<ListQueuesResponse, SqsError> {
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("region".to_string(), request.region.clone()),
             (
@@ -152,20 +151,11 @@ where
             ),
         ]);
 
-        let result = handle_list_queues_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sqs.queue.list",
-                "sqs",
-                status,
-                attributes,
-            )
-            .await;
-
-        result
+            .record_result_span(trace_recorder, "sqs.queue.list", "sqs", attributes, async {
+                handle_list_queues_typed(&request, store, request_body).await
+            })
+            .await
     }
 
     async fn resolve_authorization_typed(

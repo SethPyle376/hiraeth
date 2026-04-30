@@ -73,18 +73,11 @@ where
         let account_id = &request.auth_context.principal.account_id;
         let name = &request.auth_context.principal.name;
 
-        let timer = trace_context.start_span();
-        let result = store
-            .get_principal_by_identity(account_id, "user", name)
-            .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
+        let user = trace_context
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "sts.identity.lookup",
                 "sts",
-                status,
                 HashMap::from([
                     ("account_id".to_string(), account_id.clone()),
                     ("principal_name".to_string(), name.clone()),
@@ -93,9 +86,14 @@ where
                         request.auth_context.principal.kind.clone(),
                     ),
                 ]),
+                async {
+                    store
+                        .get_principal_by_identity(account_id, "user", name)
+                        .await
+                },
             )
-            .await;
-        let user = result?.ok_or_else(|| StsError::InternalError("User not found".to_string()))?;
+            .await?
+            .ok_or_else(|| StsError::InternalError("User not found".to_string()))?;
 
         let response = GetCallerIdentityResponse {
             xmlns: "https://sts.amazonaws.com/doc/2011-06-15/",

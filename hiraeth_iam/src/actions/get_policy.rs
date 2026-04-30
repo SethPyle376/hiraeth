@@ -64,7 +64,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<Self::Response, Self::Error> {
-        let timer = trace_context.start_span();
         let policy_arn = parse_policy_arn(&get_request.policy_arn)?;
         let attributes = HashMap::from([
             ("account_id".to_string(), policy_arn.account_id.clone()),
@@ -73,27 +72,23 @@ where
             ("policy_path".to_string(), policy_arn.policy_path.clone()),
         ]);
 
-        let result = store
-            .get_managed_policy(
-                &policy_arn.account_id,
-                &policy_arn.policy_name,
-                &policy_arn.policy_path,
-            )
+        let policy = trace_context
+            .record_result_span(trace_recorder, "iam.policy.get", "iam", attributes, async {
+                store
+                    .get_managed_policy(
+                        &policy_arn.account_id,
+                        &policy_arn.policy_name,
+                        &policy_arn.policy_path,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        IamError::NoSuchEntity(format!(
+                            "Policy {} does not exist",
+                            get_request.policy_arn
+                        ))
+                    })
+            })
             .await?;
-
-        let status = if result.is_some() { "ok" } else { "error" };
-        trace_context.record_span_or_warn(
-            trace_recorder,
-            timer,
-            "iam.policy.get",
-            "iam",
-            status,
-            attributes,
-        );
-
-        let policy = result.ok_or_else(|| {
-            IamError::NoSuchEntity(format!("Policy {} does not exist", get_request.policy_arn))
-        })?;
 
         Ok(GetPolicyResponse {
             xmlns: IAM_XMLNS,

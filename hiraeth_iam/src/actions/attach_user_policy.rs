@@ -99,7 +99,6 @@ where
                 ))
             })?;
 
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("account_id".to_string(), account_id.clone()),
             ("user_name".to_string(), user.name.clone()),
@@ -115,19 +114,15 @@ where
                 policy.policy_path.clone().unwrap_or_default(),
             ),
         ]);
-        let result = store.attach_policy_to_principal(policy.id, user.id).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.policy.attach_user",
                 "iam",
-                status,
                 attributes,
+                async { store.attach_policy_to_principal(policy.id, user.id).await },
             )
-            .await;
-        result
+            .await
             .map(|_| AttachUserPolicyResponse {
                 xmlns: IAM_XMLNS,
                 response_metadata: ResponseMetadata {

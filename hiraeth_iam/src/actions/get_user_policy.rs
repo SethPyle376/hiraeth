@@ -70,32 +70,7 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<Self::Response, Self::Error> {
-        let timer = trace_context.start_span();
         let account_id = &request.auth_context.principal.account_id;
-        let principal = store
-            .get_principal_by_identity(
-                account_id,
-                "user",
-                get_user_policy_request.user_name.as_str(),
-            )
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!(
-                    "User {} does not exist",
-                    get_user_policy_request.user_name
-                ))
-            })?;
-
-        let policy = store
-            .get_principal_policy(principal.id, &get_user_policy_request.policy_name)
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!(
-                    "Policy {} does not exist for user {}",
-                    get_user_policy_request.policy_name, get_user_policy_request.user_name
-                ))
-            })?;
-
         let attributes = HashMap::from([
             (
                 "user_name".to_string(),
@@ -107,16 +82,42 @@ where
             ),
         ]);
 
-        trace_context
-            .record_span_or_warn(
+        let (principal, policy) = trace_context
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.get_user_policy",
                 "iam",
-                "ok",
                 attributes,
+                async {
+                    let principal = store
+                        .get_principal_by_identity(
+                            account_id,
+                            "user",
+                            get_user_policy_request.user_name.as_str(),
+                        )
+                        .await?
+                        .ok_or_else(|| {
+                            IamError::NoSuchEntity(format!(
+                                "User {} does not exist",
+                                get_user_policy_request.user_name
+                            ))
+                        })?;
+
+                    let policy = store
+                        .get_principal_policy(principal.id, &get_user_policy_request.policy_name)
+                        .await?
+                        .ok_or_else(|| {
+                            IamError::NoSuchEntity(format!(
+                                "Policy {} does not exist for user {}",
+                                get_user_policy_request.policy_name,
+                                get_user_policy_request.user_name
+                            ))
+                        })?;
+
+                    Ok::<_, IamError>((principal, policy))
+                },
             )
-            .await;
+            .await?;
 
         Ok(GetUserPolicyResponse {
             xmlns: IAM_XMLNS,

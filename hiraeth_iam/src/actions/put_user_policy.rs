@@ -87,7 +87,6 @@ where
                 ))
             })?;
 
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("account_id".to_string(), account_id.clone()),
             ("user_name".to_string(), user.name.clone()),
@@ -101,25 +100,23 @@ where
                 put_policy_request.policy_document.len().to_string(),
             ),
         ]);
-        let result = store
-            .put_inline_policy(
-                user.id,
-                &put_policy_request.policy_name,
-                &put_policy_request.policy_document,
-            )
-            .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.user_policy.put",
                 "iam",
-                status,
                 attributes,
+                async {
+                    store
+                        .put_inline_policy(
+                            user.id,
+                            &put_policy_request.policy_name,
+                            &put_policy_request.policy_document,
+                        )
+                        .await
+                },
             )
-            .await;
-        result?;
+            .await?;
 
         let response = PutUserPolicyResponse {
             xmlns: util::IAM_XMLNS,

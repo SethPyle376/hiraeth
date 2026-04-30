@@ -303,7 +303,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<ReceiveMessageResponse, SqsError> {
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), receive_request.queue_url.clone()),
             (
@@ -341,20 +340,15 @@ where
             ),
         ]);
 
-        let result = handle_receive_message_typed(&request, store, receive_request).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "sqs.receive_message.poll",
                 "sqs",
-                status,
                 attributes,
+                async { handle_receive_message_typed(&request, store, receive_request).await },
             )
-            .await;
-
-        result
+            .await
     }
 
     async fn resolve_authorization_typed(

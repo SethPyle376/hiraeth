@@ -102,7 +102,6 @@ where
                     detach_policy_request.policy_arn
                 ))
             })?;
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("account_id".to_string(), account_id.clone()),
             ("user_name".to_string(), user.name.clone()),
@@ -118,19 +117,15 @@ where
                 policy.policy_path.clone().unwrap_or_default(),
             ),
         ]);
-        let result = store.detach_policy_from_principal(policy.id, user.id).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.policy.detach_user",
                 "iam",
-                status,
                 attributes,
+                async { store.detach_policy_from_principal(policy.id, user.id).await },
             )
-            .await;
-        result?;
+            .await?;
 
         let response = DetachUserPolicyResponse {
             xmlns: IAM_XMLNS,

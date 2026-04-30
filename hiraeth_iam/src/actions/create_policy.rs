@@ -87,7 +87,6 @@ where
     ) -> Result<CreatePolicyResponse, IamError> {
         let account_id = request.auth_context.principal.account_id.clone();
         let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("account_id".to_string(), account_id.clone()),
             (
@@ -100,27 +99,25 @@ where
                 create_policy_request.policy_document.len().to_string(),
             ),
         ]);
-        let result = store
-            .insert_managed_policy(NewManagedPolicy {
-                account_id,
-                policy_id: new_id(),
-                policy_name: create_policy_request.policy_name.clone(),
-                policy_path: Some(policy_path),
-                policy_document: create_policy_request.policy_document.clone(),
-            })
-            .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
+        let created_policy = trace_context
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.policy.create",
                 "iam",
-                status,
                 attributes,
+                async {
+                    store
+                        .insert_managed_policy(NewManagedPolicy {
+                            account_id,
+                            policy_id: new_id(),
+                            policy_name: create_policy_request.policy_name.clone(),
+                            policy_path: Some(policy_path),
+                            policy_document: create_policy_request.policy_document.clone(),
+                        })
+                        .await
+                },
             )
-            .await;
-        let created_policy = result?;
+            .await?;
 
         Ok(CreatePolicyResponse {
             xmlns: IAM_XMLNS,
