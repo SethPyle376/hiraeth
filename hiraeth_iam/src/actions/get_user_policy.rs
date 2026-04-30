@@ -132,7 +132,7 @@ where
         })
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         get_user_policy_request: Self::Request,

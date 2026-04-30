@@ -136,7 +136,7 @@ where
         ))
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         create_user_request: CreateUserRequest,

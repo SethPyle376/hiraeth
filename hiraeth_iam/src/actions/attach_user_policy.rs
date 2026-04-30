@@ -132,7 +132,7 @@ where
             .map_err(Into::into)
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         attach_policy_request: AttachUserPolicyRequest,

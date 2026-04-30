@@ -110,7 +110,7 @@ where
         Ok(response)
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         get_caller_identity_request: GetCallerIdentityRequest,

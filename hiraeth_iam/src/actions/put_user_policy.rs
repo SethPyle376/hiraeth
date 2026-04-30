@@ -126,7 +126,7 @@ where
         Ok(response)
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         put_policy_request: PutUserPolicyRequest,

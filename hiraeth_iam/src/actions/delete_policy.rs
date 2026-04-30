@@ -106,7 +106,7 @@ where
         })
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         delete_policy_request: DeletePolicyRequest,

@@ -140,7 +140,7 @@ where
         ))
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         create_access_key_request: CreateAccessKeyRequest,

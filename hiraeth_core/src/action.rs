@@ -68,7 +68,7 @@ pub trait TypedAwsAction<S>: Send + Sync {
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<Self::Response, Self::Error>;
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         payload: Self::Request,
@@ -159,7 +159,7 @@ where
             .map_err(|error| self.action.parse_error(error).into())?;
 
         self.action
-            .resolve_authorization_typed(request, payload, store)
+            .resolve_authorization(request, payload, store)
             .await
             .map_err(Into::into)
     }

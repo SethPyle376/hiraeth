@@ -124,7 +124,7 @@ where
         Ok(get_user_response(principal.into(), request.request_id))
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         get_user_request: GetUserRequest,
