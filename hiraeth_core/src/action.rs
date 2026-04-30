@@ -279,45 +279,11 @@ impl<S> AwsActionRegistry<S> {
         action_name: &str,
         request: &ResolvedRequest,
         store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
+        _trace_context: &TraceContext,
+        _trace_recorder: &dyn TraceRecorder,
     ) -> Option<Result<(), ServiceResponse>> {
         let action = self.get(action_name)?;
-        let timer = trace_context.start_span();
-        let service = request.service.clone();
-        let region = request.region.clone();
-        let account_id = request.auth_context.principal.account_id.clone();
-        let principal = request.auth_context.principal.name.clone();
-        let action_name = action.name();
-
         let result = action.validate(request, store).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        let mut attributes = std::collections::HashMap::from([
-            ("service".to_string(), service.clone()),
-            ("action".to_string(), format!("{service}:{action_name}")),
-            ("action_name".to_string(), action_name.to_string()),
-            ("region".to_string(), region),
-            ("account_id".to_string(), account_id),
-            ("principal".to_string(), principal),
-        ]);
-        if let Err(response) = &result {
-            attributes.insert("status_code".to_string(), response.status_code.to_string());
-        }
-
-        if let Err(error) = trace_context
-            .record_span(
-                trace_recorder,
-                timer,
-                "action.validate",
-                "action",
-                status,
-                attributes,
-            )
-            .await
-        {
-            tracing::warn!(error = ?error, span = "action.validate", "failed to record trace span");
-        }
-
         Some(result)
     }
 }

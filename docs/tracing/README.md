@@ -26,13 +26,9 @@ Each request can also include spans for the request-processing flow:
 request.handle
   authn.authenticate
     iam.resolve_identity
-      router.route
-        router.resolve_service
-          authz.resolve_check
-            authz.evaluate
-              service.handle
-                action.handle
-                  action-specific spans
+      authz.evaluate
+        action.handle
+          action-specific spans
 ```
 
 Spans include their own ids, parent ids, names, categories, timing, status, and

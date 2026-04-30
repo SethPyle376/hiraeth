@@ -5,11 +5,9 @@ pub use authorizer::{AuthorizationOutcome, AuthorizationResult, Authorizer};
 pub use hiraeth_core::ServiceResponse;
 use hiraeth_core::{
     ApiError, ResolvedRequest,
-    tracing::{NoopTraceRecorder, TraceContext, TraceRecorder, TraceSpanTimer},
+    tracing::{NoopTraceRecorder, TraceContext, TraceRecorder},
 };
 pub use service::Service;
-
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceRouterError {
@@ -55,210 +53,36 @@ impl ServiceRouter {
     where
         R: TraceRecorder,
     {
-        let route_timer = trace_context.start_span();
-        let route_trace_context = trace_context.child_context(&route_timer);
-
-        let resolve_service_timer = route_trace_context.start_span();
-        let resolve_service_trace_context =
-            route_trace_context.child_context(&resolve_service_timer);
         let service = match self.services.iter().find(|s| s.can_handle(&request)) {
-            Some(service) => {
-                record_router_span(
-                    &route_trace_context,
-                    trace_recorder,
-                    resolve_service_timer,
-                    "router.resolve_service",
-                    "ok",
-                    [
-                        ("service".to_string(), request.service.clone()),
-                        ("region".to_string(), request.region.clone()),
-                    ],
-                )
-                .await;
-                service
-            }
-            None => {
-                record_router_span(
-                    &route_trace_context,
-                    trace_recorder,
-                    resolve_service_timer,
-                    "router.resolve_service",
-                    "error",
-                    [
-                        ("service".to_string(), request.service.clone()),
-                        ("region".to_string(), request.region.clone()),
-                        (
-                            "error".to_string(),
-                            "No service found to handle the request".to_string(),
-                        ),
-                    ],
-                )
-                .await;
-                record_router_span(
-                    trace_context,
-                    trace_recorder,
-                    route_timer,
-                    "router.route",
-                    "error",
-                    route_span_attributes(&request, None, None),
-                )
-                .await;
-                return Err(ApiError::from(ServiceRouterError::NoServiceFound));
-            }
+            Some(service) => service,
+            None => return Err(ApiError::from(ServiceRouterError::NoServiceFound)),
         };
 
-        let resolve_check_timer = resolve_service_trace_context.start_span();
-        let resolve_check_trace_context =
-            resolve_service_trace_context.child_context(&resolve_check_timer);
         let check = match service.resolve_authorization(&request).await {
-            Ok(check) => {
-                record_router_span(
-                    &resolve_service_trace_context,
-                    trace_recorder,
-                    resolve_check_timer,
-                    "authz.resolve_check",
-                    "ok",
-                    [
-                        ("action".to_string(), check.action.clone()),
-                        ("resource".to_string(), check.resource.clone()),
-                    ],
-                )
-                .await;
-                check
-            }
-            Err(response) => {
-                record_router_span(
-                    &resolve_service_trace_context,
-                    trace_recorder,
-                    resolve_check_timer,
-                    "authz.resolve_check",
-                    "error",
-                    [
-                        ("status_code".to_string(), response.status_code.to_string()),
-                        (
-                            "response".to_string(),
-                            String::from_utf8_lossy(&response.body).to_string(),
-                        ),
-                    ],
-                )
-                .await;
-                record_router_span(
-                    trace_context,
-                    trace_recorder,
-                    route_timer,
-                    "router.route",
-                    "error",
-                    route_span_attributes(&request, Some(response.status_code), None),
-                )
-                .await;
-                return Ok(response);
-            }
+            Ok(check) => check,
+            Err(response) => return Ok(response),
         };
 
         let auth_result = self
             .authorizer
-            .authorize(
-                &request,
-                &check,
-                &resolve_check_trace_context,
-                trace_recorder,
-            )
+            .authorize(&request, &check, trace_context, trace_recorder)
             .await;
 
         match auth_result.result {
             AuthorizationResult::Allow => {
-                let validate_timer = auth_result.trace_context.start_span();
-                let validate_trace_context =
-                    auth_result.trace_context.child_context(&validate_timer);
                 let validation = service
-                    .validate_request(&request, &validate_trace_context, trace_recorder)
+                    .validate_request(&request, &auth_result.trace_context, trace_recorder)
                     .await;
                 if let Err(response) = validation {
-                    record_router_span(
-                        &auth_result.trace_context,
-                        trace_recorder,
-                        validate_timer,
-                        "service.validate",
-                        "error",
-                        [
-                            ("action".to_string(), check.action.clone()),
-                            ("status_code".to_string(), response.status_code.to_string()),
-                        ],
-                    )
-                    .await;
-                    record_router_span(
-                        trace_context,
-                        trace_recorder,
-                        route_timer,
-                        "router.route",
-                        "error",
-                        route_span_attributes(
-                            &request,
-                            Some(response.status_code),
-                            Some(&check.action),
-                        ),
-                    )
-                    .await;
                     return Ok(response);
                 }
 
-                record_router_span(
-                    &auth_result.trace_context,
-                    trace_recorder,
-                    validate_timer,
-                    "service.validate",
-                    "ok",
-                    [("action".to_string(), check.action.clone())],
-                )
-                .await;
-
-                let service_timer = validate_trace_context.start_span();
-                let service_trace_context = validate_trace_context.child_context(&service_timer);
-                let mut route_attributes =
-                    route_span_attributes(&request, None, Some(&check.action));
-                let result = service
-                    .handle_request(request, &service_trace_context, trace_recorder)
-                    .await;
-                let status_code = result.as_ref().ok().map(|response| response.status_code);
-                if let Some(status_code) = status_code {
-                    route_attributes.insert("status_code".to_string(), status_code.to_string());
-                }
-                let route_status = if result.is_ok() { "ok" } else { "error" };
-                record_router_span(
-                    &route_trace_context,
-                    trace_recorder,
-                    service_timer,
-                    "service.handle",
-                    route_status,
-                    [("action".to_string(), check.action.clone())],
-                )
-                .await;
-                record_router_span(
-                    trace_context,
-                    trace_recorder,
-                    route_timer,
-                    "router.route",
-                    route_status,
-                    route_attributes,
-                )
-                .await;
-                result
+                service
+                    .handle_request(request, &auth_result.trace_context, trace_recorder)
+                    .await
             }
             AuthorizationResult::Deny => {
                 let response = self.authorizer.unauthorized_response();
-                record_router_span(
-                    trace_context,
-                    trace_recorder,
-                    route_timer,
-                    "router.route",
-                    "deny",
-                    route_span_attributes(
-                        &request,
-                        Some(response.status_code),
-                        Some(&check.action),
-                    ),
-                )
-                .await;
                 Ok(response)
             }
         }
@@ -266,61 +90,6 @@ impl ServiceRouter {
 
     pub fn register_service(&mut self, service: Box<dyn Service + Send + Sync>) {
         self.services.push(service);
-    }
-}
-
-fn route_span_attributes(
-    request: &ResolvedRequest,
-    status_code: Option<u16>,
-    action: Option<&str>,
-) -> HashMap<String, String> {
-    let mut attributes = HashMap::from([
-        ("service".to_string(), request.service.clone()),
-        ("region".to_string(), request.region.clone()),
-        (
-            "account_id".to_string(),
-            request.auth_context.principal.account_id.clone(),
-        ),
-        (
-            "principal".to_string(),
-            request.auth_context.principal.name.clone(),
-        ),
-    ]);
-
-    if let Some(status_code) = status_code {
-        attributes.insert("status_code".to_string(), status_code.to_string());
-    }
-
-    if let Some(action) = action {
-        attributes.insert("action".to_string(), action.to_string());
-    }
-
-    attributes
-}
-
-async fn record_router_span<R, I>(
-    trace_context: &TraceContext,
-    trace_recorder: &R,
-    timer: TraceSpanTimer,
-    name: &'static str,
-    status: &'static str,
-    attributes: I,
-) where
-    R: TraceRecorder,
-    I: IntoIterator<Item = (String, String)>,
-{
-    if let Err(error) = trace_context
-        .record_span(
-            trace_recorder,
-            timer,
-            name,
-            "router",
-            status,
-            HashMap::from_iter(attributes),
-        )
-        .await
-    {
-        tracing::warn!(error = ?error, span = name, "failed to record trace span");
     }
 }
 
@@ -561,7 +330,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn route_traced_records_router_spans_as_sequential_chain() {
+    async fn route_traced_uses_authz_context_for_service_execution() {
         let mut router = ServiceRouter::new(Box::new(TestAuthorizer {
             result: AuthorizationResult::Allow,
         }));
@@ -580,32 +349,13 @@ mod tests {
             .spans
             .lock()
             .expect("trace recorder mutex should not be poisoned");
-        let route_span = spans
+        assert_eq!(spans.len(), 1);
+
+        let authz_span = spans
             .iter()
-            .find(|span| span.name == "router.route")
-            .expect("route span should be recorded");
+            .find(|span| span.name == "authz.evaluate")
+            .expect("authz span should be recorded");
 
-        assert!(route_span.parent_span_id.is_none());
-
-        for (child_name, parent_name) in [
-            ("router.resolve_service", "router.route"),
-            ("authz.resolve_check", "router.resolve_service"),
-            ("authz.evaluate", "authz.resolve_check"),
-            ("service.validate", "authz.evaluate"),
-            ("service.handle", "service.validate"),
-        ] {
-            let child_span = spans
-                .iter()
-                .find(|span| span.name == child_name)
-                .unwrap_or_else(|| panic!("{child_name} span should be recorded"));
-            let parent_span = spans
-                .iter()
-                .find(|span| span.name == parent_name)
-                .unwrap_or_else(|| panic!("{parent_name} span should be recorded"));
-            assert_eq!(
-                child_span.parent_span_id.as_deref(),
-                Some(parent_span.span_id.as_str())
-            );
-        }
+        assert!(authz_span.parent_span_id.is_none());
     }
 }
