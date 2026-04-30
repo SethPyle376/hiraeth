@@ -279,7 +279,7 @@ mod tests {
                 policy: super::IamPolicyXml {
                     path: Some("/".to_string()),
                     policy_name: Some("orders-readonly".to_string()),
-                    default_version_id: None,
+                    default_version_id: Some("v1".to_string()),
                     policy_id: Some("AIDAEXAMPLE".to_string()),
                     arn: Some("arn:aws:iam::123456789012:policy/orders-readonly".to_string()),
                     attachments_count: None,
@@ -297,6 +297,7 @@ mod tests {
         ));
         assert!(xml.contains("<CreatePolicyResult>"));
         assert!(xml.contains("<PolicyName>orders-readonly</PolicyName>"));
+        assert!(xml.contains("<DefaultVersionId>v1</DefaultVersionId>"));
         assert!(
             xml.contains("<ResponseMetadata><RequestId>request-id</RequestId></ResponseMetadata>")
         );

@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::error::IamError;
 
 pub(super) const IAM_XMLNS: &str = "https://iam.amazonaws.com/doc/2010-05-08/";
+pub(super) const DEFAULT_POLICY_VERSION_ID: &str = "v1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PolicyArn {
@@ -88,7 +89,7 @@ impl From<ManagedPolicy> for IamPolicyXml {
         IamPolicyXml {
             path: Some(policy_path.clone()),
             policy_name: Some(policy.policy_name.clone()),
-            default_version_id: None,
+            default_version_id: Some(DEFAULT_POLICY_VERSION_ID.to_string()),
             policy_id: Some(policy.policy_id.clone()),
             arn: Some(arn_util::policy_arn(
                 &policy.account_id,
