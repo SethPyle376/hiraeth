@@ -1503,6 +1503,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hiraeth_sns"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hiraeth_core",
+ "hiraeth_router",
+ "hiraeth_store",
+ "serde",
+]
+
+[[package]]
 name = "hiraeth_sqs"
 version = "0.1.0"
 dependencies = [

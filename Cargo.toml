@@ -12,4 +12,4 @@ members = [
     "hiraeth_core",
     "hiraeth_web",
     "hiraeth_integration_tests"
-, "hiraeth_iam", "hiraeth_sts"]
+, "hiraeth_iam", "hiraeth_sts", "hiraeth_sns"]
