@@ -3,92 +3,113 @@
 {% block title %}Hiraeth{% endblock %}
 
 {% block content %}
-<section class="mx-auto max-w-[94rem] py-8 lg:py-12">
-  <div class="grid items-end gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
-    <div>
-      <p class="mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-primary">Administration</p>
+<section class="mx-auto max-w-[94rem]">
+  <div class="grid items-end gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
+    <div class="pt-4 lg:pt-8">
+      <div class="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
+        <span class="relative flex h-2 w-2">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
+        </span>
+        Administration
+      </div>
       <h1 class="text-balance max-w-4xl text-5xl font-black tracking-tight text-base-content md:text-6xl">
         Review service state from one place.
       </h1>
-      <p class="mt-5 max-w-2xl text-base leading-7 text-base-content/70">
+      <p class="mt-5 max-w-2xl text-base leading-relaxed text-base-content/70">
         Use this interface to review queues, identities, and related service data while working
         locally or in development. It is designed for day-to-day administration, verification,
         and a focused set of direct actions.
       </p>
-      <div class="alert mt-5 max-w-3xl border border-warning/50 bg-warning/15 py-3 text-sm text-base-content">
-        <span class="badge badge-warning font-bold text-warning-content">Restricted access</span>
-        <span>
-          This interface is intended for trusted internal use. Restrict access to known networks or hosts.
-        </span>
+      <div class="alert mt-6 max-w-3xl border border-warning/30 bg-warning/10 py-3 text-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5 shrink-0 text-warning"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+        <span>This interface is intended for trusted internal use. Restrict access to known networks or hosts.</span>
       </div>
-      <div class="mt-6 flex flex-wrap gap-3">
+      <div class="mt-7 flex flex-wrap gap-3">
         <a class="btn btn-primary" href="/sqs">Open SQS dashboard</a>
         <a class="btn btn-outline" href="/iam">Open IAM dashboard</a>
         <a class="btn btn-outline" href="/sns">Open SNS dashboard</a>
       </div>
     </div>
 
-    <div class="grid gap-3 sm:grid-cols-2">
-      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/sqs">
+    <div class="grid gap-4 sm:grid-cols-2">
+      <a class="group card border border-base-300 bg-base-100 transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5" href="/sqs">
         <div class="card-body">
           <div class="flex items-center justify-between">
             <span class="badge badge-primary badge-outline">Available</span>
-            <span class="text-2xl font-black text-primary">SQS</span>
+            <div class="rounded-lg bg-primary/10 p-2 text-primary transition group-hover:bg-primary group-hover:text-primary-content">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"><path fill-rule="evenodd" d="M3 6a3 3 0 013-3h2.25a3 3 0 013 3v2.25a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm9.75 0a3 3 0 013-3H18a3 3 0 013 3v2.25a3 3 0 01-3 3h-2.25a3 3 0 01-3-3V6zM3 15.75a3 3 0 013-3h2.25a3 3 0 013 3V18a3 3 0 01-3 3H6a3 3 0 01-3-3v-2.25zm9.75 0a3 3 0 013-3H18a3 3 0 013 3V18a3 3 0 01-3 3h-2.25a3 3 0 01-3-3v-2.25z" clip-rule="evenodd"/></svg>
+            </div>
           </div>
           <h2 class="card-title mt-3">SQS queues</h2>
-          <p class="text-base-content/70">Review queues, message counts, attributes, tags, and recent message content.</p>
+          <p class="text-sm text-base-content/60">Review queues, message counts, attributes, tags, and recent message content.</p>
         </div>
       </a>
-      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/iam">
+      <a class="group card border border-base-300 bg-base-100 transition-all duration-200 hover:-translate-y-1 hover:border-secondary/40 hover:shadow-lg hover:shadow-secondary/5" href="/sns">
         <div class="card-body">
           <div class="flex items-center justify-between">
-            <span class="badge badge-primary badge-outline">Available</span>
-            <span class="text-2xl font-black text-primary">IAM</span>
+            <span class="badge badge-secondary badge-outline">Available</span>
+            <div class="rounded-lg bg-secondary/10 p-2 text-secondary transition group-hover:bg-secondary group-hover:text-secondary-content">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"><path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .379.214.725.553.894l4 2a.75.75 0 00.694-1.332l-3.747-1.874V6z" clip-rule="evenodd"/></svg>
+            </div>
+          </div>
+          <h2 class="card-title mt-3">SNS topics</h2>
+          <p class="text-sm text-base-content/60">Review topics, subscriptions, publish messages, and manage delivery endpoints.</p>
+        </div>
+      </a>
+      <a class="group card border border-base-300 bg-base-100 transition-all duration-200 hover:-translate-y-1 hover:border-accent/40 hover:shadow-lg hover:shadow-accent/5" href="/iam">
+        <div class="card-body">
+          <div class="flex items-center justify-between">
+            <span class="badge badge-accent badge-outline">Available</span>
+            <div class="rounded-lg bg-accent/10 p-2 text-accent transition group-hover:bg-accent group-hover:text-accent-content">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"><path fill-rule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clip-rule="evenodd"/></svg>
+            </div>
           </div>
           <h2 class="card-title mt-3">IAM data</h2>
-          <p class="text-base-content/70">Review principals, access keys, and inline identity policies.</p>
+          <p class="text-sm text-base-content/60">Review principals, access keys, and inline identity policies.</p>
         </div>
       </a>
-      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/traces">
+      <a class="group card border border-base-300 bg-base-100 transition-all duration-200 hover:-translate-y-1 hover:border-info/40 hover:shadow-lg hover:shadow-info/5" href="/traces">
         <div class="card-body">
           <div class="flex items-center justify-between">
-            <span class="badge badge-primary badge-outline">Available</span>
-            <span class="text-2xl font-black text-primary">Trace</span>
+            <span class="badge badge-info badge-outline">Available</span>
+            <div class="rounded-lg bg-info/10 p-2 text-info transition group-hover:bg-info group-hover:text-info-content">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6"><path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 6a.75.75 0 00-1.5 0v6c0 .379.214.725.553.894l4 2a.75.75 0 00.694-1.332l-3.747-1.874V6z" clip-rule="evenodd"/></svg>
+            </div>
           </div>
           <h2 class="card-title mt-3">Request traces</h2>
-          <p class="text-base-content/70">Review recent requests, payloads, responses, and recorded processing spans.</p>
-        </div>
-      </a>
-      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/sns">
-        <div class="card-body">
-          <div class="flex items-center justify-between">
-            <span class="badge badge-primary badge-outline">Available</span>
-            <span class="text-2xl font-black text-primary">SNS</span>
-          </div>
-          <h2 class="card-title mt-3">SNS data</h2>
-          <p class="text-base-content/70">Review topics, subscriptions, and delivery endpoints.</p>
+          <p class="text-sm text-base-content/60">Review recent requests, payloads, responses, and recorded processing spans.</p>
         </div>
       </a>
     </div>
   </div>
 
-  <div class="mt-8 grid gap-3 lg:grid-cols-3">
-    <div class="card border border-base-300 bg-base-100/80">
+  <div class="mt-10 grid gap-4 lg:grid-cols-3">
+    <div class="card border border-base-300 bg-base-100">
       <div class="card-body">
-        <h2 class="card-title">Separate interface</h2>
-        <p class="text-base-content/70">This interface runs on its own port with a dedicated set of administrative routes.</p>
+        <div class="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path fill-rule="evenodd" d="M14.615 1.595a.75.75 0 01.359.852L12.982 9.75h7.268a.75.75 0 01.548 1.262l-10.5 11.25a.75.75 0 01-1.272-.71l1.992-7.302H3.75a.75.75 0 01-.548-1.262l10.5-11.25a.75.75 0 01.913-.143z" clip-rule="evenodd"/></svg>
+        </div>
+        <h3 class="card-title text-base">Separate interface</h3>
+        <p class="text-sm text-base-content/60">Runs on its own port with a dedicated set of administrative routes, isolated from AWS API traffic.</p>
       </div>
     </div>
-    <div class="card border border-base-300 bg-base-100/80">
+    <div class="card border border-base-300 bg-base-100">
       <div class="card-body">
-        <h2 class="card-title">Shared state</h2>
-        <p class="text-base-content/70">Views reflect the same service state used by the AWS-compatible endpoints.</p>
+        <div class="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path fill-rule="evenodd" d="M19.902 4.098a3.75 3.75 0 00-5.304 0l-4.5 4.5a3.75 3.75 0 001.035 6.037.75.75 0 01-.646 1.353 5.25 5.25 0 01-1.18-8.57l4.5-4.5a5.25 5.25 0 017.424 7.424l-1.757 1.757a.75.75 0 11-1.06-1.06l1.757-1.757a3.75 3.75 0 000-5.304zm-7.389 4.267a.75.75 0 011-.353 5.25 5.25 0 011.18 8.57l-4.5 4.5a5.25 5.25 0 11-7.424-7.424l1.757-1.757a.75.75 0 111.06 1.06l-1.757 1.757a3.75 3.75 0 105.304 5.304l4.5-4.5a3.75 3.75 0 00-1.035-6.037.75.75 0 01-.354-1z" clip-rule="evenodd"/></svg>
+        </div>
+        <h3 class="card-title text-base">Shared state</h3>
+        <p class="text-sm text-base-content/60">Views reflect the same service state used by the AWS-compatible endpoints. No sync needed.</p>
       </div>
     </div>
-    <div class="card border border-base-300 bg-base-100/80">
+    <div class="card border border-base-300 bg-base-100">
       <div class="card-body">
-        <h2 class="card-title">Focused workflow</h2>
-        <p class="text-base-content/70">The current release emphasizes clear visibility with a small set of direct administrative actions.</p>
+        <div class="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path fill-rule="evenodd" d="M2.25 13.5a8.25 8.25 0 018.25-8.25.75.75 0 010 1.5 6.75 6.75 0 00-6.75 6.75.75.75 0 01-1.5 0zm9.75-5.25a.75.75 0 010 1.5 3.75 3.75 0 00-3.75 3.75.75.75 0 01-1.5 0 5.25 5.25 0 015.25-5.25zm4.5 3.75a.75.75 0 011.5 0 8.25 8.25 0 01-8.25 8.25.75.75 0 010-1.5 6.75 6.75 0 006.75-6.75zm-3 0a.75.75 0 011.5 0 5.25 5.25 0 01-5.25 5.25.75.75 0 010-1.5 3.75 3.75 0 003.75-3.75z" clip-rule="evenodd"/></svg>
+        </div>
+        <h3 class="card-title text-base">Focused workflow</h3>
+        <p class="text-sm text-base-content/60">Clear visibility with a small set of direct administrative actions. No clutter.</p>
       </div>
     </div>
   </div>

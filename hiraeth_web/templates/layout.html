@@ -10,27 +10,51 @@
     <script defer src="/assets/vendor/htmx.min.js"></script>
     <script defer src="/assets/app.js"></script>
   </head>
-  <body class="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-accent/10 text-base-content">
-    <div class="navbar sticky top-0 z-10 min-h-14 border-b border-base-300 bg-base-100/90 px-4 backdrop-blur sm:px-6">
+  <body class="min-h-screen bg-base-200 text-base-content">
+    <div class="navbar sticky top-0 z-50 min-h-14 border-b border-base-300 bg-base-100/95 px-4 backdrop-blur sm:px-6">
       <div class="flex-1">
-        <a class="text-xl font-black tracking-tight" href="/">Hiraeth</a>
-        <span class="ml-3 hidden rounded border border-primary/30 px-2 py-1 text-xs font-semibold uppercase tracking-widest text-primary sm:inline-flex">Admin</span>
+        <a class="flex items-center gap-2 text-xl font-black tracking-tight transition hover:opacity-80" href="/">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-7 w-7 text-primary">
+            <path fill-rule="evenodd" d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.177 7.547 7.547 0 01-1.705-1.715.75.75 0 00-1.152-.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248zM15.75 14.25a3.75 3.75 0 11-7.313-1.172c.628.465 1.35.81 2.133 1a5.99 5.99 0 011.925-3.545 3.75 3.75 0 013.255 3.717z" clip-rule="evenodd" />
+          </svg>
+          Hiraeth
+        </a>
+        <span class="ml-3 hidden rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold uppercase tracking-widest text-primary sm:inline-flex">Admin</span>
       </div>
-      <div class="flex-none gap-2">
-        <a class="btn btn-ghost btn-sm" href="/sqs">SQS</a>
-        <a class="btn btn-ghost btn-sm" href="/sns">SNS</a>
-        <a class="btn btn-ghost btn-sm" href="/iam">IAM</a>
-        <a class="btn btn-ghost btn-sm" href="/traces">Traces</a>
-        <a class="btn btn-ghost btn-sm btn-disabled">S3</a>
+      <div class="flex-none gap-1">
+        <a class="btn btn-ghost btn-sm gap-1.5" href="/sqs">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path d="M3.5 2A1.5 1.5 0 002 3.5v1A1.5 1.5 0 003.5 6h1A1.5 1.5 0 006 4.5v-1A1.5 1.5 0 004.5 2h-1zM3.5 9A1.5 1.5 0 002 10.5v1A1.5 1.5 0 003.5 13h1A1.5 1.5 0 006 11.5v-1A1.5 1.5 0 004.5 9h-1zM3.5 16A1.5 1.5 0 002 17.5v1A1.5 1.5 0 003.5 20h1A1.5 1.5 0 006 18.5v-1A1.5 1.5 0 004.5 16h-1zM9.5 2A1.5 1.5 0 008 3.5v1A1.5 1.5 0 009.5 6h1A1.5 1.5 0 0012 4.5v-1A1.5 1.5 0 0010.5 2h-1zM9.5 9A1.5 1.5 0 008 10.5v1A1.5 1.5 0 009.5 13h1A1.5 1.5 0 0012 11.5v-1A1.5 1.5 0 0010.5 9h-1zM9.5 16A1.5 1.5 0 008 17.5v1A1.5 1.5 0 009.5 20h1A1.5 1.5 0 0012 18.5v-1A1.5 1.5 0 0010.5 16h-1zM15.5 2A1.5 1.5 0 0014 3.5v1A1.5 1.5 0 0015.5 6h1A1.5 1.5 0 0018 4.5v-1A1.5 1.5 0 0016.5 2h-1zM15.5 9A1.5 1.5 0 0014 10.5v1A1.5 1.5 0 0015.5 13h1A1.5 1.5 0 0018 11.5v-1A1.5 1.5 0 0016.5 9h-1zM15.5 16A1.5 1.5 0 0014 17.5v1A1.5 1.5 0 0015.5 20h1A1.5 1.5 0 0018 18.5v-1A1.5 1.5 0 0016.5 16h-1z"/></svg>
+          SQS
+        </a>
+        <a class="btn btn-ghost btn-sm gap-1.5" href="/sns">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"/></svg>
+          SNS
+        </a>
+        <a class="btn btn-ghost btn-sm gap-1.5" href="/iam">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd"/></svg>
+          IAM
+        </a>
+        <a class="btn btn-ghost btn-sm gap-1.5" href="/traces">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path fill-rule="evenodd" d="M4.5 2A2.5 2.5 0 002 4.5v11A2.5 2.5 0 004.5 18h11a2.5 2.5 0 002.5-2.5v-11A2.5 2.5 0 0015.5 2h-11zm4.5 4a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L9 10.586V6z" clip-rule="evenodd"/></svg>
+          Traces
+        </a>
+        <span class="btn btn-ghost btn-sm btn-disabled gap-1.5 opacity-40">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path d="M4.75 3A1.75 1.75 0 003 4.75v2a1.75 1.75 0 001.75 1.75h.5A1.75 1.75 0 007 6.75v-2A1.75 1.75 0 005.25 3h-.5zM4.75 10A1.75 1.75 0 003 11.75v2A1.75 1.75 0 004.75 15.5h.5A1.75 1.75 0 007 13.75v-2A1.75 1.75 0 005.25 10h-.5zM10.75 3A1.75 1.75 0 009 4.75v2a1.75 1.75 0 001.75 1.75h.5A1.75 1.75 0 0013 6.75v-2A1.75 1.75 0 0011.25 3h-.5zM10.75 10A1.75 1.75 0 009 11.75v2a1.75 1.75 0 001.75 1.75h.5A1.75 1.75 0 0013 13.75v-2A1.75 1.75 0 0011.25 10h-.5zM16.75 3A1.75 1.75 0 0015 4.75v2a1.75 1.75 0 001.75 1.75h.5A1.75 1.75 0 0019 6.75v-2A1.75 1.75 0 0017.25 3h-.5zM16.75 10A1.75 1.75 0 0015 11.75v2a1.75 1.75 0 001.75 1.75h.5A1.75 1.75 0 0019 13.75v-2A1.75 1.75 0 0017.25 10h-.5z"/></svg>
+          S3
+        </span>
       </div>
     </div>
-    <main class="px-4 py-6 sm:px-6 lg:px-8">
+    <main class="px-4 py-8 sm:px-6 lg:px-8">
       <noscript>
         <div class="alert alert-warning mx-auto mb-6 max-w-[94rem]">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
           <span>JavaScript is disabled. Basic forms still work, but live fragments will reload as full pages.</span>
         </div>
       </noscript>
       {% block content %}{% endblock %}
     </main>
+    <footer class="border-t border-base-300 bg-base-100 px-4 py-4 text-center text-xs text-base-content/40 sm:px-6">
+      <span>Hiraeth — Local AWS-compatible service emulator</span>
+    </footer>
   </body>
 </html>

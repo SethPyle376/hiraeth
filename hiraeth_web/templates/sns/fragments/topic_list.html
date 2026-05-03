@@ -1,27 +1,29 @@
 {% if has_topics %}
-<div class="overflow-x-auto rounded border border-base-300 bg-base-100">
+<div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100 shadow-sm">
   <table class="table table-sm">
     <thead>
-      <tr>
-        <th>Name</th>
-        <th>Scope</th>
-        <th class="text-right">Subscriptions</th>
-        <th></th>
+      <tr class="border-b border-base-300 bg-base-200/50 text-xs font-semibold uppercase tracking-wider">
+        <th class="py-3">Name</th>
+        <th class="py-3">Scope</th>
+        <th class="py-3 text-right">Subscriptions</th>
+        <th class="py-3"></th>
       </tr>
     </thead>
     <tbody>
       {% for topic in topics %}
-      <tr class="hover:bg-base-200/70">
-        <td>
-          <div class="font-bold">{{ topic.name }}</div>
+      <tr class="hover:bg-base-200/60 transition-colors">
+        <td class="py-3">
+          <div class="font-semibold">{{ topic.name }}</div>
           <div class="text-xs text-base-content/50">id {{ topic.id }}</div>
         </td>
-        <td>
+        <td class="py-3">
           <div class="font-mono text-sm">{{ topic.region }}</div>
           <div class="font-mono text-xs text-base-content/50">{{ topic.account_id }}</div>
         </td>
-        <td class="text-right">{{ topic.subscription_count }}</td>
-        <td class="text-right">
+        <td class="py-3 text-right">
+          <span class="badge badge-outline">{{ topic.subscription_count }}</span>
+        </td>
+        <td class="py-3 text-right">
           <a class="btn btn-sm btn-primary" href="/sns/topics/{{ topic.id }}">Open</a>
         </td>
       </tr>

@@ -1,16 +1,16 @@
 {% extends "layout.html" %}
 
-{% block title %}{{ topic.name }} | Hiraeth SNS{% endblock %}
+{% block title %}{{ topic.name }} | SNS | Hiraeth{% endblock %}
 
 {% block content %}
 <section class="mx-auto max-w-[110rem]">
   <div class="mb-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
     <div class="min-w-0">
-      <p class="text-xs font-semibold uppercase tracking-[0.35em] text-primary">SNS Topic</p>
+      <p class="text-xs font-semibold uppercase tracking-[0.3em] text-primary">SNS Topic</p>
       <h1 class="mt-2 break-words text-4xl font-black tracking-tight md:text-5xl">{{ topic.name }}</h1>
       <p class="mt-3 flex flex-wrap items-center gap-2 text-sm text-base-content/70">
         <span class="font-mono">{{ topic.account_id }}</span>
-        <span class="text-base-content/40">/</span>
+        <span class="text-base-content/30">/</span>
         <span class="font-mono">{{ topic.region }}</span>
       </p>
       <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -23,42 +23,42 @@
   </div>
 
   {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-5 flex items-center justify-between gap-3 py-3 text-sm">
+  <div class="alert {{ feedback_class }} mb-6 flex items-center justify-between gap-3 py-3 text-sm">
     <span>{{ feedback_message }}</span>
     <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind'])">&times;</button>
   </div>
   {% endif %}
 
   <div class="mb-6 grid gap-3 md:grid-cols-3">
-    <div class="card border border-base-300 bg-base-100">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Subscriptions</div>
-        <div class="text-3xl font-black text-primary">{{ summary.subscription_count }}</div>
-        <div class="text-sm text-base-content/50">active endpoints</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Subscriptions</div>
+        <div class="mt-1 text-3xl font-black text-primary">{{ summary.subscription_count }}</div>
+        <div class="text-xs text-base-content/50">active endpoints</div>
       </div>
     </div>
-    <div class="card border border-base-300 bg-base-100">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Display name</div>
-        <div class="text-lg font-black text-secondary">{% if !topic.display_name.is_empty() %}{{ topic.display_name }}{% else %}—{% endif %}</div>
-        <div class="text-sm text-base-content/50">friendly name</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Display name</div>
+        <div class="mt-1 text-lg font-black text-secondary">{% if !topic.display_name.is_empty() %}{{ topic.display_name }}{% else %}—{% endif %}</div>
+        <div class="text-xs text-base-content/50">friendly name</div>
       </div>
     </div>
-    <div class="card border border-base-300 bg-base-100">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Created</div>
-        <div class="text-lg font-black text-accent">{{ topic.created_at }}</div>
-        <div class="text-sm text-base-content/50">topic creation time</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Created</div>
+        <div class="mt-1 text-lg font-black text-accent">{{ topic.created_at }}</div>
+        <div class="text-xs text-base-content/50">topic creation time</div>
       </div>
     </div>
   </div>
 
   <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_27rem]">
-    <section class="card border border-base-300 bg-base-100">
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
       <div class="card-body">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <h2 class="card-title text-xl">Subscriptions</h2>
+            <h2 class="card-title text-lg">Subscriptions</h2>
             <p class="text-sm text-base-content/60">Endpoints subscribed to this topic.</p>
           </div>
           <span class="badge badge-outline">{{ subscription_count }}</span>
@@ -69,12 +69,12 @@
       </div>
     </section>
 
-    <aside class="space-y-3">
-      <details class="collapse collapse-arrow border border-primary/30 bg-base-100"
+    <aside class="space-y-4">
+      <details class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="topic-{{ topic_id }}-publish"
                {% if has_publish_error %}data-collapse-priority="server" open{% endif %}>
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Publish message</h2>
@@ -83,7 +83,7 @@
             <span class="badge badge-primary badge-outline">Action</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_publish_error %}
           <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
             <span>{{ publish_error }}</span>
@@ -92,11 +92,11 @@
           {% endif %}
           <form class="grid gap-3 pt-1" method="post" action="/sns/topics/{{ topic_id }}/publish" onsubmit="return hiraethDisableSubmit(this, 'Publishing...')">
             <label class="form-control">
-              <div class="label py-1"><span class="label-text">Subject</span></div>
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Subject</span></div>
               <input class="input input-bordered" name="subject" value="{{ publish_subject }}" placeholder="Optional subject">
             </label>
             <label class="form-control">
-              <div class="label py-1"><span class="label-text">Message</span></div>
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Message</span></div>
               <textarea class="textarea textarea-bordered font-mono text-sm" name="message" placeholder="Message body" required>{{ publish_message }}</textarea>
             </label>
             <button class="btn btn-primary" type="submit">Publish</button>
@@ -104,11 +104,11 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-primary/30 bg-base-100"
+      <details class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="topic-{{ topic_id }}-subscribe"
                {% if has_subscription_error %}data-collapse-priority="server" open{% endif %}>
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Subscribe</h2>
@@ -117,7 +117,7 @@
             <span class="badge badge-primary badge-outline">Action</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_subscription_error %}
           <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
             <span>{{ subscription_error }}</span>
@@ -126,11 +126,11 @@
           {% endif %}
           <form class="grid gap-3 pt-1" method="post" action="/sns/topics/{{ topic_id }}/subscriptions" onsubmit="return hiraethDisableSubmit(this, 'Subscribing...')">
             <label class="form-control">
-              <div class="label py-1"><span class="label-text">Protocol</span></div>
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Protocol</span></div>
               <input class="input input-bordered" name="protocol" value="{{ subscription_protocol }}" placeholder="sqs" required>
             </label>
             <label class="form-control">
-              <div class="label py-1"><span class="label-text">Endpoint</span></div>
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Endpoint</span></div>
               <input class="input input-bordered font-mono" name="endpoint" value="{{ subscription_endpoint }}" placeholder="arn:aws:sqs:us-east-1:000000000000:queue-name" required>
             </label>
             <button class="btn btn-primary" type="submit">Subscribe</button>
@@ -138,10 +138,10 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="topic-{{ topic_id }}-metadata">
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Topic metadata</h2>
@@ -149,26 +149,26 @@
             </div>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           <div class="space-y-3 text-sm">
             <div>
-              <div class="text-base-content/50">ARN</div>
+              <div class="text-xs font-semibold uppercase tracking-wider text-base-content/40">ARN</div>
               <div class="mt-1 flex flex-wrap items-center gap-2">
                 <div class="break-all font-mono">{{ topic_arn }}</div>
                 <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ topic_arn }}" onclick="hiraethCopyText(this)">Copy</button>
               </div>
             </div>
           </div>
-          <div class="mt-3">
+          <div class="mt-4">
             {{ metadata_list_html|safe }}
           </div>
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="topic-{{ topic_id }}-policy">
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Policy</h2>
@@ -176,8 +176,8 @@
             </div>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
-          <pre class="overflow-auto rounded bg-base-200 p-3 text-xs"><code class="font-mono">{{ topic.policy }}</code></pre>
+        <div class="collapse-content px-5 pb-5">
+          <pre class="overflow-auto rounded bg-base-200 p-4 text-xs"><code class="font-mono">{{ topic.policy }}</code></pre>
         </div>
       </details>
     </aside>

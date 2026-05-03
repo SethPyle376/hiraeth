@@ -1,24 +1,24 @@
 {% if has_subscriptions %}
-<div class="overflow-x-auto rounded border border-base-300 bg-base-100">
+<div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100 shadow-sm">
   <table class="table table-sm">
     <thead>
-      <tr>
-        <th>Protocol</th>
-        <th>Endpoint</th>
-        <th>Created</th>
-        <th></th>
+      <tr class="border-b border-base-300 bg-base-200/50 text-xs font-semibold uppercase tracking-wider">
+        <th class="py-3">Protocol</th>
+        <th class="py-3">Endpoint</th>
+        <th class="py-3">Created</th>
+        <th class="py-3"></th>
       </tr>
     </thead>
     <tbody>
       {% for sub in subscriptions %}
-      <tr class="hover:bg-base-200/70">
-        <td><span class="badge badge-outline">{{ sub.protocol }}</span></td>
-        <td>
+      <tr class="hover:bg-base-200/60 transition-colors">
+        <td class="py-3"><span class="badge badge-outline">{{ sub.protocol }}</span></td>
+        <td class="py-3">
           <div class="break-all font-mono text-xs">{{ sub.endpoint }}</div>
           <div class="text-xs text-base-content/50">{{ sub.subscription_arn }}</div>
         </td>
-        <td class="text-xs text-base-content/60">{{ sub.created_at }}</td>
-        <td class="text-right">
+        <td class="py-3 text-xs text-base-content/60">{{ sub.created_at }}</td>
+        <td class="py-3 text-right">
           <form method="post" action="/sns/topics/{{ topic_id }}/subscriptions/{{ sub.id }}/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete this subscription?', 'Deleting...')">
             <button class="btn btn-xs btn-error" type="submit">Delete</button>
           </form>
@@ -29,7 +29,7 @@
   </table>
 </div>
 {% else %}
-<div class="alert border border-base-300 bg-base-100 py-3 text-sm">
-  <span>No subscriptions for this topic.</span>
+<div class="rounded-lg border border-dashed border-base-300 bg-base-200/30 p-8 text-center">
+  <p class="text-sm text-base-content/60">No subscriptions for this topic.</p>
 </div>
 {% endif %}

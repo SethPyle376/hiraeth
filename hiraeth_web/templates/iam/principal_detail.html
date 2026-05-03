@@ -22,9 +22,9 @@
   </div>
 
   {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-5">
+  <div class="alert {{ feedback_class }} mb-6 flex items-center justify-between gap-3 py-3 text-sm">
     <span>{{ feedback_message }}</span>
-    <button class="btn btn-ghost btn-xs ml-auto" type="button" onclick="this.closest('.alert').remove()" aria-label="Dismiss">×</button>
+    <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind'])">&times;</button>
   </div>
   {% endif %}
 
@@ -32,7 +32,7 @@
 
   <div class="grid gap-5 md:grid-cols-[minmax(0,1fr)_23rem]">
     <div class="space-y-5">
-      <section class="card border border-base-300 bg-base-100">
+      <section class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -42,33 +42,36 @@
             <div class="badge badge-outline">{{ principal.inline_policy_count }} total</div>
           </div>
 
-          <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35"
+          <details class="collapse collapse-arrow rounded-lg border border-primary/20 bg-base-200/35"
                    data-collapse-persist
                    data-collapse-key="principal-{{ principal.id }}-set-inline-policy"
-                   {% if policy_panel_open %}open{% endif %}>
+                   {% if policy_panel_open %}data-collapse-priority="server" open{% endif %}>
             <summary class="collapse-title min-h-0 px-4 py-3">
               <div class="flex items-center justify-between gap-3 pr-6">
                 <div>
                   <h3 class="font-black">Set inline policy</h3>
                   <p class="text-xs text-base-content/60">Create or replace a policy document by name.</p>
                 </div>
-                <span class="badge badge-outline">Action</span>
+                <span class="badge badge-primary badge-outline">Action</span>
               </div>
             </summary>
             <div class="collapse-content px-4 pb-4">
               {% if has_policy_error %}
-              <div class="alert alert-error mb-3 py-2 text-sm">{{ policy_error }}</div>
+              <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+                <span>{{ policy_error }}</span>
+                <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['policy_error', 'policy_name', 'policy_document'])">&times;</button>
+              </div>
               {% endif %}
-              <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/inline-policies" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
-                <label class="block">
-                  <span class="mb-1 block text-sm text-base-content/70">Policy name</span>
-                  <input class="input input-bordered w-full font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin" required>
+              <form class="grid gap-3 pt-1" method="post" action="/iam/principals/{{ principal.id }}/inline-policies" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
+                <label class="form-control">
+                  <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Policy name</span></div>
+                  <input class="input input-bordered font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin" required>
                 </label>
-                <label class="block">
-                  <span class="mb-1 block text-sm text-base-content/70">Policy document</span>
-                  <textarea class="textarea textarea-bordered min-h-48 w-full font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
+                <label class="form-control">
+                  <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Policy document</span></div>
+                  <textarea class="textarea textarea-bordered min-h-48 font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
                 </label>
-                <button class="btn btn-primary w-full" type="submit">Save inline policy</button>
+                <button class="btn btn-primary" type="submit">Save inline policy</button>
               </form>
             </div>
           </details>
@@ -76,7 +79,7 @@
           {% if has_inline_policies %}
           <div class="space-y-2">
             {% for policy in inline_policies %}
-            <details class="collapse collapse-arrow rounded border border-base-300 bg-base-200/35"
+            <details class="collapse collapse-arrow rounded-lg border border-base-300 bg-base-200/35"
                      data-collapse-persist
                      data-collapse-key="principal-{{ principal.id }}-inline-policy-{{ policy.policy_name }}"
                      {% if loop.first %}open{% endif %}>
@@ -89,8 +92,8 @@
                 </div>
               </summary>
               <div class="collapse-content border-t border-base-300 px-4 pb-4 pt-4">
-                <pre class="overflow-x-auto rounded bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
-                <form class="mt-3 text-right" method="post" action="/iam/principals/{{ principal.id }}/inline-policies/delete" onsubmit="return confirm('Delete inline policy {{ policy.policy_name }}?')">
+                <pre class="overflow-x-auto rounded-lg bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
+                <form class="mt-3 text-right" method="post" action="/iam/principals/{{ principal.id }}/inline-policies/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete inline policy {{ policy.policy_name }}?', 'Deleting...')">
                   <input type="hidden" name="policy_name" value="{{ policy.policy_name }}">
                   <button class="btn btn-error btn-sm" type="submit">Delete policy</button>
                 </form>
@@ -99,10 +102,15 @@
             {% endfor %}
           </div>
           {% else %}
-          <div class="card border border-dashed border-base-300 bg-base-100/70">
-            <div class="card-body items-center py-10 text-center">
-              <h2 class="card-title">No inline policies</h2>
-              <p class="max-w-md text-base-content/70">
+          <div class="card border border-dashed border-base-300 bg-base-100/60">
+            <div class="card-body items-center py-12 text-center">
+              <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200 text-base-content/30">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6">
+                  <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+              <h2 class="card-title text-lg">No inline policies</h2>
+              <p class="max-w-md text-sm text-base-content/60">
                 No inline policies are currently assigned to this principal.
               </p>
             </div>
@@ -111,7 +119,7 @@
         </div>
       </section>
 
-      <section class="card border border-base-300 bg-base-100">
+      <section class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -121,7 +129,7 @@
             <div class="badge badge-outline">{{ principal.managed_policy_count }} total</div>
           </div>
 
-          <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35"
+          <details class="collapse collapse-arrow rounded-lg border border-primary/20 bg-base-200/35"
                    data-collapse-persist
                    data-collapse-key="principal-{{ principal.id }}-attach-managed-policy">
             <summary class="collapse-title min-h-0 px-4 py-3">
@@ -130,24 +138,27 @@
                   <h3 class="font-black">Attach managed policy</h3>
                   <p class="text-xs text-base-content/60">Attach an existing policy from this account.</p>
                 </div>
-                <span class="badge badge-outline">Action</span>
+                <span class="badge badge-primary badge-outline">Action</span>
               </div>
             </summary>
             <div class="collapse-content px-4 pb-4">
               {% if has_attach_policy_error %}
-              <div class="alert alert-error mb-3 py-2 text-sm">{{ attach_policy_error }}</div>
+              <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+                <span>{{ attach_policy_error }}</span>
+                <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['attach_policy_error'])">&times;</button>
+              </div>
               {% endif %}
               {% if has_policy_attach_options %}
-              <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/managed-policies/attach" onsubmit="return hiraethDisableSubmit(this, 'Attaching...')">
-                <label class="block">
-                  <span class="mb-1 block text-sm text-base-content/70">Managed policy</span>
-                  <select class="select select-bordered w-full font-mono" name="policy_id" required>
+              <form class="grid gap-3 pt-1" method="post" action="/iam/principals/{{ principal.id }}/managed-policies/attach" onsubmit="return hiraethDisableSubmit(this, 'Attaching...')">
+                <label class="form-control">
+                  <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Managed policy</span></div>
+                  <select class="select select-bordered font-mono" name="policy_id" required>
                     {% for policy in policy_attach_options %}
                     <option value="{{ policy.id }}">{{ policy.label }}</option>
                     {% endfor %}
                   </select>
                 </label>
-                <button class="btn btn-primary w-full" type="submit">Attach policy</button>
+                <button class="btn btn-primary" type="submit">Attach policy</button>
               </form>
               {% else %}
               <p class="text-sm text-base-content/60">No unattached managed policies are available for this account.</p>
@@ -158,7 +169,7 @@
           {% if has_attached_policies %}
           <div class="space-y-2">
             {% for policy in attached_policies %}
-            <details class="collapse collapse-arrow rounded border border-base-300 bg-base-200/35"
+            <details class="collapse collapse-arrow rounded-lg border border-base-300 bg-base-200/35"
                      data-collapse-persist
                      data-collapse-key="principal-{{ principal.id }}-managed-policy-{{ policy.id }}">
               <summary class="collapse-title min-h-0 px-4 py-3">
@@ -173,7 +184,7 @@
                   <span class="badge badge-outline">{{ policy.account_id }}</span>
                   <span class="badge badge-outline">Updated {{ policy.updated_at }}</span>
                 </div>
-                <pre class="overflow-x-auto rounded bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
+                <pre class="overflow-x-auto rounded-lg bg-base-200 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
                 <div class="mt-3 flex flex-wrap justify-end gap-2">
                   <a class="btn btn-outline btn-sm" href="/iam/policies/{{ policy.id }}">Open policy</a>
                   <form method="post" action="/iam/principals/{{ principal.id }}/managed-policies/detach" onsubmit="return hiraethConfirmSubmit(this, 'Detach {{ policy.policy_name }} from {{ principal.name }}?', 'Detaching...')">
@@ -186,10 +197,15 @@
             {% endfor %}
           </div>
           {% else %}
-          <div class="card border border-dashed border-base-300 bg-base-100/70">
-            <div class="card-body items-center py-10 text-center">
-              <h2 class="card-title">No managed policies</h2>
-              <p class="max-w-md text-base-content/70">Attach managed policies to reuse permissions across principals.</p>
+          <div class="card border border-dashed border-base-300 bg-base-100/60">
+            <div class="card-body items-center py-12 text-center">
+              <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200 text-base-content/30">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6">
+                  <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+              <h2 class="card-title text-lg">No managed policies</h2>
+              <p class="max-w-md text-sm text-base-content/60">Attach managed policies to reuse permissions across principals.</p>
             </div>
           </div>
           {% endif %}
@@ -198,11 +214,11 @@
     </div>
 
     <aside class="space-y-3">
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="principal-{{ principal.id }}-access-keys"
                open>
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Access keys</h2>
@@ -211,14 +227,17 @@
             <span class="badge badge-outline">{{ principal.access_key_count }}</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_access_key_error %}
-          <div class="alert alert-error mb-3 py-2 text-sm">{{ access_key_error }}</div>
+          <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+            <span>{{ access_key_error }}</span>
+            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['access_key_error'])">&times;</button>
+          </div>
           {% endif %}
-          <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35 mb-3"
+          <details class="collapse collapse-arrow rounded-lg border border-primary/20 bg-base-200/35 mb-3"
                    data-collapse-persist
                    data-collapse-key="principal-{{ principal.id }}-create-access-key">
-            <summary class="collapse-title min-h-0 px-3 py-2">
+            <summary class="collapse-title min-h-0 px-4 py-3">
               <div class="flex items-center justify-between gap-3 pr-6">
                 <div>
                   <h3 class="font-black">Add access key</h3>
@@ -226,17 +245,17 @@
                 </div>
               </div>
             </summary>
-            <div class="collapse-content px-3 pb-3">
-              <form class="space-y-3" method="post" action="/iam/principals/{{ principal.id }}/access-keys" onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
-                <label class="block">
-                  <span class="mb-1 block text-sm text-base-content/70">Access key id optional</span>
-                  <input class="input input-bordered w-full font-mono" name="key_id" placeholder="AKIA...">
+            <div class="collapse-content px-4 pb-4">
+              <form class="grid gap-3 pt-1" method="post" action="/iam/principals/{{ principal.id }}/access-keys" onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
+                <label class="form-control">
+                  <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Access key id</span></div>
+                  <input class="input input-bordered font-mono" name="key_id" placeholder="AKIA...">
                 </label>
-                <label class="block">
-                  <span class="mb-1 block text-sm text-base-content/70">Secret key optional</span>
-                  <input class="input input-bordered w-full font-mono" name="secret_key" placeholder="generated when blank">
+                <label class="form-control">
+                  <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Secret key</span></div>
+                  <input class="input input-bordered font-mono" name="secret_key" placeholder="generated when blank">
                 </label>
-                <button class="btn btn-primary w-full" type="submit">Create access key</button>
+                <button class="btn btn-primary" type="submit">Create access key</button>
               </form>
             </div>
           </details>
@@ -244,11 +263,11 @@
           {% if has_access_keys %}
           <div class="space-y-2">
             {% for access_key in access_keys %}
-            <div class="rounded border border-base-300 bg-base-200/45 px-3 py-3">
+            <div class="rounded-lg border border-base-300 bg-base-200/45 px-4 py-4">
               <div class="break-all font-mono text-sm font-semibold text-base-content">{{ access_key.key_id }}</div>
-              <div class="mt-2 space-y-2">
+              <div class="mt-3 space-y-3">
                 <div>
-                  <div class="text-xs text-base-content/50">Secret key</div>
+                  <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Secret key</div>
                   <div class="mt-1 flex flex-wrap items-center gap-2">
                     <div id="secret-key-{{ loop.index }}" class="break-all font-mono text-xs text-base-content/75" data-secret-visible="false" data-secret-masked="{{ access_key.masked_secret_key }}" data-secret-value="{{ access_key.secret_key }}">{{ access_key.masked_secret_key }}</div>
                     <button class="btn btn-outline btn-xs" type="button" data-secret-target="secret-key-{{ loop.index }}" aria-pressed="false" onclick="hiraethToggleSecret(this)">Reveal</button>
@@ -257,7 +276,7 @@
                 <div class="text-xs text-base-content/50">
                   Created {{ access_key.created_at }}
                 </div>
-                <form method="post" action="/iam/principals/{{ principal.id }}/access-keys/delete" onsubmit="return confirm('Delete access key {{ access_key.key_id }}?')">
+                <form method="post" action="/iam/principals/{{ principal.id }}/access-keys/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete access key {{ access_key.key_id }}?', 'Deleting...')">
                   <input type="hidden" name="key_id" value="{{ access_key.key_id }}">
                   <button class="btn btn-error btn-xs" type="submit">Delete key</button>
                 </form>
@@ -271,10 +290,10 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="principal-{{ principal.id }}-metadata">
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Principal metadata</h2>
@@ -282,15 +301,15 @@
             </div>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {{ metadata_list_html|safe }}
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-error/40 bg-base-100"
+      <details class="collapse collapse-arrow border border-error/40 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="principal-{{ principal.id }}-danger-zone">
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Delete principal</h2>
@@ -298,8 +317,8 @@
             </div>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
-          <form method="post" action="/iam/principals/{{ principal.id }}/delete" onsubmit="return confirm('Delete principal {{ principal.name }}?')">
+        <div class="collapse-content px-5 pb-5">
+          <form method="post" action="/iam/principals/{{ principal.id }}/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete principal {{ principal.name }}?', 'Deleting...')">
             <button class="btn btn-error w-full" type="submit">Delete principal</button>
           </form>
         </div>

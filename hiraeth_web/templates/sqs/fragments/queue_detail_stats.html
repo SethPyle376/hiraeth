@@ -4,25 +4,25 @@
      hx-trigger="every 3s"
      hx-swap="outerHTML">
   <div class="grid gap-3 md:grid-cols-3">
-    <div class="card border border-base-300 bg-base-100">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Messages</div>
-        <div class="text-3xl font-black text-primary">{{ summary.message_count }}</div>
-        <div class="text-sm text-base-content/50">stored and not expired</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Messages</div>
+        <div class="mt-1 text-3xl font-black text-primary">{{ summary.message_count }}</div>
+        <div class="text-xs text-base-content/50">stored and not expired</div>
       </div>
     </div>
-    <div class="card border border-base-300 bg-base-100">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Visible</div>
-        <div class="text-3xl font-black text-success">{{ summary.visible_message_count }}</div>
-        <div class="text-sm text-base-content/50">available to consumers</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Visible</div>
+        <div class="mt-1 text-3xl font-black text-success">{{ summary.visible_message_count }}</div>
+        <div class="text-xs text-base-content/50">available to consumers</div>
       </div>
     </div>
-    <div class="card border border-base-300 bg-base-100">
-      <div class="card-body">
-        <div class="text-sm text-base-content/60">Delayed</div>
-        <div class="text-3xl font-black text-info">{{ summary.delayed_message_count }}</div>
-        <div class="text-sm text-base-content/50">waiting for delay to expire</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Delayed</div>
+        <div class="mt-1 text-3xl font-black text-info">{{ summary.delayed_message_count }}</div>
+        <div class="text-xs text-base-content/50">waiting for delay to expire</div>
       </div>
     </div>
   </div>

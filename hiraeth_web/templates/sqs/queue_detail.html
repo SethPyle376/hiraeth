@@ -1,18 +1,18 @@
 {% extends "layout.html" %}
 
-{% block title %}{{ queue.name }} | Hiraeth SQS{% endblock %}
+{% block title %}{{ queue.name }} | SQS | Hiraeth{% endblock %}
 
 {% block content %}
 <section class="mx-auto max-w-[110rem]">
   <div class="mb-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
     <div class="min-w-0">
-      <p class="text-xs font-semibold uppercase tracking-[0.35em] text-primary">SQS Queue</p>
+      <p class="text-xs font-semibold uppercase tracking-[0.3em] text-primary">SQS Queue</p>
       <h1 class="mt-2 break-words text-4xl font-black tracking-tight md:text-5xl">{{ queue.name }}</h1>
       <p class="mt-3 flex flex-wrap items-center gap-2 text-sm text-base-content/70">
         <span class="font-mono">{{ queue.account_id }}</span>
-        <span class="text-base-content/40">/</span>
+        <span class="text-base-content/30">/</span>
         <span class="font-mono">{{ queue.region }}</span>
-        <span class="text-base-content/40">/</span>
+        <span class="text-base-content/30">/</span>
         <span class="badge badge-outline">{{ queue.queue_type }}</span>
       </p>
       <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -26,7 +26,7 @@
   </div>
 
   {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-5 flex items-center justify-between gap-3 py-3 text-sm">
+  <div class="alert {{ feedback_class }} mb-6 flex items-center justify-between gap-3 py-3 text-sm">
     <span>{{ feedback_message }}</span>
     <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind', 'tags_open'])">&times;</button>
   </div>
@@ -37,12 +37,12 @@
   <div class="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_27rem]">
     {% include "sqs/fragments/message_list.html" %}
 
-    <aside class="space-y-3">
-      <details class="collapse collapse-arrow border border-primary/30 bg-base-100"
+    <aside class="space-y-4">
+      <details class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="queue-{{ queue.id }}-send-message"
                {% if has_send_error %}data-collapse-priority="server" open{% endif %}>
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Send message</h2>
@@ -51,7 +51,7 @@
             <span class="badge badge-primary badge-outline">Action</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_send_error %}
           <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
             <span>{{ send_error }}</span>
@@ -61,33 +61,33 @@
           <form class="grid gap-3 pt-1" method="post" action="/sqs/queues/{{ queue.id }}/messages" onsubmit="return hiraethDisableSubmit(this, 'Sending...')">
             <input type="hidden" name="message_limit" value="{{ message_limit }}">
             <label class="form-control">
-              <div class="label py-1"><span class="label-text">Message body</span></div>
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Message body</span></div>
               <textarea class="textarea textarea-bordered font-mono text-sm" name="message_body" placeholder='{"hello":"world"}' required></textarea>
             </label>
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="form-control">
-                <div class="label py-1"><span class="label-text">Delay seconds</span></div>
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Delay seconds</span></div>
                 <input class="input input-bordered" name="delay_seconds" type="number" min="0" max="900" placeholder="{{ queue.delay_seconds }}">
               </label>
               <label class="form-control">
-                <div class="label py-1"><span class="label-text">Trace header</span></div>
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Trace header</span></div>
                 <input class="input input-bordered font-mono" name="aws_trace_header" placeholder="Root=1-...">
               </label>
             </div>
             <label class="form-control">
               <div class="label py-1">
-                <span class="label-text">Message attributes JSON</span>
+                <span class="label-text text-xs font-semibold uppercase tracking-wider">Message attributes JSON</span>
                 <span class="label-text-alt">optional</span>
               </div>
               <textarea class="textarea textarea-bordered font-mono text-xs" name="message_attributes_json" placeholder='{"trace_id":{"DataType":"String","StringValue":"abc123","BinaryValue":null}}'></textarea>
             </label>
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="form-control">
-                <div class="label py-1"><span class="label-text">MessageGroupId</span></div>
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">MessageGroupId</span></div>
                 <input class="input input-bordered font-mono" name="message_group_id" placeholder="fifo only">
               </label>
               <label class="form-control">
-                <div class="label py-1"><span class="label-text">DeduplicationId</span></div>
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">DeduplicationId</span></div>
                 <input class="input input-bordered font-mono" name="message_deduplication_id" placeholder="fifo only">
               </label>
             </div>
@@ -96,10 +96,10 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="queue-{{ queue.id }}-metadata">
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Queue metadata</h2>
@@ -107,34 +107,34 @@
             </div>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           <div class="space-y-3 text-sm">
             <div>
-              <div class="text-base-content/50">ARN</div>
+              <div class="text-xs font-semibold uppercase tracking-wider text-base-content/40">ARN</div>
               <div class="mt-1 flex flex-wrap items-center gap-2">
                 <div class="break-all font-mono">{{ queue_arn }}</div>
                 <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_arn }}" onclick="hiraethCopyText(this)">Copy</button>
               </div>
             </div>
             <div>
-              <div class="text-base-content/50">Queue URL</div>
+              <div class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Queue URL</div>
               <div class="mt-1 flex flex-wrap items-center gap-2">
                 <div class="break-all font-mono">{{ queue_url }}</div>
                 <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_url }}" onclick="hiraethCopyText(this)">Copy</button>
               </div>
             </div>
           </div>
-          <div class="mt-3">
+          <div class="mt-4">
             {{ metadata_list_html|safe }}
           </div>
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="queue-{{ queue.id }}-tags"
                {% if open_tags_panel %}data-collapse-priority="server" open{% endif %}>
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Tags</h2>
@@ -143,7 +143,7 @@
             <span class="badge badge-outline">{{ tag_count }}</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_tag_error %}
           <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
             <span>{{ tag_error }}</span>
@@ -154,12 +154,12 @@
             <input type="hidden" name="message_limit" value="{{ message_limit }}">
             <div class="grid gap-3 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
               <label class="form-control">
-                <div class="label py-1"><span class="label-text">Tag key</span></div>
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Tag key</span></div>
                 <input class="input input-bordered font-mono" name="tag_key" value="{{ tag_key }}" maxlength="128" placeholder="environment" required>
               </label>
               <label class="form-control">
                 <div class="label py-1">
-                  <span class="label-text">Tag value</span>
+                  <span class="label-text text-xs font-semibold uppercase tracking-wider">Tag value</span>
                   <span class="label-text-alt">optional</span>
                 </div>
                 <input class="input input-bordered font-mono" name="tag_value" value="{{ tag_value }}" maxlength="256" placeholder="local">
@@ -168,11 +168,11 @@
             <button class="btn btn-primary btn-sm" type="submit">Add or update tag</button>
           </form>
           {% if has_tags %}
-          <div class="max-h-80 overflow-auto">
+          <div class="max-h-80 overflow-auto rounded-lg border border-base-300">
             <table class="table table-xs">
               <tbody>
                 {% for tag in tags %}
-                <tr>
+                <tr class="hover:bg-base-200/50">
                   <th class="align-top text-base-content/60">{{ tag.key }}</th>
                   <td class="break-all font-mono">{{ tag.value }}</td>
                   <td class="text-right">
@@ -193,10 +193,10 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100"
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm"
                data-collapse-persist
                data-collapse-key="queue-{{ queue.id }}-attributes">
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Attributes</h2>
@@ -204,12 +204,12 @@
             </div>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
-          <div class="max-h-[46rem] overflow-auto">
+        <div class="collapse-content px-5 pb-5">
+          <div class="max-h-[46rem] overflow-auto rounded-lg border border-base-300">
             <table class="table table-xs">
               <tbody>
                 {% for attribute in attributes %}
-                <tr>
+                <tr class="hover:bg-base-200/50">
                   <th class="align-top text-base-content/60">{{ attribute.name }}</th>
                   <td class="break-all font-mono">{{ attribute.value }}</td>
                 </tr>
