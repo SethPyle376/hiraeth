@@ -22,7 +22,7 @@
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 class="card-title text-xl">Principals</h2>
-              <p class="text-sm text-base-content/60">Open a principal to review its access keys and inline policies.</p>
+              <p class="text-sm text-base-content/60">Click a user or role to see their keys and policies.</p>
             </div>
             <div class="badge badge-outline">{{ principal_count }} total</div>
           </div>
@@ -72,7 +72,7 @@
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 class="card-title text-xl">Managed policies</h2>
-              <p class="text-sm text-base-content/60">Reusable policy documents that can be attached to principals.</p>
+              <p class="text-sm text-base-content/60">Policies you can attach to multiple users or roles.</p>
             </div>
             <div class="badge badge-outline">{{ managed_policy_count }} total</div>
           </div>
@@ -136,7 +136,7 @@
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Add principal</h2>
-              <p class="text-xs text-base-content/60">Create a local IAM user or role.</p>
+              <p class="text-xs text-base-content/60">Add a new user or role.</p>
             </div>
             <span class="badge badge-primary badge-outline">Action</span>
           </div>
@@ -184,7 +184,7 @@
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Add managed policy</h2>
-              <p class="text-xs text-base-content/60">Create a reusable identity policy document.</p>
+              <p class="text-xs text-base-content/60">Write a policy you can reuse.</p>
             </div>
             <span class="badge badge-primary badge-outline">Action</span>
           </div>
@@ -222,22 +222,22 @@
 
       <div class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
-          <h2 class="card-title text-base">Current capabilities</h2>
+          <h2 class="card-title text-base">What you can do here</h2>
           <p class="text-sm text-base-content/70">
-            This section supports creating principals, managing access keys, and editing inline or managed policies.
+            Create users and roles, manage keys, and edit policies.
           </p>
         </div>
       </div>
       <div class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
-          <h2 class="card-title text-base">Included information</h2>
+          <h2 class="card-title text-base">What's inside</h2>
           <p class="text-sm text-base-content/70">
-            Principal identity, attached access key ids, policy documents, and account scope.
+            User details, access keys, policies, and account info.
           </p>
         </div>
       </div>
       <div class="alert border-warning/40 bg-warning/10 py-3 text-sm">
-        <span>Secret key values are available on principal detail pages, but masked by default.</span>
+        <span>Secret keys are shown on detail pages but hidden by default.</span>
       </div>
     </aside>
   </div>

@@ -51,8 +51,8 @@
         <div class="card-body">
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h2 class="card-title text-xl">Trace flow</h2>
-              <p class="text-sm text-base-content/60">Follow the request through recorded runtime, router, authorization, and service spans.</p>
+               <h2 class="card-title text-xl">Trace flow</h2>
+               <p class="text-sm text-base-content/60">See how the request moved through the system.</p>
             </div>
             <div class="badge badge-outline">{{ spans.len() }} spans</div>
           </div>
@@ -90,7 +90,7 @@
             </div>
 
             <div class="rounded border border-base-300 bg-base-200/30 p-4 xl:max-h-[38rem] xl:overflow-auto">
-              <div id="trace-span-empty" class="text-sm text-base-content/60">Select a span node to inspect its timing and attributes.</div>
+              <div id="trace-span-empty" class="text-sm text-base-content/60">Click a node to see timing and details.</div>
               {% for span in spans %}
               <article id="{{ span.detail_id }}" class="{% if loop.first %}block{% else %}hidden{% endif %}" data-trace-span-detail>
                 <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -116,7 +116,7 @@
                   <pre class="max-h-96 overflow-auto rounded bg-neutral p-3 text-xs text-neutral-content">{{ span.attributes }}</pre>
                 </div>
                 {% else %}
-                <div class="mt-4 rounded border border-dashed border-base-300 p-4 text-sm text-base-content/60">This span did not record attributes.</div>
+                <div class="mt-4 rounded border border-dashed border-base-300 p-4 text-sm text-base-content/60">No extra details for this span.</div>
                 {% endif %}
               </article>
               {% endfor %}
@@ -139,8 +139,8 @@
                   <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clip-rule="evenodd"/>
                 </svg>
               </div>
-              <h3 class="card-title text-lg">No spans recorded</h3>
-              <p class="max-w-md text-sm text-base-content/60">Request metadata was stored, but no lifecycle spans were captured.</p>
+          <h3 class="card-title text-lg">No spans recorded</h3>
+          <p class="max-w-md text-sm text-base-content/60">We got the request, but didn't capture any detailed timing info.</p>
             </div>
           </div>
           {% endif %}

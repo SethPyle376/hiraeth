@@ -8,21 +8,21 @@
       <div class="card-body p-5">
         <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Messages</div>
         <div class="mt-1 text-3xl font-black text-primary">{{ summary.message_count }}</div>
-        <div class="text-xs text-base-content/50">stored and not expired</div>
+        <div class="text-xs text-base-content/50">total messages hanging around</div>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-sm">
       <div class="card-body p-5">
         <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Visible</div>
         <div class="mt-1 text-3xl font-black text-success">{{ summary.visible_message_count }}</div>
-        <div class="text-xs text-base-content/50">available to consumers</div>
+        <div class="text-xs text-base-content/50">ready to be picked up</div>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-sm">
       <div class="card-body p-5">
         <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Delayed</div>
         <div class="mt-1 text-3xl font-black text-info">{{ summary.delayed_message_count }}</div>
-        <div class="text-xs text-base-content/50">waiting for delay to expire</div>
+        <div class="text-xs text-base-content/50">chilling until their delay ends</div>
       </div>
     </div>
   </div>

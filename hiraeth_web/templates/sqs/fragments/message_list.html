@@ -9,7 +9,7 @@
       <div>
         <h2 class="card-title text-lg">Recent messages</h2>
         <p class="text-sm text-base-content/60">
-          Showing up to {{ message_limit }} stored messages, newest first.
+          Latest {{ message_limit }} messages, newest first.
         </p>
       </div>
       <form id="message-limit-form" class="join self-start lg:self-auto" method="get" action="/sqs/queues/{{ queue_id }}">
@@ -139,8 +139,8 @@
     </div>
     {% else %}
     <div class="mt-5 rounded-lg border border-dashed border-base-300 bg-base-200/40 p-10 text-center">
-      <h3 class="text-xl font-bold">No messages in this queue</h3>
-      <p class="mt-2 text-base-content/60">Send a message, then refresh this page to review the stored payload and related metadata.</p>
+      <h3 class="text-xl font-bold">No messages yet</h3>
+      <p class="mt-2 text-base-content/60">Send a message and it'll show up here.</p>
     </div>
     {% endif %}
   </div>

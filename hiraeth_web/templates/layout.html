@@ -10,7 +10,7 @@
     <script defer src="/assets/vendor/htmx.min.js"></script>
     <script defer src="/assets/app.js"></script>
   </head>
-  <body class="min-h-screen bg-base-200 text-base-content">
+  <body class="flex min-h-screen flex-col bg-gradient-to-br from-base-200 via-base-200 to-primary/[0.03] text-base-content">
     <div class="navbar sticky top-0 z-50 min-h-14 border-b border-base-300 bg-base-100/95 px-4 backdrop-blur sm:px-6">
       <div class="flex-1">
         <a class="flex items-center gap-2 text-xl font-black tracking-tight transition hover:opacity-80" href="/">
@@ -44,7 +44,7 @@
         </span>
       </div>
     </div>
-    <main class="px-4 py-8 sm:px-6 lg:px-8">
+    <main class="flex-1 px-4 py-8 sm:px-6 lg:px-8">
       <noscript>
         <div class="alert alert-warning mx-auto mb-6 max-w-[94rem]">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
@@ -53,8 +53,8 @@
       </noscript>
       {% block content %}{% endblock %}
     </main>
-    <footer class="border-t border-base-300 bg-base-100 px-4 py-4 text-center text-xs text-base-content/40 sm:px-6">
-      <span>Hiraeth — Local AWS-compatible service emulator</span>
+    <footer class="border-t border-base-300 bg-base-100/80 px-4 py-4 text-center text-xs text-base-content/40 backdrop-blur sm:px-6">
+      <span>Hiraeth — your local AWS playground</span>
     </footer>
   </body>
 </html>

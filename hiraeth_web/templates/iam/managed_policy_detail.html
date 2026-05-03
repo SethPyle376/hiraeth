@@ -58,8 +58,8 @@
         <div class="card-body">
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h2 class="card-title text-xl">Policy document</h2>
-              <p class="text-sm text-base-content/60">Review and update the JSON document for this managed policy.</p>
+               <h2 class="card-title text-xl">Policy document</h2>
+               <p class="text-sm text-base-content/60">The actual JSON that defines what this policy allows.</p>
             </div>
             <button class="btn btn-outline btn-sm" type="button" data-copy-value="{{ policy.arn }}" onclick="hiraethCopyText(this)">Copy ARN</button>
           </div>
@@ -104,8 +104,8 @@
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
-              <h2 class="text-base font-black">Attached principals</h2>
-              <p class="text-xs text-base-content/60">Users currently using this policy.</p>
+               <h2 class="text-base font-black">Attached principals</h2>
+               <p class="text-xs text-base-content/60">Who's using this policy right now.</p>
             </div>
             <span class="badge badge-outline">{{ policy.attachment_count }}</span>
           </div>
@@ -134,8 +134,8 @@
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
-              <h2 class="text-base font-black">Attach to principal</h2>
-              <p class="text-xs text-base-content/60">Attach this policy to another user in the same account.</p>
+               <h2 class="text-base font-black">Attach to principal</h2>
+               <p class="text-xs text-base-content/60">Give this policy to someone else.</p>
             </div>
             <span class="badge badge-primary badge-outline">Action</span>
           </div>
@@ -163,8 +163,8 @@
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
-              <h2 class="text-base font-black">Policy metadata</h2>
-              <p class="text-xs text-base-content/60">Identity and timestamps.</p>
+               <h2 class="text-base font-black">Details</h2>
+               <p class="text-xs text-base-content/60">The basics — who, when, and where.</p>
             </div>
           </div>
         </summary>

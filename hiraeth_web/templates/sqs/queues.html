@@ -7,7 +7,7 @@
   <div class="mb-6">
     <p class="text-xs font-semibold uppercase tracking-[0.3em] text-primary">SQS</p>
     <h1 class="mt-2 text-4xl font-black tracking-tight md:text-5xl">Queues</h1>
-    <p class="mt-3 text-sm text-base-content/70">Filter queues by account, region, and optional name prefix.</p>
+    <p class="mt-3 text-sm text-base-content/70">Find the queue you're looking for.</p>
   </div>
 
   {% if has_feedback %}
@@ -26,7 +26,7 @@
         <input type="hidden" name="return_to" value="{{ return_to }}">
         <div>
           <h2 class="card-title text-lg">Create queue</h2>
-          <p class="text-sm text-base-content/60">Create a queue in the selected account and region.</p>
+          <p class="text-sm text-base-content/60">Spin up a new queue.</p>
         </div>
         {% if has_create_error %}
         <div class="alert alert-error flex items-center justify-between gap-3 py-2 text-sm">

@@ -14,13 +14,13 @@
         <div>
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 class="card-title text-xl">Recent requests</h2>
-              <p class="text-sm text-base-content/60">Newest request traces are shown first.</p>
+               <h2 class="card-title text-xl">Recent requests</h2>
+               <p class="text-sm text-base-content/60">Latest requests first.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <div id="trace-request-count" class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded border border-base-content/60 px-3 text-xs font-bold" data-total-count="{{ traces.len() }}">{{ traces.len() }} shown</div>
-              <form method="post" action="/traces/clear" onsubmit="return hiraethConfirmSubmit(this, 'Clear all stored request traces?', 'Clearing')">
-                <button class="btn btn-sm btn-error whitespace-nowrap" type="submit">Clear traces</button>
+              <form method="post" action="/traces/clear" onsubmit="return hiraethConfirmSubmit(this, 'Wipe all traces?', 'Clearing')">
+                <button class="btn btn-sm btn-error whitespace-nowrap" type="submit">Wipe traces</button>
               </form>
             </div>
           </div>
@@ -110,8 +110,8 @@
         </table>
       </div>
       <div id="trace-request-no-matches" class="mt-4 hidden rounded border border-dashed border-base-300 p-6 text-center">
-        <h3 class="text-base font-bold">No matching traces</h3>
-        <p class="mt-1 text-sm text-base-content/60">Try a shorter request id search or loosen the filters.</p>
+        <h3 class="text-base font-bold">No matches</h3>
+        <p class="mt-1 text-sm text-base-content/60">Try a shorter search term or clear some filters.</p>
       </div>
       {% else %}
       <div class="card border border-dashed border-base-300 bg-base-100/60">
@@ -121,8 +121,8 @@
               <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clip-rule="evenodd"/>
             </svg>
           </div>
-          <h3 class="card-title text-lg">No traces yet</h3>
-          <p class="max-w-md text-sm text-base-content/60">Send a request to the AWS endpoint and refresh this page.</p>
+          <h3 class="card-title text-lg">Nothing here yet</h3>
+          <p class="max-w-md text-sm text-base-content/60">Make an API call and come back to see it.</p>
         </div>
       </div>
       {% endif %}

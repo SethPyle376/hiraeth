@@ -37,7 +37,7 @@
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 class="card-title text-xl">Inline policies</h2>
-              <p class="text-sm text-base-content/60">Review policy documents and expand details as needed.</p>
+              <p class="text-sm text-base-content/60">Policies attached directly to this user or role.</p>
             </div>
             <div class="badge badge-outline">{{ principal.inline_policy_count }} total</div>
           </div>
@@ -124,7 +124,7 @@
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 class="card-title text-xl">Attached managed policies</h2>
-              <p class="text-sm text-base-content/60">Reusable policy documents attached to this principal.</p>
+              <p class="text-sm text-base-content/60">Reusable policies attached to this user or role.</p>
             </div>
             <div class="badge badge-outline">{{ principal.managed_policy_count }} total</div>
           </div>
@@ -222,7 +222,7 @@
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Access keys</h2>
-              <p class="text-xs text-base-content/60">Access key identifiers are shown with masked secret values by default.</p>
+              <p class="text-xs text-base-content/60">Your keys are here — secrets are hidden by default.</p>
             </div>
             <span class="badge badge-outline">{{ principal.access_key_count }}</span>
           </div>
@@ -296,7 +296,7 @@
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
-              <h2 class="text-base font-black">Principal metadata</h2>
+              <h2 class="text-base font-black">Details</h2>
               <p class="text-xs text-base-content/60">{{ principal.kind }} in account {{ principal.account_id }}</p>
             </div>
           </div>
@@ -325,7 +325,7 @@
       </details>
 
       <div class="alert border-warning/40 bg-warning/10 py-3 text-sm">
-        <span>Inline identity policies apply directly to this principal and do not include a <span class="font-mono">Principal</span> element.</span>
+        <span>Inline policies apply directly to this user or role.</span>
       </div>
     </aside>
   </div>
