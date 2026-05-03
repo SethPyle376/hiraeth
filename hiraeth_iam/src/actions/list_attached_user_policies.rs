@@ -1,14 +1,13 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use chrono::SecondsFormat;
 use hiraeth_core::{
     AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction,
-    arn_util::user_arn,
+    arn_util::policy_arn,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
-use hiraeth_store::{IamStore, iam::AccessKey};
+use hiraeth_store::{IamStore, iam::ManagedPolicy};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,55 +18,53 @@ use crate::{
     error::IamError,
 };
 
-pub(crate) struct ListAccessKeysAction;
+pub(crate) struct ListAttachedUserPoliciesAction;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct ListAccessKeysRequest {
+pub(crate) struct ListAttachedUserPoliciesRequest {
     user_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct ListAccessKeysResponse {
+pub(crate) struct ListAttachedUserPoliciesResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
-    list_access_keys_result: ListAccessKeysResult,
+    list_attached_user_policies_result: ListAttachedUserPoliciesResult,
     response_metadata: ResponseMetadata,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct ListAccessKeysResult {
-    access_key_metadata: AccessKeyMetadataXml,
+struct ListAttachedUserPoliciesResult {
+    attached_policies: AttachedPoliciesXml,
     is_truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct AccessKeyMetadataXml {
-    member: Vec<AccessKeyMetadataMemberXml>,
+struct AttachedPoliciesXml {
+    member: Vec<AttachedPolicyMemberXml>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
-struct AccessKeyMetadataMemberXml {
-    user_name: String,
-    access_key_id: String,
-    status: &'static str,
-    create_date: String,
+struct AttachedPolicyMemberXml {
+    policy_name: String,
+    policy_arn: String,
 }
 
 #[async_trait]
-impl<S> TypedAwsAction<S> for ListAccessKeysAction
+impl<S> TypedAwsAction<S> for ListAttachedUserPoliciesAction
 where
     S: IamStore + Send + Sync,
 {
-    type Request = ListAccessKeysRequest;
-    type Response = ListAccessKeysResponse;
+    type Request = ListAttachedUserPoliciesRequest;
+    type Response = ListAttachedUserPoliciesResponse;
     type Error = IamError;
 
     fn name(&self) -> &'static str {
-        "ListAccessKeys"
+        "ListAttachedUserPolicies"
     }
 
     fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
@@ -81,7 +78,7 @@ where
     async fn validate(
         &self,
         _request: &ResolvedRequest,
-        list_request: &ListAccessKeysRequest,
+        list_request: &ListAttachedUserPoliciesRequest,
         _store: &S,
     ) -> Result<(), IamError> {
         if let Some(user_name) = &list_request.user_name {
@@ -94,14 +91,15 @@ where
     async fn handle(
         &self,
         request: ResolvedRequest,
-        list_request: ListAccessKeysRequest,
+        list_request: ListAttachedUserPoliciesRequest,
         store: &S,
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ListAccessKeysResponse, IamError> {
+    ) -> Result<ListAttachedUserPoliciesResponse, IamError> {
         let requested_user_name = list_request.user_name.clone();
         let target_user =
             requested_or_signing_user(&request, store, list_request.user_name.as_deref()).await?;
+
         let attributes = HashMap::from([
             (
                 "requested_user_name".to_string(),
@@ -112,19 +110,23 @@ where
             ("account_id".to_string(), target_user.account_id.clone()),
         ]);
 
-        let access_keys = trace_context
+        let policies = trace_context
             .record_result_span(
                 trace_recorder,
-                "iam.access_key.list",
+                "iam.attached_policy.list",
                 "iam",
                 attributes,
-                async { store.list_access_keys_for_principal(target_user.id).await },
+                async {
+                    store
+                        .get_managed_policies_attached_to_principal(target_user.id)
+                        .await
+                },
             )
             .await?;
 
-        Ok(list_access_keys_response(
-            &target_user.name,
-            access_keys,
+        Ok(list_attached_user_policies_response(
+            &target_user.account_id,
+            policies,
             request.request_id,
         ))
     }
@@ -132,15 +134,15 @@ where
     async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
-        list_request: ListAccessKeysRequest,
+        list_request: ListAttachedUserPoliciesRequest,
         store: &S,
     ) -> Result<AuthorizationCheck, IamError> {
         let target_user =
             requested_or_signing_user(request, store, list_request.user_name.as_deref()).await?;
 
         Ok(AuthorizationCheck {
-            action: "iam:ListAccessKeys".to_string(),
-            resource: user_arn(
+            action: "iam:ListAttachedUserPolicies".to_string(),
+            resource: hiraeth_core::arn_util::user_arn(
                 &target_user.account_id,
                 &target_user.path,
                 &target_user.name,
@@ -150,18 +152,18 @@ where
     }
 }
 
-fn list_access_keys_response(
-    user_name: &str,
-    access_keys: Vec<AccessKey>,
+fn list_attached_user_policies_response(
+    account_id: &str,
+    policies: Vec<ManagedPolicy>,
     request_id: impl Into<String>,
-) -> ListAccessKeysResponse {
-    ListAccessKeysResponse {
+) -> ListAttachedUserPoliciesResponse {
+    ListAttachedUserPoliciesResponse {
         xmlns: IAM_XMLNS,
-        list_access_keys_result: ListAccessKeysResult {
-            access_key_metadata: AccessKeyMetadataXml {
-                member: access_keys
+        list_attached_user_policies_result: ListAttachedUserPoliciesResult {
+            attached_policies: AttachedPoliciesXml {
+                member: policies
                     .into_iter()
-                    .map(|access_key| access_key_metadata_member(user_name, access_key))
+                    .map(|policy| attached_policy_member(account_id, policy))
                     .collect(),
             },
             is_truncated: false,
@@ -170,18 +172,33 @@ fn list_access_keys_response(
     }
 }
 
-fn access_key_metadata_member(
-    user_name: &str,
-    access_key: AccessKey,
-) -> AccessKeyMetadataMemberXml {
-    AccessKeyMetadataMemberXml {
-        user_name: user_name.to_string(),
-        access_key_id: access_key.key_id,
-        status: "Active",
-        create_date: access_key
-            .created_at
-            .and_utc()
-            .to_rfc3339_opts(SecondsFormat::Secs, true),
+fn attached_policy_member(
+    account_id: &str,
+    policy: ManagedPolicy,
+) -> AttachedPolicyMemberXml {
+    let policy_path = normalize_policy_path(policy.policy_path.as_deref());
+    AttachedPolicyMemberXml {
+        policy_name: policy.policy_name.clone(),
+        policy_arn: policy_arn(account_id, &policy_path, &policy.policy_name),
+    }
+}
+
+fn normalize_policy_path(path: Option<&str>) -> String {
+    match path {
+        Some(path) if !path.trim().is_empty() => {
+            let trimmed = path.trim();
+            let with_leading = if trimmed.starts_with('/') {
+                trimmed.to_string()
+            } else {
+                format!("/{trimmed}")
+            };
+            if with_leading.ends_with('/') {
+                with_leading
+            } else {
+                format!("{with_leading}/")
+            }
+        }
+        _ => "/".to_string(),
     }
 }
 
@@ -196,9 +213,13 @@ mod tests {
         xml_body,
     };
     use hiraeth_http::IncomingRequest;
-    use hiraeth_store::iam::{AccessKey, InMemoryIamStore, Principal};
+    use hiraeth_store::iam::{
+        InMemoryIamStore, ManagedPolicy, ManagedPolicyPrincipalAttachment, Principal,
+    };
 
-    use super::{ListAccessKeysAction, list_access_keys_response};
+    use super::{
+        ListAttachedUserPoliciesAction, list_attached_user_policies_response,
+    };
 
     fn principal(id: i64, name: &str, path: &str) -> Principal {
         Principal {
@@ -215,12 +236,19 @@ mod tests {
         }
     }
 
-    fn access_key(key_id: &str, principal_id: i64) -> AccessKey {
-        AccessKey {
-            key_id: key_id.to_string(),
-            principal_id,
-            secret_key: "secret".to_string(),
+    fn managed_policy(id: i64, name: &str, path: Option<&str>) -> ManagedPolicy {
+        ManagedPolicy {
+            id,
+            policy_id: format!("ANPATESTPOLICY{id:08}"),
+            account_id: "123456789012".to_string(),
+            policy_name: name.to_string(),
+            policy_path: path.map(|p| p.to_string()),
+            policy_document: "{}".to_string(),
             created_at: Utc
+                .with_ymd_and_hms(2026, 4, 22, 12, 0, 0)
+                .unwrap()
+                .naive_utc(),
+            updated_at: Utc
                 .with_ymd_and_hms(2026, 4, 22, 12, 0, 0)
                 .unwrap()
                 .naive_utc(),
@@ -229,18 +257,37 @@ mod tests {
 
     fn store() -> InMemoryIamStore {
         InMemoryIamStore::new(
-            [
-                access_key("AKIA1111111111111111", 1),
-                access_key("AKIA2222222222222222", 2),
-                access_key("AKIA3333333333333333", 2),
-            ],
+            [],
             [
                 principal(1, "signing-user", "/"),
                 principal(2, "alice", "/engineering/"),
             ],
             [],
-            [],
-            [],
+            [
+                managed_policy(10, "orders-readonly", Some("/dev/")),
+                managed_policy(11, "admin-full", None),
+                managed_policy(12, "billing-view", Some("/finance/")),
+            ],
+            [
+                ManagedPolicyPrincipalAttachment {
+                    id: 1,
+                    policy_id: 10,
+                    principal_id: 2,
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 22, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
+                },
+                ManagedPolicyPrincipalAttachment {
+                    id: 2,
+                    policy_id: 11,
+                    principal_id: 2,
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 22, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
+                },
+            ],
         )
     }
 
@@ -271,11 +318,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_lists_requested_users_access_keys() {
-        let action = TypedAwsActionAdapter::new(ListAccessKeysAction);
+    async fn handle_lists_requested_users_attached_policies() {
+        let action = TypedAwsActionAdapter::new(ListAttachedUserPoliciesAction);
         let response = action
             .handle(
-                resolved_request(b"Action=ListAccessKeys&Version=2010-05-08&UserName=alice"),
+                resolved_request(
+                    b"Action=ListAttachedUserPolicies&Version=2010-05-08&UserName=alice",
+                ),
                 &store(),
                 &TraceContext::new("test-request-id"),
                 &NoopTraceRecorder,
@@ -285,20 +334,25 @@ mod tests {
         let body = String::from_utf8(response.body).expect("response should be utf8");
 
         assert_eq!(response.status_code, 200);
-        assert!(body.contains("<ListAccessKeysResponse"));
-        assert!(body.contains("<UserName>alice</UserName>"));
-        assert!(body.contains("<AccessKeyId>AKIA2222222222222222</AccessKeyId>"));
-        assert!(body.contains("<AccessKeyId>AKIA3333333333333333</AccessKeyId>"));
-        assert!(!body.contains("<AccessKeyId>AKIA1111111111111111</AccessKeyId>"));
+        assert!(body.contains("<ListAttachedUserPoliciesResponse"));
+        assert!(body.contains("<PolicyName>orders-readonly</PolicyName>"));
+        assert!(
+            body.contains("<PolicyArn>arn:aws:iam::123456789012:policy/dev/orders-readonly</PolicyArn>")
+        );
+        assert!(body.contains("<PolicyName>admin-full</PolicyName>"));
+        assert!(
+            body.contains("<PolicyArn>arn:aws:iam::123456789012:policy/admin-full</PolicyArn>")
+        );
+        assert!(!body.contains("<PolicyName>billing-view</PolicyName>"));
         assert!(body.contains("<IsTruncated>false</IsTruncated>"));
     }
 
     #[tokio::test]
     async fn handle_uses_signing_user_when_user_name_is_omitted() {
-        let action = TypedAwsActionAdapter::new(ListAccessKeysAction);
+        let action = TypedAwsActionAdapter::new(ListAttachedUserPoliciesAction);
         let response = action
             .handle(
-                resolved_request(b"Action=ListAccessKeys&Version=2010-05-08"),
+                resolved_request(b"Action=ListAttachedUserPolicies&Version=2010-05-08"),
                 &store(),
                 &TraceContext::new("test-request-id"),
                 &NoopTraceRecorder,
@@ -308,23 +362,25 @@ mod tests {
         let body = String::from_utf8(response.body).expect("response should be utf8");
 
         assert_eq!(response.status_code, 200);
-        assert!(body.contains("<UserName>signing-user</UserName>"));
-        assert!(body.contains("<AccessKeyId>AKIA1111111111111111</AccessKeyId>"));
-        assert!(!body.contains("<AccessKeyId>AKIA2222222222222222</AccessKeyId>"));
+        assert!(body.contains("<ListAttachedUserPoliciesResponse"));
+        assert!(body.contains("<AttachedPolicies/>") || body.contains("<AttachedPolicies></AttachedPolicies>"));
+        assert!(body.contains("<IsTruncated>false</IsTruncated>"));
     }
 
     #[tokio::test]
     async fn resolve_authorization_uses_target_user_arn() {
-        let action = TypedAwsActionAdapter::new(ListAccessKeysAction);
+        let action = TypedAwsActionAdapter::new(ListAttachedUserPoliciesAction);
         let check = action
             .resolve_authorization(
-                &resolved_request(b"Action=ListAccessKeys&Version=2010-05-08&UserName=alice"),
+                &resolved_request(
+                    b"Action=ListAttachedUserPolicies&Version=2010-05-08&UserName=alice",
+                ),
                 &store(),
             )
             .await
             .expect("authorization check should resolve");
 
-        assert_eq!(check.action, "iam:ListAccessKeys");
+        assert_eq!(check.action, "iam:ListAttachedUserPolicies");
         assert_eq!(
             check.resource,
             "arn:aws:iam::123456789012:user/engineering/alice"
@@ -332,11 +388,11 @@ mod tests {
     }
 
     #[test]
-    fn list_access_keys_response_serializes_expected_xml_shape() {
+    fn list_attached_user_policies_response_serializes_expected_xml_shape() {
         let xml = String::from_utf8(
-            xml_body(&list_access_keys_response(
-                "alice",
-                vec![access_key("AKIA2222222222222222", 2)],
+            xml_body(&list_attached_user_policies_response(
+                "123456789012",
+                vec![managed_policy(10, "orders-readonly", Some("/dev/"))],
                 "request-id",
             ))
             .expect("xml should serialize"),
@@ -344,10 +400,11 @@ mod tests {
         .expect("xml should be utf8");
 
         assert!(xml.contains(
-            r#"<ListAccessKeysResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/">"#
+            r#"<ListAttachedUserPoliciesResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/">"#
         ));
-        assert!(xml.contains("<AccessKeyMetadata><member>"));
-        assert!(xml.contains("<UserName>alice</UserName>"));
+        assert!(xml.contains("<AttachedPolicies><member>"));
+        assert!(xml.contains("<PolicyName>orders-readonly</PolicyName>"));
+        assert!(xml.contains("<PolicyArn>arn:aws:iam::123456789012:policy/dev/orders-readonly</PolicyArn>"));
         assert!(xml.contains("<ResponseMetadata><RequestId>request-id</RequestId>"));
     }
 }

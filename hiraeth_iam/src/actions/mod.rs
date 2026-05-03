@@ -10,6 +10,7 @@ mod get_policy_version;
 mod get_user;
 mod get_user_policy;
 mod list_access_keys;
+mod list_attached_user_policies;
 mod put_user_policy;
 mod util;
 
@@ -23,6 +24,7 @@ use crate::actions::{
     detach_user_policy::DetachUserPolicyAction, get_policy::GetPolicyAction,
     get_policy_version::GetPolicyVersionAction, get_user::GetUserAction,
     get_user_policy::GetUserPolicyAction, list_access_keys::ListAccessKeysAction,
+    list_attached_user_policies::ListAttachedUserPoliciesAction,
     put_user_policy::PutUserPolicyAction,
 };
 
@@ -44,5 +46,6 @@ where
     registry.register(GetPolicyAction);
     registry.register(GetPolicyVersionAction);
     registry.register(ListAccessKeysAction);
+    registry.register(ListAttachedUserPoliciesAction);
     registry
 }

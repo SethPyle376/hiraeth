@@ -7,14 +7,15 @@ mod principal_inline_policy_store;
 
 pub use access_key_store::{AccessKey, AccessKeyStore, InMemoryAccessKeyStore};
 pub use managed_policy_store::{
-    InMemoryManagedPolicyStore, ManagedPolicy, ManagedPolicyStore, NewManagedPolicy,
+    InMemoryManagedPolicyStore, ManagedPolicy, ManagedPolicyPrincipalAttachment,
+    ManagedPolicyStore, NewManagedPolicy,
 };
 pub use principal::{InMemoryPrincipalStore, NewPrincipal, Principal, PrincipalStore};
 pub use principal_inline_policy_store::{
     InMemoryPrincipalInlinePolicyStore, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
 };
 
-use crate::iam::managed_policy_store::ManagedPolicyPrincipalAttachment;
+
 
 pub struct InMemoryIamStore {
     pub access_key_store: InMemoryAccessKeyStore,

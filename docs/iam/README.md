@@ -132,8 +132,8 @@ Status labels:
 | `DeleteUserPolicy` | Not implemented | Inline policy deletion exists in the web UI store path but not the IAM Query API yet. |
 | `GetPolicy` | Not implemented | Managed policy documents can be inspected in the web UI. |
 | `GetUserPolicy` | Not implemented | Inline policy documents can be inspected in the web UI. |
-| `ListAccessKeys` | Not implemented | Access keys can be inspected in the web UI. |
-| `ListAttachedUserPolicies` | Not implemented | Attachments can be inspected in the web UI. |
+| `ListAccessKeys` | Supported | Lists access keys for a user. Defaults to the signing user when `UserName` is omitted. |
+| `ListAttachedUserPolicies` | Supported | Lists managed policies attached to a user. Defaults to the signing user when `UserName` is omitted. |
 | `ListPolicies` | Not implemented | Managed policies can be inspected in the web UI. |
 | `ListUserPolicies` | Not implemented | Inline policies can be inspected in the web UI. |
 | `ListUsers` | Not implemented | Users can be inspected in the web UI. |
