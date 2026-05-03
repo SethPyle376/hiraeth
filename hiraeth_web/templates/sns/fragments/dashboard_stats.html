@@ -1,0 +1,8 @@
+<div id="dashboard-stats"
+     class="mb-5"
+     hx-get="/sns/fragments/dashboard-stats"
+     hx-trigger="every 3s"
+     hx-include="#dashboard-topic-filter"
+     hx-swap="outerHTML">
+  {{ stats_cards_html|safe }}
+</div>

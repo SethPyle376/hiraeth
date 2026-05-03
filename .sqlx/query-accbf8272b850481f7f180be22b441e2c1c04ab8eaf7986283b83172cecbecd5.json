@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at\n                 FROM sns_topics\n                 WHERE region = ? AND account_id = ? AND name LIKE ? || '%'\n                 ORDER BY name\n                 LIMIT ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "region",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "accbf8272b850481f7f180be22b441e2c1c04ab8eaf7986283b83172cecbecd5"
+}

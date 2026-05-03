@@ -1,0 +1,35 @@
+{% if has_subscriptions %}
+<div class="overflow-x-auto rounded border border-base-300 bg-base-100">
+  <table class="table table-sm">
+    <thead>
+      <tr>
+        <th>Protocol</th>
+        <th>Endpoint</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sub in subscriptions %}
+      <tr class="hover:bg-base-200/70">
+        <td><span class="badge badge-outline">{{ sub.protocol }}</span></td>
+        <td>
+          <div class="break-all font-mono text-xs">{{ sub.endpoint }}</div>
+          <div class="text-xs text-base-content/50">{{ sub.subscription_arn }}</div>
+        </td>
+        <td class="text-xs text-base-content/60">{{ sub.created_at }}</td>
+        <td class="text-right">
+          <form method="post" action="/sns/topics/{{ topic_id }}/subscriptions/{{ sub.id }}/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete this subscription?', 'Deleting...')">
+            <button class="btn btn-xs btn-error" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert border border-base-300 bg-base-100 py-3 text-sm">
+  <span>No subscriptions for this topic.</span>
+</div>
+{% endif %}

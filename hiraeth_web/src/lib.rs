@@ -13,13 +13,14 @@ use axum::{
     routing::get,
 };
 use hiraeth_store_sqlx::SqliteTraceStore;
-use hiraeth_store_sqlx::{SqliteIamStore, SqliteSqsStore};
+use hiraeth_store_sqlx::{SqliteIamStore, SqliteSnsStore, SqliteSqsStore};
 use tokio::net::TcpListener;
 use tower_http::compression::CompressionLayer;
 
 mod components;
 mod error;
 mod iam;
+mod sns;
 mod sqs;
 mod templates;
 mod traces;
@@ -41,6 +42,7 @@ const VENDOR_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 pub struct WebState {
     pub iam_store: SqliteIamStore,
     pub sqs_store: SqliteSqsStore,
+    pub sns_store: SqliteSnsStore,
     pub trace_store: SqliteTraceStore,
     pub aws_endpoint_url: String,
 }
@@ -49,11 +51,13 @@ impl WebState {
     pub fn new(
         iam_store: SqliteIamStore,
         sqs_store: SqliteSqsStore,
+        sns_store: SqliteSnsStore,
         trace_store: SqliteTraceStore,
     ) -> Self {
         Self {
             iam_store,
             sqs_store,
+            sns_store,
             trace_store,
             aws_endpoint_url: "http://localhost:4566".to_string(),
         }
@@ -78,6 +82,7 @@ pub fn router(state: WebState) -> Router {
         .route("/", get(home))
         .merge(asset_router)
         .nest("/iam", iam::router())
+        .nest("/sns", sns::router())
         .nest("/sqs", sqs::router())
         .nest("/traces", traces::router())
         .with_state(state)

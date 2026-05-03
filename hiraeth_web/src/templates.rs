@@ -6,6 +6,7 @@ use crate::iam::{
     IamPolicyAttachOption, IamPrincipalAccessKeyView, IamPrincipalDetailView,
     IamPrincipalInlinePolicyView, IamPrincipalSummary,
 };
+use crate::sns::{SubscriptionSummary, TopicSummary};
 use crate::sqs::{MessageSummary, QueueAttribute, QueueSummary, QueueTag};
 use crate::traces::{
     TraceDetailView, TraceFilterOptionView, TraceFiltersView, TraceGraphView, TraceSpanView,
@@ -223,6 +224,97 @@ pub(crate) struct QueueMessageListTemplate<'a> {
     pub(crate) messages: &'a [MessageSummary],
     pub(crate) has_messages: bool,
     pub(crate) message_limit: i64,
+}
+
+#[derive(Template)]
+#[template(path = "sns/dashboard.html")]
+pub(crate) struct SnsDashboardTemplate<'a> {
+    pub(crate) page_header_html: &'a str,
+    pub(crate) dashboard_stats_html: &'a str,
+    pub(crate) empty_state_html: &'a str,
+    pub(crate) region: &'a str,
+    pub(crate) account_id: &'a str,
+    pub(crate) prefix: &'a str,
+    pub(crate) return_to: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) create_error: &'a str,
+    pub(crate) has_create_error: bool,
+    pub(crate) create_topic_name: &'a str,
+    pub(crate) create_region: &'a str,
+    pub(crate) create_account_id: &'a str,
+    pub(crate) create_display_name: &'a str,
+    pub(crate) topics: &'a [TopicSummary],
+    pub(crate) has_topics: bool,
+}
+
+#[derive(Template)]
+#[template(path = "sns/topics.html")]
+pub(crate) struct SnsTopicsTemplate<'a> {
+    pub(crate) empty_state_html: &'a str,
+    pub(crate) region: &'a str,
+    pub(crate) account_id: &'a str,
+    pub(crate) prefix: &'a str,
+    pub(crate) return_to: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) create_error: &'a str,
+    pub(crate) has_create_error: bool,
+    pub(crate) create_topic_name: &'a str,
+    pub(crate) create_region: &'a str,
+    pub(crate) create_account_id: &'a str,
+    pub(crate) create_display_name: &'a str,
+    pub(crate) topics: &'a [TopicSummary],
+    pub(crate) has_topics: bool,
+}
+
+#[derive(Template)]
+#[template(path = "sns/topic_detail.html")]
+pub(crate) struct SnsTopicDetailTemplate<'a> {
+    pub(crate) action_card_html: &'a str,
+    pub(crate) metadata_list_html: &'a str,
+    pub(crate) topic_id: i64,
+    pub(crate) topic: &'a hiraeth_store::sns::SnsTopic,
+    pub(crate) topic_arn: &'a str,
+    pub(crate) feedback_message: &'a str,
+    pub(crate) feedback_class: &'a str,
+    pub(crate) has_feedback: bool,
+    pub(crate) subscription_error: &'a str,
+    pub(crate) has_subscription_error: bool,
+    pub(crate) subscription_protocol: &'a str,
+    pub(crate) subscription_endpoint: &'a str,
+    pub(crate) publish_error: &'a str,
+    pub(crate) has_publish_error: bool,
+    pub(crate) publish_message: &'a str,
+    pub(crate) publish_subject: &'a str,
+    pub(crate) summary: &'a TopicSummary,
+    pub(crate) subscriptions: &'a [SubscriptionSummary],
+    pub(crate) subscription_count: usize,
+    pub(crate) has_subscriptions: bool,
+}
+
+#[derive(Template)]
+#[template(path = "sns/fragments/dashboard_stats.html")]
+pub(crate) struct SnsDashboardStatsTemplate<'a> {
+    pub(crate) stats_cards_html: &'a str,
+}
+
+#[derive(Template)]
+#[template(path = "sns/fragments/topic_list.html")]
+pub(crate) struct SnsTopicListTemplate<'a> {
+    pub(crate) empty_state_html: &'a str,
+    pub(crate) topics: &'a [TopicSummary],
+    pub(crate) has_topics: bool,
+}
+
+#[derive(Template)]
+#[template(path = "sns/fragments/subscription_list.html")]
+pub(crate) struct SnsSubscriptionListTemplate<'a> {
+    pub(crate) topic_id: i64,
+    pub(crate) subscriptions: &'a [SubscriptionSummary],
+    pub(crate) has_subscriptions: bool,
 }
 
 #[cfg(test)]

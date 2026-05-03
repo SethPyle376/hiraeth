@@ -38,6 +38,20 @@ where
         self.sns_store.get_topic(topic_arn).await
     }
 
+    async fn get_topic_by_id(&self, id: i64) -> Result<Option<SnsTopic>, StoreError> {
+        self.sns_store.get_topic_by_id(id).await
+    }
+
+    async fn list_topics(
+        &self,
+        region: &str,
+        account_id: &str,
+        prefix: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsTopic>, StoreError> {
+        self.sns_store.list_topics(region, account_id, prefix, limit).await
+    }
+
     async fn delete_topic(&self, topic_arn: &str) -> Result<(), StoreError> {
         self.sns_store.delete_topic(topic_arn).await
     }
@@ -53,6 +67,13 @@ where
         self.sns_store.get_subscription(subscription_arn).await
     }
 
+    async fn get_subscription_by_id(
+        &self,
+        id: i64,
+    ) -> Result<Option<SnsSubscription>, StoreError> {
+        self.sns_store.get_subscription_by_id(id).await
+    }
+
     async fn list_subscriptions_by_topic(
         &self,
         topic_arn: &str,
@@ -62,5 +83,9 @@ where
 
     async fn delete_subscription(&self, subscription_arn: &str) -> Result<(), StoreError> {
         self.sns_store.delete_subscription(subscription_arn).await
+    }
+
+    async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError> {
+        self.sns_store.delete_subscription_by_id(id).await
     }
 }

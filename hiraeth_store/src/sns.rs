@@ -28,6 +28,14 @@ pub struct SnsSubscription {
 pub trait SnsStore {
     async fn create_topic(&self, topic: SnsTopic) -> Result<(), StoreError>;
     async fn get_topic(&self, topic_arn: &str) -> Result<Option<SnsTopic>, StoreError>;
+    async fn get_topic_by_id(&self, id: i64) -> Result<Option<SnsTopic>, StoreError>;
+    async fn list_topics(
+        &self,
+        region: &str,
+        account_id: &str,
+        prefix: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsTopic>, StoreError>;
     async fn delete_topic(&self, topic_arn: &str) -> Result<(), StoreError>;
 
     async fn create_subscription(&self, subscription: SnsSubscription) -> Result<(), StoreError>;
@@ -35,9 +43,14 @@ pub trait SnsStore {
         &self,
         subscription_arn: &str,
     ) -> Result<Option<SnsSubscription>, StoreError>;
+    async fn get_subscription_by_id(
+        &self,
+        id: i64,
+    ) -> Result<Option<SnsSubscription>, StoreError>;
     async fn list_subscriptions_by_topic(
         &self,
         topic_arn: &str,
     ) -> Result<Vec<SnsSubscription>, StoreError>;
     async fn delete_subscription(&self, subscription_arn: &str) -> Result<(), StoreError>;
+    async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError>;
 }

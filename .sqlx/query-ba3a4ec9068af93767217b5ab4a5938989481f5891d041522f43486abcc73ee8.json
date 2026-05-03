@@ -1,0 +1,56 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at\n             FROM sns_topics\n             WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "region",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "account_id",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "policy",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 6,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ba3a4ec9068af93767217b5ab4a5938989481f5891d041522f43486abcc73ee8"
+}

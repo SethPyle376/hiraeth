@@ -67,6 +67,64 @@ impl SnsStore for SqliteSnsStore {
         Ok(topic)
     }
 
+    async fn get_topic_by_id(&self, id: i64) -> Result<Option<SnsTopic>, StoreError> {
+        let topic = sqlx::query_as!(
+            SnsTopic,
+            "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at
+             FROM sns_topics
+             WHERE id = ?",
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        Ok(topic)
+    }
+
+    async fn list_topics(
+        &self,
+        region: &str,
+        account_id: &str,
+        prefix: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsTopic>, StoreError> {
+        let limit = limit.unwrap_or(100);
+        let topics = if let Some(prefix) = prefix {
+            sqlx::query_as!(
+                SnsTopic,
+                "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at
+                 FROM sns_topics
+                 WHERE region = ? AND account_id = ? AND name LIKE ? || '%'
+                 ORDER BY name
+                 LIMIT ?",
+                region,
+                account_id,
+                prefix,
+                limit
+            )
+            .fetch_all(&self.pool)
+            .await
+        } else {
+            sqlx::query_as!(
+                SnsTopic,
+                "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at
+                 FROM sns_topics
+                 WHERE region = ? AND account_id = ?
+                 ORDER BY name
+                 LIMIT ?",
+                region,
+                account_id,
+                limit
+            )
+            .fetch_all(&self.pool)
+            .await
+        }
+        .map_err(map_sqlx_error)?;
+
+        Ok(topics)
+    }
+
     async fn delete_topic(&self, topic_arn: &str) -> Result<(), StoreError> {
         let parts: Vec<&str> = topic_arn.split(':').collect();
         if parts.len() != 6 {
@@ -136,6 +194,24 @@ impl SnsStore for SqliteSnsStore {
         Ok(sub)
     }
 
+    async fn get_subscription_by_id(
+        &self,
+        id: i64,
+    ) -> Result<Option<SnsSubscription>, StoreError> {
+        let sub = sqlx::query_as!(
+            SnsSubscription,
+            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn, created_at
+             FROM sns_subscriptions
+             WHERE id = ?",
+            id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        Ok(sub)
+    }
+
     async fn list_subscriptions_by_topic(
         &self,
         topic_arn: &str,
@@ -158,6 +234,22 @@ impl SnsStore for SqliteSnsStore {
         let result = sqlx::query!(
             "DELETE FROM sns_subscriptions WHERE subscription_arn = ?",
             subscription_arn
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound("subscription not found".to_string()));
+        }
+
+        Ok(())
+    }
+
+    async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError> {
+        let result = sqlx::query!(
+            "DELETE FROM sns_subscriptions WHERE id = ?",
+            id
         )
         .execute(&self.pool)
         .await

@@ -37,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
                 WebState::new(
                     store.iam_store.clone(),
                     store.sqs_store.clone(),
+                    store.sns_store.clone(),
                     store.trace_store.clone()
                 )
                 .with_aws_endpoint_url(aws_endpoint_url)
