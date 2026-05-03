@@ -165,7 +165,138 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::CreateTopicRequest;
+    use std::collections::HashMap;
+
+    use chrono::{TimeZone, Utc};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
+    use hiraeth_http::IncomingRequest;
+    use hiraeth_store::{principal::Principal, sns::SnsTopic, test_support::SnsTestStore};
+
+    use super::{CreateTopicAction, CreateTopicRequest, handle_create_topic_typed};
+
+    fn resolved_request(body: &str) -> ResolvedRequest {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "x-amz-target".to_string(),
+            "AmazonSNS.CreateTopic".to_string(),
+        );
+
+        ResolvedRequest {
+            request_id: "test-request-id".to_string(),
+            request: IncomingRequest {
+                host: "localhost:4566".to_string(),
+                method: "POST".to_string(),
+                path: "/".to_string(),
+                query: None,
+                headers,
+                body: body.as_bytes().to_vec(),
+            },
+            service: "sns".to_string(),
+            region: "us-east-1".to_string(),
+            auth_context: AuthContext {
+                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal: Principal {
+                    id: 1,
+                    account_id: "123456789012".to_string(),
+                    kind: "user".to_string(),
+                    name: "test-user".to_string(),
+                    path: "/".to_string(),
+                    user_id: "AIDATESTUSER000001".to_string(),
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 4, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
+                },
+            },
+            date: Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap(),
+        }
+    }
+
+    fn topic() -> SnsTopic {
+        SnsTopic {
+            id: 1,
+            name: "test-topic".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "123456789012".to_string(),
+            display_name: None,
+            policy: "{}".to_string(),
+            delivery_policy: None,
+            fifo_topic: None,
+            signature_version: None,
+            tracing_config: None,
+            kms_master_key_id: None,
+            data_protection_policy: None,
+            created_at: Utc::now().naive_utc(),
+        }
+    }
+
+    #[test]
+    fn reports_expected_action_name() {
+        assert_eq!(
+            <CreateTopicAction as TypedAwsAction<SnsTestStore>>::name(&CreateTopicAction),
+            "CreateTopic"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_topic_with_default_attributes() {
+        let store = SnsTestStore::default();
+        let request = resolved_request("Name=test-topic");
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        let response = handle_create_topic_typed(&request, &store, body)
+            .await
+            .expect("create topic should succeed");
+
+        assert_eq!(
+            response.create_topic_result.topic_arn,
+            "arn:aws:sns:us-east-1:123456789012:test-topic"
+        );
+
+        let created = store.created_topics();
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].name, "test-topic");
+        assert_eq!(created[0].region, "us-east-1");
+        assert_eq!(created[0].account_id, "123456789012");
+        assert_eq!(created[0].policy, "{}");
+        assert_eq!(created[0].display_name, None);
+        assert_eq!(created[0].delivery_policy, None);
+    }
+
+    #[tokio::test]
+    async fn create_topic_with_custom_attributes() {
+        let store = SnsTestStore::default();
+        let request = resolved_request(
+            "Name=test-topic&Attributes.entry.1.key=DisplayName&Attributes.entry.1.value=MyDisplay&Attributes.entry.2.key=Policy&Attributes.entry.2.value=%7B%22Statement%22%3A%5B%5D%7D&Attributes.entry.3.key=DeliveryPolicy&Attributes.entry.3.value=%7B%7D",
+        );
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        let response = handle_create_topic_typed(&request, &store, body)
+            .await
+            .expect("create topic should succeed");
+
+        assert_eq!(
+            response.create_topic_result.topic_arn,
+            "arn:aws:sns:us-east-1:123456789012:test-topic"
+        );
+
+        let created = store.created_topics();
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].name, "test-topic");
+        assert_eq!(created[0].display_name, Some("MyDisplay".to_string()));
+        assert_eq!(created[0].policy, r#"{"Statement":[]}"#);
+        assert_eq!(created[0].delivery_policy, Some("{}".to_string()));
+    }
+
+    #[tokio::test]
+    async fn validation_rejects_empty_name() {
+        let store = SnsTestStore::default();
+        let request = resolved_request("Name=");
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        let result = CreateTopicAction.validate(&request, &body, &store).await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
 
     #[test]
     fn deserialize_create_topic_request_with_attributes() {

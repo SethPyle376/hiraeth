@@ -22,3 +22,16 @@ where
     registry.register(PublishAction);
     registry
 }
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use hiraeth_core::ResolvedRequest;
+
+    pub(crate) fn parse_request_body<T>(request: &ResolvedRequest) -> T
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let body = String::from_utf8_lossy(&request.request.body);
+        serde_urlencoded::from_str(&body).expect("test request body should parse")
+    }
+}

@@ -29,7 +29,7 @@ pub(crate) struct PublishRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename = "PublishResult")]
+#[serde(rename = "PublishResult", rename_all = "PascalCase")]
 pub(crate) struct PublishResult {
     message_id: String,
 }
@@ -357,5 +357,175 @@ where
         store: &SnsServiceStore<SS, QS>,
     ) -> Result<AuthorizationCheck, SnsError> {
         crate::auth::resolve_authorization("sns:Publish", request, &store.sns_store).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use chrono::{TimeZone, Utc};
+    use hiraeth_core::{
+        AuthContext, ResolvedRequest, TypedAwsAction,
+        tracing::{NoopTraceRecorder, TraceContext},
+    };
+    use hiraeth_http::IncomingRequest;
+    use hiraeth_iam::AuthorizationMode;
+    use hiraeth_store::{
+        principal::Principal,
+        sns::{SnsStore, SnsSubscription, SnsTopic},
+        test_support::{SnsTestStore, SqsTestStore},
+    };
+
+    use super::{PublishAction, PublishRequest, handle_publish_typed};
+    use crate::store::SnsServiceStore;
+
+    fn resolved_request(body: &str) -> ResolvedRequest {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "x-amz-target".to_string(),
+            "AmazonSNS.Publish".to_string(),
+        );
+
+        ResolvedRequest {
+            request_id: "test-request-id".to_string(),
+            request: IncomingRequest {
+                host: "localhost:4566".to_string(),
+                method: "POST".to_string(),
+                path: "/".to_string(),
+                query: None,
+                headers,
+                body: body.as_bytes().to_vec(),
+            },
+            service: "sns".to_string(),
+            region: "us-east-1".to_string(),
+            auth_context: AuthContext {
+                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal: Principal {
+                    id: 1,
+                    account_id: "123456789012".to_string(),
+                    kind: "user".to_string(),
+                    name: "test-user".to_string(),
+                    path: "/".to_string(),
+                    user_id: "AIDATESTUSER000001".to_string(),
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 4, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
+                },
+            },
+            date: Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap(),
+        }
+    }
+
+    fn topic() -> SnsTopic {
+        SnsTopic {
+            id: 1,
+            name: "test-topic".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "123456789012".to_string(),
+            display_name: None,
+            policy: "{}".to_string(),
+            delivery_policy: None,
+            fifo_topic: None,
+            signature_version: None,
+            tracing_config: None,
+            kms_master_key_id: None,
+            data_protection_policy: None,
+            created_at: Utc::now().naive_utc(),
+        }
+    }
+
+    fn subscription() -> SnsSubscription {
+        SnsSubscription {
+            id: 1,
+            topic_arn: "arn:aws:sns:us-east-1:123456789012:test-topic".to_string(),
+            protocol: "sqs".to_string(),
+            endpoint: "arn:aws:sqs:us-east-1:123456789012:test-queue".to_string(),
+            owner_account_id: "123456789012".to_string(),
+            subscription_arn: "arn:aws:sns:us-east-1:123456789012:test-topic:uuid-1".to_string(),
+            delivery_policy: None,
+            filter_policy: None,
+            filter_policy_scope: None,
+            raw_message_delivery: None,
+            redrive_policy: None,
+            subscription_role_arn: None,
+            replay_policy: None,
+            created_at: Utc::now().naive_utc(),
+        }
+    }
+
+    fn service_store(
+        sns: SnsTestStore,
+        sqs: SqsTestStore,
+    ) -> SnsServiceStore<SnsTestStore, SqsTestStore> {
+        SnsServiceStore::new(sns, sqs, AuthorizationMode::Off)
+    }
+
+    #[test]
+    fn reports_expected_action_name() {
+        assert_eq!(
+            <PublishAction as TypedAwsAction<SnsServiceStore<SnsTestStore, SqsTestStore>>>::name(
+                &PublishAction
+            ),
+            "Publish"
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_to_topic_with_no_subscriptions() {
+        let sns = SnsTestStore::with_topic(topic());
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&Message=hello",
+        );
+        let body: PublishRequest = crate::actions::test_support::parse_request_body(&request);
+        let trace_context = TraceContext::new("test-request-id");
+
+        let response =
+            handle_publish_typed(&request, &store, body, &trace_context, &NoopTraceRecorder)
+                .await
+                .expect("publish should succeed");
+
+        assert!(!response.publish_result.message_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn publish_to_topic_with_sqs_subscriptions() {
+        let sns = SnsTestStore::with_topic(topic());
+        sns.create_subscription(subscription())
+            .await
+            .expect("setup subscription should succeed");
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&Message=hello",
+        );
+        let body: PublishRequest = crate::actions::test_support::parse_request_body(&request);
+        let trace_context = TraceContext::new("test-request-id");
+
+        let response =
+            handle_publish_typed(&request, &store, body, &trace_context, &NoopTraceRecorder)
+                .await
+                .expect("publish should succeed despite sqs delivery failure");
+
+        assert!(!response.publish_result.message_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn topic_not_found_error() {
+        let sns = SnsTestStore::default();
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&Message=hello",
+        );
+        let body: PublishRequest = crate::actions::test_support::parse_request_body(&request);
+        let trace_context = TraceContext::new("test-request-id");
+
+        let result =
+            handle_publish_typed(&request, &store, body, &trace_context, &NoopTraceRecorder).await;
+        assert!(matches!(result, Err(crate::error::SnsError::TopicNotFound)));
     }
 }

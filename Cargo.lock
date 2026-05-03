@@ -227,6 +227,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-sns"
+version = "1.95.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd866a46744050981c1d75316ea7897b76f5e3cf5c2595bf60670dc17e2f3bc"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-query",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-smithy-xml",
+ "aws-types",
+ "fastrand",
+ "http 0.2.12",
+ "http 1.4.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-sqs"
 version = "1.94.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1357,6 +1382,7 @@ dependencies = [
  "aws-config",
  "aws-credential-types",
  "aws-sdk-iam",
+ "aws-sdk-sns",
  "aws-sdk-sqs",
  "hiraeth_iam",
  "hiraeth_runtime",
