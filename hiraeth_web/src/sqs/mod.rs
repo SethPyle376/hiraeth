@@ -900,12 +900,7 @@ fn dashboard_stats_html(
     delayed_messages: i64,
 ) -> Result<String, askama::Error> {
     Ok(format!(
-        r##"<div id="dashboard-stats"
-     class="mb-5"
-     hx-get="/sqs/fragments/dashboard-stats"
-     hx-trigger="every 3s"
-     hx-include="#dashboard-queue-filter"
-     hx-swap="outerHTML">{}</div>"##,
+        r##"<div id="dashboard-stats" class="mb-5">{}</div>"##,
         dashboard_stats_cards_html(
             region,
             account_id,

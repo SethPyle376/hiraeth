@@ -15,7 +15,6 @@ use axum::{
 use hiraeth_store_sqlx::SqliteTraceStore;
 use hiraeth_store_sqlx::{SqliteIamStore, SqliteSnsStore, SqliteSqsStore};
 use tokio::net::TcpListener;
-use tower_http::compression::CompressionLayer;
 
 mod components;
 mod error;
@@ -35,7 +34,7 @@ const HTMX_BYTES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/assets/vendor/htmx.min.js"
 ));
-const APP_ASSET_CACHE_CONTROL: &str = "public, max-age=0, must-revalidate";
+const APP_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 const VENDOR_ASSET_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
 #[derive(Clone)]
@@ -75,8 +74,7 @@ pub fn router(state: WebState) -> Router {
         .route("/assets/app.css", get(app_css))
         .route("/assets/vendor/htmx.min.js", get(htmx_js))
         .route("/favicon.svg", get(favicon_svg))
-        .route("/favicon.ico", get(favicon_ico))
-        .layer(CompressionLayer::new());
+        .route("/favicon.ico", get(favicon_ico));
 
     Router::new()
         .route("/", get(home))

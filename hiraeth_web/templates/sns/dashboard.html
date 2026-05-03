@@ -84,11 +84,7 @@
         </div>
 
         <div id="dashboard-topic-list"
-             class="mt-4"
-             hx-get="/sns/fragments/topics"
-             hx-trigger="every 3s"
-             hx-include="#dashboard-topic-filter"
-             hx-swap="innerHTML">
+             class="mt-4">
           {% include "sns/fragments/topic_list.html" %}
         </div>
       </div>

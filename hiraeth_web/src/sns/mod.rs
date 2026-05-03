@@ -849,12 +849,7 @@ fn dashboard_stats_html(
     total_subscriptions: usize,
 ) -> Result<String, askama::Error> {
     Ok(format!(
-        r##"<div id="dashboard-stats"
-     class="mb-5"
-     hx-get="/sns/fragments/dashboard-stats"
-     hx-trigger="every 3s"
-     hx-include="#dashboard-topic-filter"
-     hx-swap="outerHTML">{}</div>"##,
+        r##"<div id="dashboard-stats" class="mb-5">{}</div>"##,
         dashboard_stats_cards_html(region, account_id, total_topics, total_subscriptions)?
     ))
 }

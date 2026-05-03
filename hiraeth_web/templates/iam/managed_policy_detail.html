@@ -65,9 +65,7 @@
           </div>
 
           <details class="collapse collapse-arrow rounded-lg border border-primary/20 bg-base-200/35"
-                   data-collapse-persist
-                   data-collapse-key="managed-policy-{{ policy.id }}-edit-document"
-                   {% if policy_panel_open %}data-collapse-priority="server" open{% endif %}>
+                   {% if policy_panel_open %}open{% endif %}>
             <summary class="collapse-title min-h-0 px-4 py-3">
               <div class="flex items-center justify-between gap-3 pr-6">
                 <div>
@@ -100,7 +98,7 @@
     </div>
 
     <aside class="space-y-4">
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm" data-collapse-persist data-collapse-key="managed-policy-{{ policy.id }}-attachments" open>
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm" open>
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -130,7 +128,7 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm" data-collapse-persist data-collapse-key="managed-policy-{{ policy.id }}-attach-principal">
+      <details class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm">
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -159,7 +157,7 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm" data-collapse-persist data-collapse-key="managed-policy-{{ policy.id }}-metadata">
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm">
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>

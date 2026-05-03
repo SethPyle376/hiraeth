@@ -84,11 +84,7 @@
         </div>
 
         <div id="dashboard-queue-list"
-             class="mt-4"
-             hx-get="/sqs/fragments/queues"
-             hx-trigger="every 3s"
-             hx-include="#dashboard-queue-filter"
-             hx-swap="innerHTML">
+             class="mt-4">
           {% include "sqs/fragments/queue_list.html" %}
         </div>
       </div>

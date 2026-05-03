@@ -1,8 +1,5 @@
 <section id="queue-message-list"
          class="card border border-base-300 bg-base-100 shadow-sm"
-         hx-get="/sqs/fragments/queues/{{ queue_id }}/messages"
-         hx-trigger="every 3s"
-         hx-include="#message-limit-form"
          hx-swap="outerHTML">
   <div class="card-body">
     <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -29,8 +26,6 @@
               <span class="font-mono text-xs text-base-content/50">{{ message.message_id }}</span>
             </div>
             <details id="message-details-{{ message.message_id }}"
-                     data-collapse-persist
-                     data-collapse-key="queue-{{ queue_id }}-message-{{ message.message_id }}"
                      class="collapse collapse-arrow mt-2 rounded-lg border border-base-300 bg-base-100/80"
                      hx-preserve>
               <summary class="collapse-title min-h-0 py-2.5 font-mono text-sm font-bold">

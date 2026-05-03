@@ -93,11 +93,7 @@
     </form>
   </div>
 
-  <div id="queue-list"
-       hx-get="/sqs/fragments/queues"
-       hx-trigger="every 3s"
-       hx-include="#queue-filter"
-       hx-swap="innerHTML">
+  <div id="queue-list">
     {% include "sqs/fragments/queue_list.html" %}
   </div>
 </section>

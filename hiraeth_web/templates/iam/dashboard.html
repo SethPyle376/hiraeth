@@ -129,9 +129,7 @@
     <aside class="space-y-3">
       <details id="add-principal"
                class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm"
-               data-collapse-persist
-               data-collapse-key="iam-create-principal"
-               {% if has_create_error %}data-collapse-priority="server" open{% endif %}>
+               {% if has_create_error %}open{% endif %}>
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
@@ -177,9 +175,7 @@
 
       <details id="add-managed-policy"
                class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm"
-               data-collapse-persist
-               data-collapse-key="iam-create-managed-policy"
-               {% if policy_panel_open %}data-collapse-priority="server" open{% endif %}>
+               {% if policy_panel_open %}open{% endif %}>
         <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
