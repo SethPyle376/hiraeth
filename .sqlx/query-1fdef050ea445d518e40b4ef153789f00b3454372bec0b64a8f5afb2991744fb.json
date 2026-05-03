@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sns_topics (name, region, account_id, display_name, policy, created_at)\n             VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "1fdef050ea445d518e40b4ef153789f00b3454372bec0b64a8f5afb2991744fb"
+}

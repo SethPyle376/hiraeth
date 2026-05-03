@@ -66,7 +66,7 @@ fn aws_endpoint_url(config: &Config) -> String {
 
 fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("hiraeth_runtime=info,hiraeth_web=info,hiraeth_iam=info")
+        EnvFilter::new("hiraeth_runtime=info,hiraeth_web=info,hiraeth_iam=info,hiraeth_sns=info")
     });
 
     fmt().with_env_filter(env_filter).init();

@@ -10,13 +10,10 @@ use hiraeth_core::{
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    action_support::{json_payload_format, parse_payload_error},
-    send_message::{resolve_delay_seconds, validate_message_body},
-};
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::{
     error::{SqsError, batch_error_details},
-    util::{self, MessageAttributeValue},
+    util::{self, MessageAttributeValue, resolve_delay_seconds, validate_message_body},
 };
 
 pub(crate) struct SendMessageBatchAction;

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use super::action_support::{json_payload_format, parse_payload_error};
 use crate::{
     error::SqsError,
-    util::{self, MessageAttributeValue},
+    util::{self, MessageAttributeValue, resolve_delay_seconds, validate_message_body},
 };
 
 pub(crate) struct SendMessageAction;
@@ -112,53 +112,6 @@ async fn handle_send_message_typed<S: SqsStore>(
     };
 
     Ok(response)
-}
-
-pub(super) fn resolve_delay_seconds(
-    requested_delay_seconds: Option<i64>,
-    queue_delay_seconds: i64,
-) -> Result<i64, SqsError> {
-    let delay_seconds = requested_delay_seconds.unwrap_or(queue_delay_seconds);
-    if !(0..=900).contains(&delay_seconds) {
-        return Err(SqsError::BadRequest(
-            "DelaySeconds must be between 0 and 900".to_string(),
-        ));
-    }
-
-    Ok(delay_seconds)
-}
-
-pub(super) fn validate_message_body(
-    message_body: &str,
-    maximum_message_size: i64,
-) -> Result<(), SqsError> {
-    if message_body.is_empty() {
-        return Err(SqsError::BadRequest(
-            "MessageBody must contain at least one character".to_string(),
-        ));
-    }
-
-    if message_body.len() > maximum_message_size as usize {
-        return Err(SqsError::BadRequest(format!(
-            "MessageBody exceeds the queue MaximumMessageSize of {} bytes",
-            maximum_message_size
-        )));
-    }
-
-    if !message_body.chars().all(is_valid_sqs_message_character) {
-        return Err(SqsError::BadRequest(
-            "MessageBody contains characters that are not allowed by SQS".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
-fn is_valid_sqs_message_character(ch: char) -> bool {
-    matches!(
-        ch,
-        '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
-    )
 }
 
 #[async_trait]

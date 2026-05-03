@@ -9,8 +9,9 @@ use hiraeth_store::sqs::SqsStore;
 
 mod actions;
 mod auth;
-mod error;
-mod util;
+pub mod error;
+pub mod operations;
+pub mod util;
 
 pub struct SqsService<S: SqsStore> {
     store: S,

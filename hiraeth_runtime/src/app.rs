@@ -2,6 +2,7 @@ use hiraeth_core::tracing::{CompletedRequestTrace, TraceContext, TraceRecorder};
 use hiraeth_http::IncomingRequest;
 use hiraeth_iam::{AuthorizationMode, IamService};
 use hiraeth_router::ServiceRouter;
+use hiraeth_sns::SnsService;
 use hiraeth_sqs::SqsService;
 use hiraeth_store_sqlx::{SqliteIamStore, SqliteTraceStore, SqlxStore};
 use hiraeth_sts::StsService;
@@ -22,8 +23,13 @@ impl App {
             auth_mode.clone(),
             iam_store.clone(),
         )));
-        router.register_service(Box::new(IamService::new(auth_mode, iam_store)));
+        router.register_service(Box::new(IamService::new(auth_mode.clone(), iam_store)));
         router.register_service(Box::new(SqsService::new(store.sqs_store.clone())));
+        router.register_service(Box::new(SnsService::new(
+            store.sns_store.clone(),
+            store.sqs_store.clone(),
+            auth_mode.clone(),
+        )));
         router.register_service(Box::new(StsService::new(store.iam_store.clone())));
 
         Self {

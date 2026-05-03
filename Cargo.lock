@@ -1487,6 +1487,7 @@ dependencies = [
  "hiraeth_http",
  "hiraeth_iam",
  "hiraeth_router",
+ "hiraeth_sns",
  "hiraeth_sqs",
  "hiraeth_store",
  "hiraeth_store_sqlx",
@@ -1507,10 +1508,19 @@ name = "hiraeth_sns"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "hiraeth_core",
+ "hiraeth_http",
+ "hiraeth_iam",
  "hiraeth_router",
+ "hiraeth_sqs",
  "hiraeth_store",
  "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
