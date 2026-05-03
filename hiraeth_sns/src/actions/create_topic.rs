@@ -60,21 +60,20 @@ async fn handle_create_topic_typed<S: SnsStore>(
     );
 
     let now = Utc::now().naive_utc();
+    let attrs = &request_body.attributes;
     let topic = SnsTopic {
         id: 0,
         name: request_body.name,
         region,
         account_id,
-        display_name: request_body
-            .attributes
-            .get("DisplayName")
-            .unwrap_or_default()
-            .to_string(),
-        policy: request_body
-            .attributes
-            .get("Policy")
-            .unwrap_or("{}")
-            .to_string(),
+        display_name: attrs.get("DisplayName").map(|s| s.to_string()),
+        policy: attrs.get("Policy").unwrap_or("{}").to_string(),
+        delivery_policy: attrs.get("DeliveryPolicy").map(|s| s.to_string()),
+        fifo_topic: attrs.get("FifoTopic").map(|s| s.to_string()),
+        signature_version: attrs.get("SignatureVersion").map(|s| s.to_string()),
+        tracing_config: attrs.get("TracingConfig").map(|s| s.to_string()),
+        kms_master_key_id: attrs.get("KmsMasterKeyId").map(|s| s.to_string()),
+        data_protection_policy: attrs.get("DataProtectionPolicy").map(|s| s.to_string()),
         created_at: now,
     };
 

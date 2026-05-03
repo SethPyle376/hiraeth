@@ -24,6 +24,8 @@ pub(crate) struct SubscribeRequest {
     topic_arn: String,
     protocol: String,
     endpoint: String,
+    #[serde(flatten, default)]
+    attributes: super::action_support::SnsAttributes,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,6 +75,7 @@ async fn handle_subscribe_typed<S: SnsStore>(
         uuid::Uuid::new_v4()
     );
 
+    let attrs = &request_body.attributes;
     let subscription = SnsSubscription {
         id: 0,
         topic_arn: request_body.topic_arn,
@@ -80,6 +83,13 @@ async fn handle_subscribe_typed<S: SnsStore>(
         endpoint: request_body.endpoint,
         owner_account_id: request.auth_context.principal.account_id.clone(),
         subscription_arn: subscription_arn.clone(),
+        delivery_policy: attrs.get("DeliveryPolicy").map(|s| s.to_string()),
+        filter_policy: attrs.get("FilterPolicy").map(|s| s.to_string()),
+        filter_policy_scope: attrs.get("FilterPolicyScope").map(|s| s.to_string()),
+        raw_message_delivery: attrs.get("RawMessageDelivery").map(|s| s.to_string()),
+        redrive_policy: attrs.get("RedrivePolicy").map(|s| s.to_string()),
+        subscription_role_arn: attrs.get("SubscriptionRoleArn").map(|s| s.to_string()),
+        replay_policy: attrs.get("ReplayPolicy").map(|s| s.to_string()),
         created_at: Utc::now().naive_utc(),
     };
 

@@ -19,9 +19,12 @@
         </td>
         <td class="py-3 text-xs text-base-content/60">{{ sub.created_at }}</td>
         <td class="py-3 text-right">
-          <form method="post" action="/sns/topics/{{ topic_id }}/subscriptions/{{ sub.id }}/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete this subscription?', 'Deleting...')">
-            <button class="btn btn-xs btn-error" type="submit">Delete</button>
-          </form>
+          <div class="flex items-center justify-end gap-2">
+            {% if sub.raw_message_delivery %}<span class="badge badge-accent badge-xs">Raw</span>{% endif %}
+            <form method="post" action="/sns/topics/{{ topic_id }}/subscriptions/{{ sub.id }}/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete this subscription?', 'Deleting...')">
+              <button class="btn btn-xs btn-error" type="submit">Delete</button>
+            </form>
+          </div>
         </td>
       </tr>
       {% endfor %}

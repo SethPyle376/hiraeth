@@ -73,6 +73,8 @@ struct TopicDetailParams {
     #[serde(default)]
     subscription_endpoint: Option<String>,
     #[serde(default)]
+    subscription_raw_message_delivery: Option<String>,
+    #[serde(default)]
     publish_error: Option<String>,
     #[serde(default)]
     publish_message: Option<String>,
@@ -95,6 +97,8 @@ struct CreateTopicForm {
 struct CreateSubscriptionForm {
     protocol: String,
     endpoint: String,
+    #[serde(default)]
+    raw_message_delivery: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -117,7 +121,7 @@ pub(crate) struct TopicSummary {
     pub(crate) name: String,
     pub(crate) region: String,
     pub(crate) account_id: String,
-    pub(crate) display_name: String,
+    pub(crate) display_name: Option<String>,
     pub(crate) subscription_count: usize,
 }
 
@@ -127,6 +131,7 @@ pub(crate) struct SubscriptionSummary {
     pub(crate) protocol: String,
     pub(crate) endpoint: String,
     pub(crate) subscription_arn: String,
+    pub(crate) raw_message_delivery: bool,
     pub(crate) created_at: String,
 }
 
@@ -150,6 +155,7 @@ struct SubscriptionFormFields {
     has_error: bool,
     protocol: String,
     endpoint: String,
+    raw_message_delivery: bool,
 }
 
 struct PublishFormFields {
@@ -262,6 +268,11 @@ async fn create_topic(
     let region = form.region.trim();
     let account_id = form.account_id.trim();
     let display_name = form.display_name.trim();
+    let display_name = if display_name.is_empty() {
+        None
+    } else {
+        Some(display_name.to_string())
+    };
 
     if let Err(error) = validate_required("Topic name", name)
         .and_then(|_| validate_required("Region", region))
@@ -277,8 +288,14 @@ async fn create_topic(
         name: name.to_string(),
         region: region.to_string(),
         account_id: account_id.to_string(),
-        display_name: display_name.to_string(),
+        display_name,
         policy: "{}".to_string(),
+        delivery_policy: None,
+        fifo_topic: None,
+        signature_version: None,
+        tracing_config: None,
+        kms_master_key_id: None,
+        data_protection_policy: None,
         created_at: now,
     };
 
@@ -388,6 +405,7 @@ async fn topic_detail(
         has_subscription_error: subscription_fields.has_error,
         subscription_protocol: &subscription_fields.protocol,
         subscription_endpoint: &subscription_fields.endpoint,
+        subscription_raw_message_delivery: subscription_fields.raw_message_delivery,
         publish_error: &publish_fields.error,
         has_publish_error: publish_fields.has_error,
         publish_message: &publish_fields.message,
@@ -410,10 +428,18 @@ async fn create_subscription(
     let protocol = form.protocol.trim();
     let endpoint = form.endpoint.trim();
 
+    let raw_message_delivery = form.raw_message_delivery.trim() == "on";
+
     if let Err(error) = validate_required("Protocol", protocol)
         .and_then(|_| validate_required("Endpoint", endpoint))
     {
-        return Ok(subscription_error_redirect(topic_id, protocol, endpoint, error.message()));
+        return Ok(subscription_error_redirect(
+            topic_id,
+            protocol,
+            endpoint,
+            raw_message_delivery,
+            error.message(),
+        ));
     }
 
     if protocol != "sqs" {
@@ -421,6 +447,7 @@ async fn create_subscription(
             topic_id,
             protocol,
             endpoint,
+            raw_message_delivery,
             "Only the 'sqs' protocol is currently supported",
         ));
     }
@@ -441,6 +468,17 @@ async fn create_subscription(
         endpoint: endpoint.to_string(),
         owner_account_id: topic.account_id.clone(),
         subscription_arn,
+        delivery_policy: None,
+        filter_policy: None,
+        filter_policy_scope: None,
+        raw_message_delivery: if raw_message_delivery {
+            Some("true".to_string())
+        } else {
+            None
+        },
+        redrive_policy: None,
+        subscription_role_arn: None,
+        replay_policy: None,
         created_at: Utc::now().naive_utc(),
     };
 
@@ -508,7 +546,7 @@ async fn publish_message(
         }
         match deliver_to_sqs(
             &state,
-            &subscription.endpoint,
+            subscription,
             &topic,
             message,
             subject,
@@ -546,30 +584,36 @@ async fn publish_message(
 
 async fn deliver_to_sqs(
     state: &WebState,
-    endpoint: &str,
+    subscription: &SnsSubscription,
     topic: &SnsTopic,
     message: &str,
     subject: &str,
     message_id: &str,
 ) -> Result<(), WebError> {
-    let queue_id = parse_sqs_endpoint_arn(endpoint)
-        .ok_or_else(|| WebError::bad_request(format!("Invalid SQS endpoint: {endpoint}")))?;
+    let queue_id = parse_sqs_endpoint_arn(&subscription.endpoint)
+        .ok_or_else(|| WebError::bad_request(format!("Invalid SQS endpoint: {}", subscription.endpoint)))?;
 
     let sqs_queue = state
         .sqs_store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await?
-        .ok_or_else(|| WebError::bad_request(format!("SQS queue not found: {endpoint}")))?;
+        .ok_or_else(|| WebError::bad_request(format!("SQS queue not found: {}", subscription.endpoint)))?;
 
-    let notification_body = serde_json::json!({
-        "Type": "Notification",
-        "MessageId": message_id,
-        "TopicArn": format!("arn:aws:sns:{}:{}:{}", topic.region, topic.account_id, topic.name),
-        "Subject": subject,
-        "Message": message,
-        "Timestamp": Utc::now().to_rfc3339(),
-    })
-    .to_string();
+    let raw_delivery = subscription.raw_message_delivery.as_deref() == Some("true");
+
+    let body = if raw_delivery {
+        message.to_string()
+    } else {
+        serde_json::json!({
+            "Type": "Notification",
+            "MessageId": message_id,
+            "TopicArn": format!("arn:aws:sns:{}:{}:{}", topic.region, topic.account_id, topic.name),
+            "Subject": subject,
+            "Message": message,
+            "Timestamp": Utc::now().to_rfc3339(),
+        })
+        .to_string()
+    };
 
     let now = Utc::now().naive_utc();
     let visible_at = now + chrono::Duration::seconds(sqs_queue.delay_seconds);
@@ -578,7 +622,7 @@ async fn deliver_to_sqs(
     let sqs_message = SqsMessage {
         message_id: uuid::Uuid::new_v4().to_string(),
         queue_id: sqs_queue.id,
-        body: notification_body,
+        body,
         message_attributes: None,
         aws_trace_header: None,
         sent_at: now,
@@ -657,6 +701,7 @@ fn subscription_form_fields(params: &TopicDetailParams) -> SubscriptionFormField
         error,
         protocol: params.subscription_protocol.clone().unwrap_or_default(),
         endpoint: params.subscription_endpoint.clone().unwrap_or_default(),
+        raw_message_delivery: params.subscription_raw_message_delivery.as_deref() == Some("on"),
     }
 }
 
@@ -701,6 +746,7 @@ fn subscription_error_redirect(
     topic_id: i64,
     protocol: &str,
     endpoint: &str,
+    raw_message_delivery: bool,
     message: &str,
 ) -> Redirect {
     Redirect::to(&append_query_params(
@@ -709,6 +755,10 @@ fn subscription_error_redirect(
             ("subscription_error", message),
             ("subscription_protocol", protocol),
             ("subscription_endpoint", endpoint),
+            (
+                "subscription_raw_message_delivery",
+                if raw_message_delivery { "on" } else { "" },
+            ),
         ],
     ))
 }
@@ -882,21 +932,61 @@ fn topic_action_card_html(topic: &SnsTopic) -> Result<String, askama::Error> {
 }
 
 fn topic_metadata_list_html(topic: &SnsTopic) -> Result<String, askama::Error> {
-    MetadataList {
-        entries: vec![
-            MetadataEntry {
-                label: "Database ID".to_string(),
-                value: topic.id.to_string(),
-                value_class: "font-mono",
-            },
-            MetadataEntry {
-                label: "Created".to_string(),
-                value: format_datetime(topic.created_at),
-                value_class: "font-mono",
-            },
-        ],
+    let mut entries = vec![
+        MetadataEntry {
+            label: "Database ID".to_string(),
+            value: topic.id.to_string(),
+            value_class: "font-mono",
+        },
+        MetadataEntry {
+            label: "Created".to_string(),
+            value: format_datetime(topic.created_at),
+            value_class: "font-mono",
+        },
+    ];
+    if let Some(ref value) = topic.delivery_policy {
+        entries.push(MetadataEntry {
+            label: "DeliveryPolicy".to_string(),
+            value: value.clone(),
+            value_class: "font-mono",
+        });
     }
-    .render()
+    if let Some(ref value) = topic.fifo_topic {
+        entries.push(MetadataEntry {
+            label: "FifoTopic".to_string(),
+            value: value.clone(),
+            value_class: "font-mono",
+        });
+    }
+    if let Some(ref value) = topic.signature_version {
+        entries.push(MetadataEntry {
+            label: "SignatureVersion".to_string(),
+            value: value.clone(),
+            value_class: "font-mono",
+        });
+    }
+    if let Some(ref value) = topic.tracing_config {
+        entries.push(MetadataEntry {
+            label: "TracingConfig".to_string(),
+            value: value.clone(),
+            value_class: "font-mono",
+        });
+    }
+    if let Some(ref value) = topic.kms_master_key_id {
+        entries.push(MetadataEntry {
+            label: "KmsMasterKeyId".to_string(),
+            value: value.clone(),
+            value_class: "font-mono",
+        });
+    }
+    if let Some(ref value) = topic.data_protection_policy {
+        entries.push(MetadataEntry {
+            label: "DataProtectionPolicy".to_string(),
+            value: value.clone(),
+            value_class: "font-mono",
+        });
+    }
+    MetadataList { entries }.render()
 }
 
 async fn load_topic_summaries(
@@ -953,6 +1043,7 @@ fn subscription_summary(subscription: SnsSubscription) -> SubscriptionSummary {
         protocol: subscription.protocol,
         endpoint: subscription.endpoint,
         subscription_arn: subscription.subscription_arn,
+        raw_message_delivery: subscription.raw_message_delivery.as_deref() == Some("true"),
         created_at: format_datetime(subscription.created_at),
     }
 }

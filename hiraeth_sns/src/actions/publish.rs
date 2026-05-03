@@ -80,7 +80,7 @@ where
         let result = if subscription.protocol == "sqs" {
             deliver_to_sqs(
                 store,
-                &subscription.endpoint,
+                &subscription,
                 &topic,
                 &request_body,
                 &message_id,
@@ -128,7 +128,7 @@ where
 
 async fn deliver_to_sqs<SS, QS>(
     store: &SnsServiceStore<SS, QS>,
-    endpoint: &str,
+    subscription: &hiraeth_store::sns::SnsSubscription,
     topic: &hiraeth_store::sns::SnsTopic,
     request_body: &PublishRequest,
     message_id: &str,
@@ -137,14 +137,14 @@ where
     SS: SnsStore + Send + Sync,
     QS: SqsStore + Send + Sync,
 {
-    let queue_id = crate::actions::action_support::parse_sqs_endpoint_arn(endpoint)
-        .ok_or_else(|| SnsError::BadRequest(format!("Invalid SQS endpoint: {}", endpoint)))?;
+    let queue_id = crate::actions::action_support::parse_sqs_endpoint_arn(&subscription.endpoint)
+        .ok_or_else(|| SnsError::BadRequest(format!("Invalid SQS endpoint: {}", subscription.endpoint)))?;
 
     let sqs_queue = store
         .sqs_store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await?
-        .ok_or_else(|| SnsError::BadRequest(format!("SQS queue not found: {}", endpoint)))?;
+        .ok_or_else(|| SnsError::BadRequest(format!("SQS queue not found: {}", subscription.endpoint)))?;
 
     let queue_arn = format!(
         "arn:aws:sqs:{}:{}:{}",
@@ -179,20 +179,26 @@ where
         return Err(SnsError::NotAuthorizedToQueue(queue_arn));
     }
 
-    let notification_body = serde_json::json!({
-        "Type": "Notification",
-        "MessageId": message_id,
-        "TopicArn": format!("arn:aws:sns:{}:{}:{}", topic.region, topic.account_id, topic.name),
-        "Subject": request_body.subject.as_deref().unwrap_or(""),
-        "Message": request_body.message,
-        "Timestamp": Utc::now().to_rfc3339(),
-    })
-    .to_string();
+    let raw_delivery = subscription.raw_message_delivery.as_deref() == Some("true");
+
+    let body = if raw_delivery {
+        request_body.message.clone()
+    } else {
+        serde_json::json!({
+            "Type": "Notification",
+            "MessageId": message_id,
+            "TopicArn": format!("arn:aws:sns:{}:{}:{}", topic.region, topic.account_id, topic.name),
+            "Subject": request_body.subject.as_deref().unwrap_or(""),
+            "Message": request_body.message,
+            "Timestamp": Utc::now().to_rfc3339(),
+        })
+        .to_string()
+    };
 
     hiraeth_sqs::operations::enqueue_message(
         &store.sqs_store,
         &sqs_queue,
-        notification_body,
+        body,
         None,
         None,
         None,

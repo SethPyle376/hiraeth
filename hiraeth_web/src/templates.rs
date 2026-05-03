@@ -285,6 +285,7 @@ pub(crate) struct SnsTopicDetailTemplate<'a> {
     pub(crate) has_subscription_error: bool,
     pub(crate) subscription_protocol: &'a str,
     pub(crate) subscription_endpoint: &'a str,
+    pub(crate) subscription_raw_message_delivery: bool,
     pub(crate) publish_error: &'a str,
     pub(crate) has_publish_error: bool,
     pub(crate) publish_message: &'a str,

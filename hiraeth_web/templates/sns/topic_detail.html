@@ -40,7 +40,7 @@
     <div class="card border border-base-300 bg-base-100 shadow-sm">
       <div class="card-body p-5">
         <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Display name</div>
-        <div class="mt-1 text-lg font-black text-secondary">{% if !topic.display_name.is_empty() %}{{ topic.display_name }}{% else %}—{% endif %}</div>
+        <div class="mt-1 text-lg font-black text-secondary">{% match topic.display_name %}{% when Some with (display_name) %}{{ display_name }}{% when None %}—{% endmatch %}</div>
         <div class="text-xs text-base-content/50">friendly name</div>
       </div>
     </div>
@@ -121,7 +121,7 @@
           {% if has_subscription_error %}
           <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
             <span>{{ subscription_error }}</span>
-            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['subscription_error', 'subscription_protocol', 'subscription_endpoint'])">&times;</button>
+            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['subscription_error', 'subscription_protocol', 'subscription_endpoint', 'subscription_raw_message_delivery'])">&times;</button>
           </div>
           {% endif %}
           <form class="grid gap-3 pt-1" method="post" action="/sns/topics/{{ topic_id }}/subscriptions" onsubmit="return hiraethDisableSubmit(this, 'Subscribing...')">
@@ -132,6 +132,10 @@
             <label class="form-control">
               <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Endpoint</span></div>
               <input class="input input-bordered font-mono" name="endpoint" value="{{ subscription_endpoint }}" placeholder="arn:aws:sqs:us-east-1:000000000000:queue-name" required>
+            </label>
+            <label class="flex cursor-pointer items-center gap-2">
+              <input type="checkbox" name="raw_message_delivery" value="on" class="checkbox checkbox-sm" {% if subscription_raw_message_delivery %}checked{% endif %}>
+              <span class="text-sm">Raw message delivery</span>
             </label>
             <button class="btn btn-primary" type="submit">Subscribe</button>
           </form>

@@ -27,13 +27,22 @@ fn map_sqlx_error(err: sqlx::Error) -> StoreError {
 impl SnsStore for SqliteSnsStore {
     async fn create_topic(&self, topic: SnsTopic) -> Result<(), StoreError> {
         sqlx::query!(
-            "INSERT INTO sns_topics (name, region, account_id, display_name, policy, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sns_topics (
+                name, region, account_id, display_name, policy,
+                delivery_policy, fifo_topic, signature_version, tracing_config,
+                kms_master_key_id, data_protection_policy, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             topic.name,
             topic.region,
             topic.account_id,
             topic.display_name,
             topic.policy,
+            topic.delivery_policy,
+            topic.fifo_topic,
+            topic.signature_version,
+            topic.tracing_config,
+            topic.kms_master_key_id,
+            topic.data_protection_policy,
             topic.created_at
         )
         .execute(&self.pool)
@@ -53,7 +62,9 @@ impl SnsStore for SqliteSnsStore {
 
         let topic = sqlx::query_as!(
             SnsTopic,
-            "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at
+            "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
+                    delivery_policy, fifo_topic, signature_version, tracing_config,
+                    kms_master_key_id, data_protection_policy, created_at
              FROM sns_topics
              WHERE name = ? AND region = ? AND account_id = ?",
             name,
@@ -70,7 +81,9 @@ impl SnsStore for SqliteSnsStore {
     async fn get_topic_by_id(&self, id: i64) -> Result<Option<SnsTopic>, StoreError> {
         let topic = sqlx::query_as!(
             SnsTopic,
-            "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at
+            "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
+                    delivery_policy, fifo_topic, signature_version, tracing_config,
+                    kms_master_key_id, data_protection_policy, created_at
              FROM sns_topics
              WHERE id = ?",
             id
@@ -93,7 +106,9 @@ impl SnsStore for SqliteSnsStore {
         let topics = if let Some(prefix) = prefix {
             sqlx::query_as!(
                 SnsTopic,
-                "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at
+                "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
+                        delivery_policy, fifo_topic, signature_version, tracing_config,
+                        kms_master_key_id, data_protection_policy, created_at
                  FROM sns_topics
                  WHERE region = ? AND account_id = ? AND name LIKE ? || '%'
                  ORDER BY name
@@ -108,7 +123,9 @@ impl SnsStore for SqliteSnsStore {
         } else {
             sqlx::query_as!(
                 SnsTopic,
-                "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy, created_at
+                "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
+                        delivery_policy, fifo_topic, signature_version, tracing_config,
+                        kms_master_key_id, data_protection_policy, created_at
                  FROM sns_topics
                  WHERE region = ? AND account_id = ?
                  ORDER BY name
@@ -161,13 +178,23 @@ impl SnsStore for SqliteSnsStore {
 
     async fn create_subscription(&self, subscription: SnsSubscription) -> Result<(), StoreError> {
         sqlx::query!(
-            "INSERT INTO sns_subscriptions (topic_arn, protocol, endpoint, owner_account_id, subscription_arn, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sns_subscriptions (
+                topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
+                delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,
+                redrive_policy, subscription_role_arn, replay_policy, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             subscription.topic_arn,
             subscription.protocol,
             subscription.endpoint,
             subscription.owner_account_id,
             subscription.subscription_arn,
+            subscription.delivery_policy,
+            subscription.filter_policy,
+            subscription.filter_policy_scope,
+            subscription.raw_message_delivery,
+            subscription.redrive_policy,
+            subscription.subscription_role_arn,
+            subscription.replay_policy,
             subscription.created_at
         )
         .execute(&self.pool)
@@ -182,7 +209,9 @@ impl SnsStore for SqliteSnsStore {
     ) -> Result<Option<SnsSubscription>, StoreError> {
         let sub = sqlx::query_as!(
             SnsSubscription,
-            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn, created_at
+            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
+                    delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,
+                    redrive_policy, subscription_role_arn, replay_policy, created_at
              FROM sns_subscriptions
              WHERE subscription_arn = ?",
             subscription_arn
@@ -200,7 +229,9 @@ impl SnsStore for SqliteSnsStore {
     ) -> Result<Option<SnsSubscription>, StoreError> {
         let sub = sqlx::query_as!(
             SnsSubscription,
-            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn, created_at
+            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
+                    delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,
+                    redrive_policy, subscription_role_arn, replay_policy, created_at
              FROM sns_subscriptions
              WHERE id = ?",
             id
@@ -218,7 +249,9 @@ impl SnsStore for SqliteSnsStore {
     ) -> Result<Vec<SnsSubscription>, StoreError> {
         let subs = sqlx::query_as!(
             SnsSubscription,
-            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn, created_at
+            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
+                    delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,
+                    redrive_policy, subscription_role_arn, replay_policy, created_at
              FROM sns_subscriptions
              WHERE topic_arn = ?",
             topic_arn

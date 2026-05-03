@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sns_subscriptions (\n                topic_arn, protocol, endpoint, owner_account_id, subscription_arn,\n                delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,\n                redrive_policy, subscription_role_arn, replay_policy, created_at\n             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 13
+    },
+    "nullable": []
+  },
+  "hash": "0dd9386b15cc9adf64abf057b454b5a0a1611e43f30b2ba2ccd6abc8d77e1d42"
+}

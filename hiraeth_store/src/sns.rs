@@ -8,8 +8,14 @@ pub struct SnsTopic {
     pub name: String,
     pub region: String,
     pub account_id: String,
-    pub display_name: String,
+    pub display_name: Option<String>,
     pub policy: String,
+    pub delivery_policy: Option<String>,
+    pub fifo_topic: Option<String>,
+    pub signature_version: Option<String>,
+    pub tracing_config: Option<String>,
+    pub kms_master_key_id: Option<String>,
+    pub data_protection_policy: Option<String>,
     pub created_at: chrono::NaiveDateTime,
 }
 
@@ -21,6 +27,13 @@ pub struct SnsSubscription {
     pub endpoint: String,
     pub owner_account_id: String,
     pub subscription_arn: String,
+    pub delivery_policy: Option<String>,
+    pub filter_policy: Option<String>,
+    pub filter_policy_scope: Option<String>,
+    pub raw_message_delivery: Option<String>,
+    pub redrive_policy: Option<String>,
+    pub subscription_role_arn: Option<String>,
+    pub replay_policy: Option<String>,
     pub created_at: chrono::NaiveDateTime,
 }
 
