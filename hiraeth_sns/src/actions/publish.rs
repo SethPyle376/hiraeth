@@ -74,9 +74,6 @@ where
     let message_id = uuid::Uuid::new_v4().to_string();
 
     for subscription in subscriptions {
-        let timer = trace_context.start_span();
-        let child_context = trace_context.child_context(&timer);
-
         let result = if subscription.protocol == "sqs" {
             deliver_to_sqs(
                 store,
@@ -84,9 +81,27 @@ where
                 &topic,
                 &request_body,
                 &message_id,
+                trace_context,
+                trace_recorder,
             )
             .await
         } else {
+            let timer = trace_context.start_span();
+            let ctx = trace_context.child_context(&timer);
+            let attributes = HashMap::from([
+                ("topic_arn".to_string(), request_body.topic_arn.clone()),
+                ("protocol".to_string(), subscription.protocol.clone()),
+                ("endpoint".to_string(), subscription.endpoint.clone()),
+            ]);
+            ctx.record_span_or_warn(
+                trace_recorder,
+                timer,
+                "sns.message.deliver",
+                "sns",
+                "ok",
+                attributes,
+            )
+            .await;
             Ok(())
         };
 
@@ -98,23 +113,6 @@ where
                 "failed to deliver SNS message to subscriber"
             );
         }
-
-        let attributes = HashMap::from([
-            ("topic_arn".to_string(), request_body.topic_arn.clone()),
-            ("protocol".to_string(), subscription.protocol.clone()),
-            ("endpoint".to_string(), subscription.endpoint.clone()),
-        ]);
-
-        child_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sns.message.deliver",
-                "sns",
-                if result.is_ok() { "ok" } else { "error" },
-                attributes,
-            )
-            .await;
     }
 
     Ok(PublishResponse {
@@ -132,6 +130,8 @@ async fn deliver_to_sqs<SS, QS>(
     topic: &hiraeth_store::sns::SnsTopic,
     request_body: &PublishRequest,
     message_id: &str,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
 ) -> Result<(), SnsError>
 where
     SS: SnsStore + Send + Sync,
@@ -175,9 +175,45 @@ where
         _ => hiraeth_router::AuthorizationResult::Allow,
     };
 
+    // Authz span is started from the publish context and recorded first.
+    let authz_timer = trace_context.start_span();
+    let authz_context = trace_context.child_context(&authz_timer);
+    let authz_status = decision.as_trace_status();
+    authz_context
+        .record_span_or_warn(
+            trace_recorder,
+            authz_timer,
+            "authz.evaluate",
+            "sns",
+            authz_status,
+            HashMap::from([
+                ("action".to_string(), "sqs:SendMessage".to_string()),
+                ("resource".to_string(), queue_arn.clone()),
+                (
+                    "mode".to_string(),
+                    match store.auth_mode {
+                        hiraeth_iam::AuthorizationMode::Enforce => "enforce",
+                        hiraeth_iam::AuthorizationMode::Audit => "audit",
+                        hiraeth_iam::AuthorizationMode::Off => "off",
+                    }
+                    .to_string(),
+                ),
+                (
+                    "effective_result".to_string(),
+                    effective.as_trace_status().to_string(),
+                ),
+                ("cross_service".to_string(), "true".to_string()),
+            ]),
+        )
+        .await;
+
     if effective != hiraeth_router::AuthorizationResult::Allow {
         return Err(SnsError::NotAuthorizedToQueue(queue_arn));
     }
+
+    // Delivery span is a child of the authz span.
+    let deliver_timer = authz_context.start_span();
+    let deliver_context = authz_context.child_context(&deliver_timer);
 
     let raw_delivery = subscription.raw_message_delivery.as_deref() == Some("true");
 
@@ -195,7 +231,7 @@ where
         .to_string()
     };
 
-    hiraeth_sqs::operations::enqueue_message(
+    let enqueue_result = hiraeth_sqs::operations::enqueue_message(
         &store.sqs_store,
         &sqs_queue,
         body,
@@ -205,10 +241,29 @@ where
         None,
         Utc::now(),
     )
-    .await
-    .map_err(|e| SnsError::InternalError(format!("sqs delivery failed: {}", e)))?;
+    .await;
 
-    Ok(())
+    let deliver_status = if enqueue_result.is_ok() { "ok" } else { "error" };
+    let deliver_attributes = HashMap::from([
+        ("topic_arn".to_string(), request_body.topic_arn.clone()),
+        ("protocol".to_string(), subscription.protocol.clone()),
+        ("endpoint".to_string(), subscription.endpoint.clone()),
+    ]);
+
+    deliver_context
+        .record_span_or_warn(
+            trace_recorder,
+            deliver_timer,
+            "sns.message.deliver",
+            "sns",
+            deliver_status,
+            deliver_attributes,
+        )
+        .await;
+
+    enqueue_result
+        .map(|_message_id| ())
+        .map_err(|e| SnsError::InternalError(format!("sqs delivery failed: {}", e)))
 }
 
 #[async_trait]
