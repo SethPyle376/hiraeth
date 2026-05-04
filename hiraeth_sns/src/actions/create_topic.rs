@@ -11,10 +11,11 @@ use hiraeth_core::{
 use hiraeth_store::sns::{SnsStore, SnsTopic};
 use serde::{Deserialize, Serialize, de};
 
-use super::action_support::{SnsAttributes, parse_payload_error, query_payload_format};
-use crate::error::SnsError;
-
-const SNS_XMLNS: &str = "http://sns.amazonaws.com/doc/2010-03-31/";
+use super::action_support::{SnsAttributes, is_valid_topic_attribute, parse_payload_error, query_payload_format};
+use crate::{
+    actions::action_support::{ResponseMetadata, SNS_XMLNS},
+    error::SnsError,
+};
 
 pub(crate) struct CreateTopicAction;
 
@@ -39,12 +40,6 @@ pub(crate) struct CreateTopicResponse {
     xmlns: &'static str,
     create_topic_result: CreateTopicResult,
     response_metadata: ResponseMetadata,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub(crate) struct ResponseMetadata {
-    request_id: String,
 }
 
 async fn handle_create_topic_typed<S: SnsStore>(
@@ -74,6 +69,9 @@ async fn handle_create_topic_typed<S: SnsStore>(
         tracing_config: attrs.get("TracingConfig").map(|s| s.to_string()),
         kms_master_key_id: attrs.get("KmsMasterKeyId").map(|s| s.to_string()),
         data_protection_policy: attrs.get("DataProtectionPolicy").map(|s| s.to_string()),
+        archive_policy: attrs.get("ArchivePolicy").map(|s| s.to_string()),
+        beginning_archive_time: None,
+        content_based_deduplication: attrs.get("ContentBasedDeduplication").map(|s| s.to_string()),
         created_at: now,
     };
 
@@ -121,6 +119,14 @@ where
     ) -> Result<(), SnsError> {
         if request_body.name.is_empty() {
             return Err(SnsError::BadRequest("Name is required".to_string()));
+        }
+        for key in request_body.attributes.keys() {
+            if !is_valid_topic_attribute(key) {
+                return Err(SnsError::BadRequest(format!(
+                    "Unsupported attribute name: {}",
+                    key
+                )));
+            }
         }
         Ok(())
     }
@@ -226,6 +232,9 @@ mod tests {
             tracing_config: None,
             kms_master_key_id: None,
             data_protection_policy: None,
+            archive_policy: None,
+            beginning_archive_time: None,
+            content_based_deduplication: None,
             created_at: Utc::now().naive_utc(),
         }
     }
@@ -292,6 +301,56 @@ mod tests {
     async fn validation_rejects_empty_name() {
         let store = SnsTestStore::default();
         let request = resolved_request("Name=");
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        let result = CreateTopicAction.validate(&request, &body, &store).await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn validation_accepts_feedback_attributes() {
+        let store = SnsTestStore::default();
+        let feedback_attrs = [
+            "HTTPSuccessFeedbackRoleArn",
+            "HTTPSuccessFeedbackSampleRate",
+            "HTTPFailureFeedbackRoleArn",
+            "FirehoseSuccessFeedbackRoleArn",
+            "FirehoseSuccessFeedbackSampleRate",
+            "FirehoseFailureFeedbackRoleArn",
+            "LambdaSuccessFeedbackRoleArn",
+            "LambdaSuccessFeedbackSampleRate",
+            "LambdaFailureFeedbackRoleArn",
+            "ApplicationSuccessFeedbackRoleArn",
+            "ApplicationSuccessFeedbackSampleRate",
+            "ApplicationFailureFeedbackRoleArn",
+            "SQSSuccessFeedbackRoleArn",
+            "SQSSuccessFeedbackSampleRate",
+            "SQSFailureFeedbackRoleArn",
+        ];
+
+        for attr in feedback_attrs {
+            let request = resolved_request(&format!(
+                "Name=test-topic&Attributes.entry.1.key={}&Attributes.entry.1.value=arn:aws:iam::123456789012:role/test",
+                attr
+            ));
+            let body: CreateTopicRequest =
+                crate::actions::test_support::parse_request_body(&request);
+
+            let result = CreateTopicAction.validate(&request, &body, &store).await;
+            assert!(
+                result.is_ok(),
+                "expected {} to pass validation",
+                attr
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn validation_rejects_unsupported_attribute() {
+        let store = SnsTestStore::default();
+        let request = resolved_request(
+            "Name=test-topic&Attributes.entry.1.key=UnknownAttr&Attributes.entry.1.value=value",
+        );
         let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
 
         let result = CreateTopicAction.validate(&request, &body, &store).await;

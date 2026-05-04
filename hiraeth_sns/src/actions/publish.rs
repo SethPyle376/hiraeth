@@ -13,9 +13,11 @@ use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
 use super::action_support::{parse_payload_error, query_payload_format};
-use crate::{error::SnsError, store::SnsServiceStore};
-
-const SNS_XMLNS: &str = "http://sns.amazonaws.com/doc/2010-03-31/";
+use crate::{
+    actions::action_support::{ResponseMetadata, SNS_XMLNS},
+    error::SnsError,
+    store::SnsServiceStore,
+};
 
 pub(crate) struct PublishAction;
 
@@ -29,26 +31,18 @@ pub(crate) struct PublishRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename = "PublishResult", rename_all = "PascalCase")]
+#[serde(rename_all = "PascalCase")]
 pub(crate) struct PublishResult {
     message_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename = "PublishResponse")]
+#[serde(rename_all = "PascalCase")]
 pub(crate) struct PublishResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
-    #[serde(rename = "PublishResult")]
     publish_result: PublishResult,
-    #[serde(rename = "ResponseMetadata")]
     response_metadata: ResponseMetadata,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub(crate) struct ResponseMetadata {
-    request_id: String,
 }
 
 async fn handle_publish_typed<SS, QS>(
@@ -437,6 +431,9 @@ mod tests {
             tracing_config: None,
             kms_master_key_id: None,
             data_protection_policy: None,
+            archive_policy: None,
+            beginning_archive_time: None,
+            content_based_deduplication: None,
             created_at: Utc::now().naive_utc(),
         }
     }

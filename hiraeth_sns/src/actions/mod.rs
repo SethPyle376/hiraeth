@@ -1,15 +1,20 @@
 mod action_support;
 mod create_topic;
 mod publish;
+mod set_topic_attributes;
 mod subscribe;
 
 use hiraeth_core::AwsActionRegistry;
 use hiraeth_store::sns::SnsStore;
 use hiraeth_store::sqs::SqsStore;
+use serde::Serialize;
 
 use crate::store::SnsServiceStore;
 
-use self::{create_topic::CreateTopicAction, publish::PublishAction, subscribe::SubscribeAction};
+use self::{
+    create_topic::CreateTopicAction, publish::PublishAction,
+    set_topic_attributes::SetTopicAttributesAction, subscribe::SubscribeAction,
+};
 
 pub(crate) fn registry<SS, QS>() -> AwsActionRegistry<SnsServiceStore<SS, QS>>
 where
@@ -20,6 +25,7 @@ where
     registry.register(CreateTopicAction);
     registry.register(SubscribeAction);
     registry.register(PublishAction);
+    registry.register(SetTopicAttributesAction);
     registry
 }
 

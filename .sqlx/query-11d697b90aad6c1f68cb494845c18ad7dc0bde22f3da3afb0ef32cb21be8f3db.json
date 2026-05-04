@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,\n                    delivery_policy, fifo_topic, signature_version, tracing_config,\n                    kms_master_key_id, data_protection_policy, created_at\n             FROM sns_topics\n             WHERE name = ? AND region = ? AND account_id = ?",
+  "query": "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,\n                    delivery_policy, fifo_topic, signature_version, tracing_config,\n                    kms_master_key_id, data_protection_policy, archive_policy,\n                    beginning_archive_time, content_based_deduplication, created_at\n             FROM sns_topics\n             WHERE name = ? AND region = ? AND account_id = ?",
   "describe": {
     "columns": [
       {
@@ -64,8 +64,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at",
+        "name": "archive_policy",
         "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "beginning_archive_time",
+        "ordinal": 13,
+        "type_info": "Text"
+      },
+      {
+        "name": "content_based_deduplication",
+        "ordinal": 14,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 15,
         "type_info": "Datetime"
       }
     ],
@@ -85,8 +100,11 @@
       true,
       true,
       true,
+      true,
+      true,
+      true,
       false
     ]
   },
-  "hash": "5a80da3aec3ac27530bba549e736a3d10021227a288ccfae24195634c97ab9d5"
+  "hash": "11d697b90aad6c1f68cb494845c18ad7dc0bde22f3da3afb0ef32cb21be8f3db"
 }

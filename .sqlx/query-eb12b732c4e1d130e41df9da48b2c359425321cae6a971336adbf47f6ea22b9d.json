@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sns_topics (\n                name, region, account_id, display_name, policy,\n                delivery_policy, fifo_topic, signature_version, tracing_config,\n                kms_master_key_id, data_protection_policy, archive_policy,\n                beginning_archive_time, content_based_deduplication, created_at\n             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 15
+    },
+    "nullable": []
+  },
+  "hash": "eb12b732c4e1d130e41df9da48b2c359425321cae6a971336adbf47f6ea22b9d"
+}

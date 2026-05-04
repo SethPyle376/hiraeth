@@ -2,8 +2,54 @@ use std::collections::HashMap;
 
 use hiraeth_core::{AwsActionPayloadFormat, AwsActionPayloadParseError};
 use hiraeth_sqs::util::QueueId;
+use serde::Serialize;
 
 use crate::error::SnsError;
+
+pub(crate) const SNS_XMLNS: &str = "http://sns.amazonaws.com/doc/2010-03-31/";
+
+/// All valid SNS topic attribute names accepted by `CreateTopic` and `SetTopicAttributes`.
+///
+/// Attributes that are not currently stored/used are included so that calls referencing them
+/// pass validation rather than returning an "Unsupported attribute name" error.
+pub(super) const VALID_TOPIC_ATTRIBUTES: &[&str] = &[
+    // Stored / functional attributes
+    "ApplicationSuccessFeedbackRoleArn",
+    "ApplicationSuccessFeedbackSampleRate",
+    "ApplicationFailureFeedbackRoleArn",
+    "ArchivePolicy",
+    "ContentBasedDeduplication",
+    "DataProtectionPolicy",
+    "DeliveryPolicy",
+    "DisplayName",
+    "FifoTopic",
+    "FirehoseSuccessFeedbackRoleArn",
+    "FirehoseSuccessFeedbackSampleRate",
+    "FirehoseFailureFeedbackRoleArn",
+    "HTTPFailureFeedbackRoleArn",
+    "HTTPSuccessFeedbackRoleArn",
+    "HTTPSuccessFeedbackSampleRate",
+    "KmsMasterKeyId",
+    "LambdaSuccessFeedbackRoleArn",
+    "LambdaSuccessFeedbackSampleRate",
+    "LambdaFailureFeedbackRoleArn",
+    "Policy",
+    "SignatureVersion",
+    "SQSFailureFeedbackRoleArn",
+    "SQSSuccessFeedbackRoleArn",
+    "SQSSuccessFeedbackSampleRate",
+    "TracingConfig",
+];
+
+pub(super) fn is_valid_topic_attribute(name: &str) -> bool {
+    VALID_TOPIC_ATTRIBUTES.contains(&name)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) struct ResponseMetadata {
+    pub request_id: String,
+}
 
 pub(super) fn query_payload_format() -> AwsActionPayloadFormat {
     AwsActionPayloadFormat::AwsQuery
@@ -21,6 +67,25 @@ pub(super) fn parse_sqs_endpoint_arn(endpoint: &str) -> Option<QueueId> {
     let parts: Vec<&str> = endpoint.split(':').collect();
     if parts.len() == 6 && parts[0] == "arn" && parts[1] == "aws" && parts[2] == "sqs" {
         return Some(QueueId {
+            region: parts[3].to_string(),
+            account_id: parts[4].to_string(),
+            name: parts[5].to_string(),
+        });
+    }
+
+    None
+}
+
+pub(crate) struct TopicId {
+    pub region: String,
+    pub account_id: String,
+    pub name: String,
+}
+
+pub(super) fn parse_sns_topic_arn(arn: &str) -> Option<TopicId> {
+    let parts: Vec<&str> = arn.split(':').collect();
+    if parts.len() == 6 && parts[0] == "arn" && parts[1] == "aws" && parts[2] == "sns" {
+        return Some(TopicId {
             region: parts[3].to_string(),
             account_id: parts[4].to_string(),
             name: parts[5].to_string(),
@@ -50,6 +115,10 @@ impl SnsAttributes {
 
     pub(super) fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    pub(super) fn keys(&self) -> impl Iterator<Item = &str> {
+        self.inner.keys().map(String::as_str)
     }
 }
 

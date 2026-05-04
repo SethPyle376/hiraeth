@@ -1,0 +1,397 @@
+use std::collections::HashMap;
+
+use async_trait::async_trait;
+use hiraeth_core::{
+    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
+    TypedAwsAction,
+    auth::AuthorizationCheck,
+    tracing::{TraceContext, TraceRecorder},
+};
+use hiraeth_store::{
+    sns::{SnsStore, SnsTopicAttributeUpdate},
+    sqs::SqsStore,
+};
+use serde::{Deserialize, Serialize};
+
+    use crate::{
+    SnsServiceStore,
+    actions::action_support::{
+        ResponseMetadata, SNS_XMLNS, is_valid_topic_attribute, parse_payload_error,
+        parse_sns_topic_arn, query_payload_format,
+    },
+    auth::resolve_authorization,
+    error::SnsError,
+};
+
+pub(crate) struct SetTopicAttributesAction;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) struct SetTopicAttributesRequest {
+    pub topic_arn: String,
+    pub attribute_name: String,
+    pub attribute_value: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) struct SetTopicAttributesResponse {
+    #[serde(rename = "@xmlns")]
+    xmlns: &'static str,
+    response_metadata: ResponseMetadata,
+}
+
+async fn handle_set_topic_attributes<SS, QS>(
+    request: &ResolvedRequest,
+    store: &SnsServiceStore<SS, QS>,
+    request_body: SetTopicAttributesRequest,
+) -> Result<SetTopicAttributesResponse, SnsError>
+where
+    SS: SnsStore + Send + Sync,
+    QS: SqsStore + Send + Sync,
+{
+    let update = SnsTopicAttributeUpdate::from_attribute_name_and_value(
+        &request_body.attribute_name,
+        &request_body.attribute_value,
+    );
+
+    let topic_id = parse_sns_topic_arn(&request_body.topic_arn)
+        .ok_or_else(|| SnsError::BadRequest("Invalid TopicArn format".to_string()))?;
+
+    store
+        .sns_store
+        .set_topic_attributes(
+            &topic_id.account_id,
+            &topic_id.region,
+            &topic_id.name,
+            update,
+        )
+        .await?;
+
+    Ok(SetTopicAttributesResponse {
+        xmlns: SNS_XMLNS,
+        response_metadata: ResponseMetadata {
+            request_id: request.request_id.clone(),
+        },
+    })
+}
+
+#[async_trait]
+impl<SS, QS> TypedAwsAction<SnsServiceStore<SS, QS>> for SetTopicAttributesAction
+where
+    SS: SnsStore + Send + Sync,
+    QS: SqsStore + Send + Sync,
+{
+    type Request = SetTopicAttributesRequest;
+    type Response = SetTopicAttributesResponse;
+    type Error = SnsError;
+
+    fn name(&self) -> &'static str {
+        "SetTopicAttributes"
+    }
+
+    fn response_format(&self) -> AwsActionResponseFormat {
+        AwsActionResponseFormat::Xml
+    }
+
+    fn payload_format(&self) -> AwsActionPayloadFormat {
+        query_payload_format()
+    }
+
+    fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error {
+        parse_payload_error(error)
+    }
+
+    async fn validate(
+        &self,
+        _request: &ResolvedRequest,
+        request_body: &SetTopicAttributesRequest,
+        _store: &SnsServiceStore<SS, QS>,
+    ) -> Result<(), Self::Error> {
+        if is_valid_topic_attribute(&request_body.attribute_name) {
+            Ok(())
+        } else {
+            Err(SnsError::BadRequest(format!(
+                "Unsupported attribute name: {}",
+                request_body.attribute_name
+            )))
+        }
+    }
+
+    async fn handle(
+        &self,
+        request: ResolvedRequest,
+        request_body: SetTopicAttributesRequest,
+        store: &SnsServiceStore<SS, QS>,
+        trace_context: &TraceContext,
+        trace_recorder: &dyn TraceRecorder,
+    ) -> Result<Self::Response, Self::Error> {
+        let attributes = HashMap::from([
+            ("topic_arn".to_string(), request_body.topic_arn.clone()),
+            (
+                "attribute_name".to_string(),
+                request_body.attribute_name.clone(),
+            ),
+            (
+                "attribute_value".to_string(),
+                request_body.attribute_value.clone(),
+            ),
+        ]);
+
+        trace_context
+            .record_result_span(
+                trace_recorder,
+                "sns.topic_attributes.set",
+                "sns",
+                attributes,
+                async { handle_set_topic_attributes(&request, store, request_body).await },
+            )
+            .await
+    }
+
+    async fn resolve_authorization(
+        &self,
+        request: &ResolvedRequest,
+        request_body: SetTopicAttributesRequest,
+        store: &SnsServiceStore<SS, QS>,
+    ) -> Result<AuthorizationCheck, Self::Error> {
+        resolve_authorization("sns:SetTopicAttributes", request, &store.sns_store).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use chrono::{TimeZone, Utc};
+    use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
+    use hiraeth_http::IncomingRequest;
+    use hiraeth_core::tracing::{NoopTraceRecorder, TraceContext};
+    use hiraeth_iam::AuthorizationMode;
+    use hiraeth_store::{
+        principal::Principal,
+        sns::{SnsStore, SnsTopic, SnsTopicAttributeUpdate},
+        test_support::{SnsTestStore, SqsTestStore},
+    };
+
+    use super::{SetTopicAttributesAction, SetTopicAttributesRequest, handle_set_topic_attributes};
+    use crate::store::SnsServiceStore;
+
+    fn resolved_request(body: &str) -> ResolvedRequest {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "x-amz-target".to_string(),
+            "AmazonSNS.SetTopicAttributes".to_string(),
+        );
+
+        ResolvedRequest {
+            request_id: "test-request-id".to_string(),
+            request: IncomingRequest {
+                host: "localhost:4566".to_string(),
+                method: "POST".to_string(),
+                path: "/".to_string(),
+                query: None,
+                headers,
+                body: body.as_bytes().to_vec(),
+            },
+            service: "sns".to_string(),
+            region: "us-east-1".to_string(),
+            auth_context: AuthContext {
+                access_key: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                principal: Principal {
+                    id: 1,
+                    account_id: "123456789012".to_string(),
+                    kind: "user".to_string(),
+                    name: "test-user".to_string(),
+                    path: "/".to_string(),
+                    user_id: "AIDATESTUSER000001".to_string(),
+                    created_at: Utc
+                        .with_ymd_and_hms(2026, 4, 4, 12, 0, 0)
+                        .unwrap()
+                        .naive_utc(),
+                },
+            },
+            date: Utc.with_ymd_and_hms(2026, 4, 4, 12, 0, 0).unwrap(),
+        }
+    }
+
+    fn topic() -> SnsTopic {
+        SnsTopic {
+            id: 1,
+            name: "test-topic".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "123456789012".to_string(),
+            display_name: None,
+            policy: "{}".to_string(),
+            delivery_policy: None,
+            fifo_topic: None,
+            signature_version: None,
+            tracing_config: None,
+            kms_master_key_id: None,
+            data_protection_policy: None,
+            archive_policy: None,
+            beginning_archive_time: None,
+            content_based_deduplication: None,
+            created_at: Utc::now().naive_utc(),
+        }
+    }
+
+    fn service_store(
+        sns: SnsTestStore,
+        sqs: SqsTestStore,
+    ) -> SnsServiceStore<SnsTestStore, SqsTestStore> {
+        SnsServiceStore::new(sns, sqs, AuthorizationMode::Off)
+    }
+
+    #[test]
+    fn reports_expected_action_name() {
+        assert_eq!(
+            <SetTopicAttributesAction as TypedAwsAction<
+                SnsServiceStore<SnsTestStore, SqsTestStore>,
+            >>::name(&SetTopicAttributesAction),
+            "SetTopicAttributes"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_topic_attribute_updates_display_name() {
+        let sns = SnsTestStore::with_topic(topic());
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&AttributeName=DisplayName&AttributeValue=MyDisplay",
+        );
+        let body: SetTopicAttributesRequest =
+            crate::actions::test_support::parse_request_body(&request);
+        let trace_context = TraceContext::new("test-request-id");
+
+        let response = handle_set_topic_attributes(&request, &store, body)
+            .await
+            .expect("set topic attributes should succeed");
+
+        assert_eq!(response.response_metadata.request_id, "test-request-id");
+
+        let updated = store
+            .sns_store
+            .get_topic("arn:aws:sns:us-east-1:123456789012:test-topic")
+            .await
+            .expect("get topic should succeed")
+            .expect("topic should exist");
+        assert_eq!(updated.display_name, Some("MyDisplay".to_string()));
+    }
+
+    #[tokio::test]
+    async fn set_topic_attribute_updates_policy() {
+        let sns = SnsTestStore::with_topic(topic());
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&AttributeName=Policy&AttributeValue=%7B%22Statement%22%3A%5B%5D%7D",
+        );
+        let body: SetTopicAttributesRequest =
+            crate::actions::test_support::parse_request_body(&request);
+        let trace_context = TraceContext::new("test-request-id");
+
+        let response = handle_set_topic_attributes(&request, &store, body)
+            .await
+            .expect("set topic attributes should succeed");
+
+        assert_eq!(response.response_metadata.request_id, "test-request-id");
+
+        let updated = store
+            .sns_store
+            .get_topic("arn:aws:sns:us-east-1:123456789012:test-topic")
+            .await
+            .expect("get topic should succeed")
+            .expect("topic should exist");
+        assert_eq!(updated.policy, r#"{"Statement":[]}"#);
+    }
+
+    #[tokio::test]
+    async fn topic_not_found_error() {
+        let sns = SnsTestStore::default();
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&AttributeName=DisplayName&AttributeValue=MyDisplay",
+        );
+        let body: SetTopicAttributesRequest =
+            crate::actions::test_support::parse_request_body(&request);
+        let trace_context = TraceContext::new("test-request-id");
+
+        let result = handle_set_topic_attributes(&request, &store, body).await;
+        assert!(matches!(result, Err(crate::error::SnsError::TopicNotFound)));
+    }
+
+    #[tokio::test]
+    async fn validation_accepts_feedback_attributes() {
+        let sns = SnsTestStore::with_topic(topic());
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+
+        let feedback_attrs = [
+            "HTTPSuccessFeedbackRoleArn",
+            "HTTPSuccessFeedbackSampleRate",
+            "HTTPFailureFeedbackRoleArn",
+            "FirehoseSuccessFeedbackRoleArn",
+            "FirehoseSuccessFeedbackSampleRate",
+            "FirehoseFailureFeedbackRoleArn",
+            "LambdaSuccessFeedbackRoleArn",
+            "LambdaSuccessFeedbackSampleRate",
+            "LambdaFailureFeedbackRoleArn",
+            "ApplicationSuccessFeedbackRoleArn",
+            "ApplicationSuccessFeedbackSampleRate",
+            "ApplicationFailureFeedbackRoleArn",
+            "SQSSuccessFeedbackRoleArn",
+            "SQSSuccessFeedbackSampleRate",
+            "SQSFailureFeedbackRoleArn",
+        ];
+
+        for attr in feedback_attrs {
+            let request = resolved_request(&format!(
+                "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&AttributeName={}&AttributeValue=value",
+                attr
+            ));
+            let body: SetTopicAttributesRequest =
+                crate::actions::test_support::parse_request_body(&request);
+
+            let result = SetTopicAttributesAction.validate(&request, &body, &store).await;
+            assert!(
+                result.is_ok(),
+                "expected {} to pass validation",
+                attr
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn validation_rejects_unsupported_attribute() {
+        let sns = SnsTestStore::with_topic(topic());
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&AttributeName=UnknownAttr&AttributeValue=value",
+        );
+        let body: SetTopicAttributesRequest =
+            crate::actions::test_support::parse_request_body(&request);
+
+        let result = SetTopicAttributesAction.validate(&request, &body, &store).await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn invalid_topic_arn_returns_bad_request() {
+        let sns = SnsTestStore::with_topic(topic());
+        let sqs = SqsTestStore::default();
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=not-an-arn&AttributeName=DisplayName&AttributeValue=MyDisplay",
+        );
+        let body: SetTopicAttributesRequest =
+            crate::actions::test_support::parse_request_body(&request);
+        let trace_context = TraceContext::new("test-request-id");
+
+        let result = handle_set_topic_attributes(&request, &store, body).await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
+}

@@ -12,9 +12,10 @@ use hiraeth_store::sns::{SnsStore, SnsSubscription};
 use serde::{Deserialize, Serialize};
 
 use super::action_support::{parse_payload_error, query_payload_format};
-use crate::error::SnsError;
-
-const SNS_XMLNS: &str = "http://sns.amazonaws.com/doc/2010-03-31/";
+use crate::{
+    actions::action_support::{ResponseMetadata, SNS_XMLNS, SnsAttributes},
+    error::SnsError,
+};
 
 pub(crate) struct SubscribeAction;
 
@@ -25,7 +26,7 @@ pub(crate) struct SubscribeRequest {
     protocol: String,
     endpoint: String,
     #[serde(flatten, default)]
-    attributes: super::action_support::SnsAttributes,
+    attributes: SnsAttributes,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -41,12 +42,6 @@ pub(crate) struct SubscribeResponse {
     xmlns: &'static str,
     subscribe_result: SubscribeResult,
     response_metadata: ResponseMetadata,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub(crate) struct ResponseMetadata {
-    request_id: String,
 }
 
 async fn handle_subscribe_typed<S: SnsStore>(
@@ -249,6 +244,9 @@ mod tests {
             tracing_config: None,
             kms_master_key_id: None,
             data_protection_policy: None,
+            archive_policy: None,
+            beginning_archive_time: None,
+            content_based_deduplication: None,
             created_at: Utc::now().naive_utc(),
         }
     }

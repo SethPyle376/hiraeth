@@ -300,6 +300,9 @@ async fn create_topic(
         tracing_config: None,
         kms_master_key_id: None,
         data_protection_policy: None,
+        archive_policy: None,
+        beginning_archive_time: None,
+        content_based_deduplication: None,
         created_at: now,
     };
 

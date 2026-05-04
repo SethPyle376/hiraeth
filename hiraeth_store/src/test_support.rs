@@ -10,6 +10,7 @@ use async_trait::async_trait;
 
 use crate::{
     StoreError,
+    sns::SnsTopicAttributeUpdate,
     sqs::{SqsMessage, SqsQueue, SqsQueueAttributeUpdate, SqsStore},
 };
 
@@ -801,6 +802,58 @@ impl SnsStore for SnsTestStore {
             .lock()
             .expect("deleted subscription ids mutex")
             .push(id);
+        Ok(())
+    }
+
+    async fn set_topic_attributes(
+        &self,
+        account_id: &str,
+        region: &str,
+        topic_name: &str,
+        update: SnsTopicAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        let mut topics = self.topics.lock().expect("topics mutex");
+        let topic = topics
+            .iter_mut()
+            .find(|topic| {
+                topic.name == topic_name && topic.region == region && topic.account_id == account_id
+            })
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+
+        if update.delivery_policy.is_some() {
+            topic.delivery_policy = update.delivery_policy;
+        }
+        if update.display_name.is_some() {
+            topic.display_name = update.display_name;
+        }
+        if let Some(policy) = update.policy {
+            topic.policy = policy;
+        }
+        if update.tracing_config.is_some() {
+            topic.tracing_config = update.tracing_config;
+        }
+        if update.kms_master_key_id.is_some() {
+            topic.kms_master_key_id = update.kms_master_key_id;
+        }
+        if update.signature_version.is_some() {
+            topic.signature_version = update.signature_version;
+        }
+        if update.fifo_topic.is_some() {
+            topic.fifo_topic = update.fifo_topic;
+        }
+        if update.data_protection_policy.is_some() {
+            topic.data_protection_policy = update.data_protection_policy;
+        }
+        if update.archive_policy.is_some() {
+            topic.archive_policy = update.archive_policy;
+        }
+        if update.beginning_archive_time.is_some() {
+            topic.beginning_archive_time = update.beginning_archive_time;
+        }
+        if update.content_based_deduplication.is_some() {
+            topic.content_based_deduplication = update.content_based_deduplication;
+        }
+
         Ok(())
     }
 }

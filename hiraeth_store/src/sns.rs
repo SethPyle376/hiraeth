@@ -16,6 +16,9 @@ pub struct SnsTopic {
     pub tracing_config: Option<String>,
     pub kms_master_key_id: Option<String>,
     pub data_protection_policy: Option<String>,
+    pub archive_policy: Option<String>,
+    pub beginning_archive_time: Option<String>,
+    pub content_based_deduplication: Option<String>,
     pub created_at: chrono::NaiveDateTime,
 }
 
@@ -35,6 +38,69 @@ pub struct SnsSubscription {
     pub subscription_role_arn: Option<String>,
     pub replay_policy: Option<String>,
     pub created_at: chrono::NaiveDateTime,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SnsTopicAttributeUpdate {
+    pub delivery_policy: Option<String>,
+    pub display_name: Option<String>,
+    pub policy: Option<String>,
+    pub tracing_config: Option<String>,
+    pub kms_master_key_id: Option<String>,
+    pub signature_version: Option<String>,
+    pub fifo_topic: Option<String>,
+    pub data_protection_policy: Option<String>,
+    pub archive_policy: Option<String>,
+    pub beginning_archive_time: Option<String>,
+    pub content_based_deduplication: Option<String>,
+}
+
+impl SnsTopicAttributeUpdate {
+    pub fn from_attribute_name_and_value(attribute_name: &str, attribute_value: &str) -> Self {
+        match attribute_name {
+            "DeliveryPolicy" => Self {
+                delivery_policy: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "DisplayName" => Self {
+                display_name: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "Policy" => Self {
+                policy: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "TracingConfig" => Self {
+                tracing_config: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "KmsMasterKeyId" => Self {
+                kms_master_key_id: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "SignatureVersion" => Self {
+                signature_version: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "FifoTopic" => Self {
+                fifo_topic: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "DataProtectionPolicy" => Self {
+                data_protection_policy: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "ArchivePolicy" => Self {
+                archive_policy: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "ContentBasedDeduplication" => Self {
+                content_based_deduplication: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            _ => Default::default(),
+        }
+    }
 }
 
 #[async_trait]
@@ -63,4 +129,11 @@ pub trait SnsStore {
     ) -> Result<Vec<SnsSubscription>, StoreError>;
     async fn delete_subscription(&self, subscription_arn: &str) -> Result<(), StoreError>;
     async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError>;
+    async fn set_topic_attributes(
+        &self,
+        account_id: &str,
+        region: &str,
+        topic_name: &str,
+        update: SnsTopicAttributeUpdate,
+    ) -> Result<(), StoreError>;
 }

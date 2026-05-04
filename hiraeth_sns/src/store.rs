@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use hiraeth_iam::AuthorizationMode;
 use hiraeth_store::StoreError;
-use hiraeth_store::sns::{SnsStore, SnsSubscription, SnsTopic};
+use hiraeth_store::sns::{SnsStore, SnsSubscription, SnsTopic, SnsTopicAttributeUpdate};
 use hiraeth_store::sqs::SqsStore;
 
 /// Composite store passed to SNS actions. It provides the SNS store interface
@@ -86,5 +86,17 @@ where
 
     async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError> {
         self.sns_store.delete_subscription_by_id(id).await
+    }
+
+    async fn set_topic_attributes(
+        &self,
+        account_id: &str,
+        region: &str,
+        topic_name: &str,
+        update: SnsTopicAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        self.sns_store
+            .set_topic_attributes(account_id, region, topic_name, update)
+            .await
     }
 }

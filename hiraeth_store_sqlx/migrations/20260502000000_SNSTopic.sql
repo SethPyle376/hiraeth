@@ -11,6 +11,9 @@ CREATE TABLE sns_topics (
     tracing_config TEXT,
     kms_master_key_id TEXT,
     data_protection_policy TEXT,
+    archive_policy TEXT,
+    beginning_archive_time TEXT,
+    content_based_deduplication TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(name, region, account_id)
 );

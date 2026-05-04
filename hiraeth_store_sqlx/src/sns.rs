@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use hiraeth_store::StoreError;
-use hiraeth_store::sns::{SnsStore, SnsSubscription, SnsTopic};
+use hiraeth_store::sns::{SnsStore, SnsSubscription, SnsTopic, SnsTopicAttributeUpdate};
 
 #[derive(Clone)]
 pub struct SqliteSnsStore {
@@ -30,8 +30,9 @@ impl SnsStore for SqliteSnsStore {
             "INSERT INTO sns_topics (
                 name, region, account_id, display_name, policy,
                 delivery_policy, fifo_topic, signature_version, tracing_config,
-                kms_master_key_id, data_protection_policy, created_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                kms_master_key_id, data_protection_policy, archive_policy,
+                beginning_archive_time, content_based_deduplication, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             topic.name,
             topic.region,
             topic.account_id,
@@ -43,6 +44,9 @@ impl SnsStore for SqliteSnsStore {
             topic.tracing_config,
             topic.kms_master_key_id,
             topic.data_protection_policy,
+            topic.archive_policy,
+            topic.beginning_archive_time,
+            topic.content_based_deduplication,
             topic.created_at
         )
         .execute(&self.pool)
@@ -64,7 +68,8 @@ impl SnsStore for SqliteSnsStore {
             SnsTopic,
             "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
                     delivery_policy, fifo_topic, signature_version, tracing_config,
-                    kms_master_key_id, data_protection_policy, created_at
+                    kms_master_key_id, data_protection_policy, archive_policy,
+                    beginning_archive_time, content_based_deduplication, created_at
              FROM sns_topics
              WHERE name = ? AND region = ? AND account_id = ?",
             name,
@@ -83,7 +88,8 @@ impl SnsStore for SqliteSnsStore {
             SnsTopic,
             "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
                     delivery_policy, fifo_topic, signature_version, tracing_config,
-                    kms_master_key_id, data_protection_policy, created_at
+                    kms_master_key_id, data_protection_policy, archive_policy,
+                    beginning_archive_time, content_based_deduplication, created_at
              FROM sns_topics
              WHERE id = ?",
             id
@@ -108,7 +114,8 @@ impl SnsStore for SqliteSnsStore {
                 SnsTopic,
                 "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
                         delivery_policy, fifo_topic, signature_version, tracing_config,
-                        kms_master_key_id, data_protection_policy, created_at
+                        kms_master_key_id, data_protection_policy, archive_policy,
+                        beginning_archive_time, content_based_deduplication, created_at
                  FROM sns_topics
                  WHERE region = ? AND account_id = ? AND name LIKE ? || '%'
                  ORDER BY name
@@ -125,7 +132,8 @@ impl SnsStore for SqliteSnsStore {
                 SnsTopic,
                 "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
                         delivery_policy, fifo_topic, signature_version, tracing_config,
-                        kms_master_key_id, data_protection_policy, created_at
+                        kms_master_key_id, data_protection_policy, archive_policy,
+                        beginning_archive_time, content_based_deduplication, created_at
                  FROM sns_topics
                  WHERE region = ? AND account_id = ?
                  ORDER BY name
@@ -288,6 +296,63 @@ impl SnsStore for SqliteSnsStore {
 
         Ok(())
     }
+
+    async fn set_topic_attributes(
+        &self,
+        account_id: &str,
+        region: &str,
+        topic_name: &str,
+        update: SnsTopicAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        let topic_arn = format!("arn:aws:sns:{region}:{account_id}:{topic_name}");
+        let topic = self
+            .get_topic(&topic_arn)
+            .await?
+            .ok_or(StoreError::NotFound("topic not found".to_string()))?;
+
+        let new_display_name = update.display_name.or(topic.display_name);
+        let new_policy = update.policy.unwrap_or(topic.policy);
+        let new_delivery_policy = update.delivery_policy.or(topic.delivery_policy);
+        let new_signature_version = update.signature_version.or(topic.signature_version);
+        let new_tracing_config = update.tracing_config.or(topic.tracing_config);
+        let new_kms_master_key_id = update.kms_master_key_id.or(topic.kms_master_key_id);
+        let new_fifo_topic = update.fifo_topic.or(topic.fifo_topic);
+        let new_data_protection_policy = update
+            .data_protection_policy
+            .or(topic.data_protection_policy);
+        let new_archive_policy = update.archive_policy.or(topic.archive_policy);
+        let new_beginning_archive_time = update
+            .beginning_archive_time
+            .or(topic.beginning_archive_time);
+        let new_content_based_deduplication = update
+            .content_based_deduplication
+            .or(topic.content_based_deduplication);
+
+        sqlx::query!(
+            "UPDATE sns_topics SET display_name = ?, policy = ?, delivery_policy = ?,
+             signature_version = ?, tracing_config = ?, kms_master_key_id = ?,
+             fifo_topic = ?, data_protection_policy = ?, archive_policy = ?,
+             beginning_archive_time = ?, content_based_deduplication = ?
+             WHERE id = ?",
+            new_display_name,
+            new_policy,
+            new_delivery_policy,
+            new_signature_version,
+            new_tracing_config,
+            new_kms_master_key_id,
+            new_fifo_topic,
+            new_data_protection_policy,
+            new_archive_policy,
+            new_beginning_archive_time,
+            new_content_based_deduplication,
+            topic.id
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -299,7 +364,7 @@ mod tests {
     use crate::{get_store_pool, run_migrations};
     use hiraeth_store::{
         StoreError,
-        sns::{SnsStore, SnsSubscription, SnsTopic},
+        sns::{SnsStore, SnsSubscription, SnsTopic, SnsTopicAttributeUpdate},
     };
 
     async fn test_store() -> (TempDir, SqliteSnsStore) {
@@ -332,6 +397,9 @@ mod tests {
             tracing_config: None,
             kms_master_key_id: None,
             data_protection_policy: None,
+            archive_policy: None,
+            beginning_archive_time: None,
+            content_based_deduplication: None,
             created_at: now,
         }
     }
@@ -814,5 +882,103 @@ mod tests {
             .expect("get subscription by id should succeed");
 
         assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn set_topic_attributes_updates_display_name() {
+        let (_temp_dir, store) = test_store().await;
+
+        let mut t = topic("my-topic", "us-east-1", "123456789012");
+        t.display_name = Some("Original".to_string());
+        store.create_topic(t).await.expect("topic should insert");
+
+        let update = SnsTopicAttributeUpdate {
+            display_name: Some("Updated".to_string()),
+            ..Default::default()
+        };
+        store
+            .set_topic_attributes("123456789012", "us-east-1", "my-topic", update)
+            .await
+            .expect("set topic attributes should succeed");
+
+        let found = store
+            .get_topic(&topic_arn("my-topic", "us-east-1", "123456789012"))
+            .await
+            .expect("get topic should succeed")
+            .expect("topic should exist");
+
+        assert_eq!(found.display_name, Some("Updated".to_string()));
+    }
+
+    #[tokio::test]
+    async fn set_topic_attributes_updates_policy() {
+        let (_temp_dir, store) = test_store().await;
+
+        let t = topic("my-topic", "us-east-1", "123456789012");
+        store.create_topic(t).await.expect("topic should insert");
+
+        let update = SnsTopicAttributeUpdate {
+            policy: Some(r#"{"Statement":[]}"#.to_string()),
+            ..Default::default()
+        };
+        store
+            .set_topic_attributes("123456789012", "us-east-1", "my-topic", update)
+            .await
+            .expect("set topic attributes should succeed");
+
+        let found = store
+            .get_topic(&topic_arn("my-topic", "us-east-1", "123456789012"))
+            .await
+            .expect("get topic should succeed")
+            .expect("topic should exist");
+
+        assert_eq!(found.policy, r#"{"Statement":[]}"#);
+    }
+
+    #[tokio::test]
+    async fn set_topic_attributes_leaves_unset_fields_unchanged() {
+        let (_temp_dir, store) = test_store().await;
+
+        let mut t = topic("my-topic", "us-east-1", "123456789012");
+        t.display_name = Some("OriginalDisplay".to_string());
+        t.policy = r#"{"Version":"2012-10-17"}"#.to_string();
+        t.delivery_policy = Some(r#"{"numRetries":3}"#.to_string());
+        t.signature_version = Some("1".to_string());
+        store.create_topic(t).await.expect("topic should insert");
+
+        let update = SnsTopicAttributeUpdate {
+            display_name: Some("UpdatedDisplay".to_string()),
+            ..Default::default()
+        };
+        store
+            .set_topic_attributes("123456789012", "us-east-1", "my-topic", update)
+            .await
+            .expect("set topic attributes should succeed");
+
+        let found = store
+            .get_topic(&topic_arn("my-topic", "us-east-1", "123456789012"))
+            .await
+            .expect("get topic should succeed")
+            .expect("topic should exist");
+
+        assert_eq!(found.display_name, Some("UpdatedDisplay".to_string()));
+        assert_eq!(found.policy, r#"{"Version":"2012-10-17"}"#);
+        assert_eq!(found.delivery_policy, Some(r#"{"numRetries":3}"#.to_string()));
+        assert_eq!(found.signature_version, Some("1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn set_topic_attributes_returns_not_found_for_missing_topic() {
+        let (_temp_dir, store) = test_store().await;
+
+        let update = SnsTopicAttributeUpdate {
+            display_name: Some("Updated".to_string()),
+            ..Default::default()
+        };
+        let result = store
+            .set_topic_attributes("123456789012", "us-east-1", "missing-topic", update)
+            .await;
+
+        assert!(matches!(result, Err(StoreError::NotFound(_))));
     }
 }

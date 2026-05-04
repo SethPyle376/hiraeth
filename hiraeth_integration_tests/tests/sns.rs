@@ -247,3 +247,30 @@ async fn publish_to_topic_without_subscriptions() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn set_topic_attribute_succeeds() -> anyhow::Result<()> {
+    let server = sns_test_server().await?;
+    let topic_name = topic_name("set-attr");
+
+    let created = server
+        .client
+        .create_topic()
+        .name(&topic_name)
+        .send()
+        .await
+        .context("create topic should succeed")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
+
+    server
+        .client
+        .set_topic_attributes()
+        .topic_arn(topic_arn)
+        .attribute_name("DisplayName")
+        .attribute_value("MyDisplayName")
+        .send()
+        .await
+        .context("set topic attributes should succeed")?;
+
+    Ok(())
+}
