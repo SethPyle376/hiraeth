@@ -17,9 +17,10 @@ environments, not as a production AWS replacement.
 - SQLite-backed IAM users, access keys, inline policies, managed policies, SQS
   queues, messages, attributes, tags, and SNS topics with SQS subscriptions.
 - SQS-compatible endpoint for common queue and message operations.
-- Partial SNS endpoint support for topics, SQS subscriptions, and publishing.
+- Partial SNS endpoint support for topics, SQS subscriptions, subscription
+  attributes, raw message delivery, and publishing.
 - Partial IAM Query API support for users, access keys, inline user policies,
-  managed policies, and policy attachments.
+  managed policies, policy attachments, and policy retrieval.
 - STS `GetCallerIdentity` support.
 - SQLite-backed request tracing with span flow visualization in the web UI.
 - Web admin UI on a separate port for inspecting local service state.

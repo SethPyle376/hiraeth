@@ -68,7 +68,8 @@ Useful labels for triage:
 - `good first issue`: small, well-scoped work for new contributors.
 - `aws-parity`: behavior differs from AWS or needs compatibility validation.
 - `sqs`: SQS API, storage, validation, or response behavior.
-- `iam`: future authorization, principal, policy, and identity work.
+- `sns`: SNS API, topics, subscriptions, or delivery behavior.
+- `iam`: authorization, principal, policy, and identity work.
 - `web-ui`: admin/debug UI work.
 - `tests`: unit or integration test coverage.
 - `docs`: README, examples, release notes, or contributor documentation.
@@ -81,11 +82,12 @@ setup or a future label-sync workflow.
 
 ## Starter Issue Ideas
 
-- Add an AWS SDK integration test for one SQS edge case that is not covered yet.
-- Improve validation for one SQS API request and add matching error tests.
+- Add an AWS SDK integration test for one SQS or SNS edge case that is not covered yet.
+- Improve validation for one SQS or SNS API request and add matching error tests.
 - Add a README snippet for configuring another AWS SDK against Hiraeth.
 - Document a known AWS parity gap with a concrete example.
 - Add a small web UI convenience action that does not change emulator behavior.
+- Implement a missing SNS Query API such as `ListTopics`, `DeleteTopic`, or `Unsubscribe`.
 
 ## Pull Requests
 

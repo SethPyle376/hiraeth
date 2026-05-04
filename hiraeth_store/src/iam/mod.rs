@@ -15,8 +15,6 @@ pub use principal_inline_policy_store::{
     InMemoryPrincipalInlinePolicyStore, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
 };
 
-
-
 pub struct InMemoryIamStore {
     pub access_key_store: InMemoryAccessKeyStore,
     pub principal_store: InMemoryPrincipalStore,

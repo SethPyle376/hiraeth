@@ -200,8 +200,12 @@ async fn dashboard(
         .map(|topic| topic.subscription_count)
         .sum::<usize>();
     let page_header_html = dashboard_page_header(&params.region, &params.account_id)?;
-    let dashboard_stats_html =
-        dashboard_stats_html(&params.region, &params.account_id, summaries.len(), total_subscriptions)?;
+    let dashboard_stats_html = dashboard_stats_html(
+        &params.region,
+        &params.account_id,
+        summaries.len(),
+        total_subscriptions,
+    )?;
     let empty_state_html = topic_list_empty_state_html()?;
 
     let template = SnsDashboardTemplate {
@@ -496,7 +500,10 @@ async fn delete_subscription(
     Path((topic_id, subscription_id)): Path<(i64, i64)>,
 ) -> Result<Redirect, WebError> {
     load_topic_by_id(&state, topic_id).await?;
-    state.sns_store.delete_subscription_by_id(subscription_id).await?;
+    state
+        .sns_store
+        .delete_subscription_by_id(subscription_id)
+        .await?;
     Ok(feedback_redirect(
         topic_detail_path(topic_id),
         "success",
@@ -531,7 +538,12 @@ async fn publish_message(
     let subject = form.subject.trim();
 
     if let Err(error) = validate_required("Message", message) {
-        return Ok(publish_error_redirect(topic_id, message, subject, error.message()));
+        return Ok(publish_error_redirect(
+            topic_id,
+            message,
+            subject,
+            error.message(),
+        ));
     }
 
     let arn = topic_arn(&topic.name, &topic.region, &topic.account_id);
@@ -544,16 +556,7 @@ async fn publish_message(
         if subscription.protocol != "sqs" {
             continue;
         }
-        match deliver_to_sqs(
-            &state,
-            subscription,
-            &topic,
-            message,
-            subject,
-            &message_id,
-        )
-        .await
-        {
+        match deliver_to_sqs(&state, subscription, &topic, message, subject, &message_id).await {
             Ok(()) => delivered += 1,
             Err(_error) => {
                 failed += 1;
@@ -590,14 +593,17 @@ async fn deliver_to_sqs(
     subject: &str,
     message_id: &str,
 ) -> Result<(), WebError> {
-    let queue_id = parse_sqs_endpoint_arn(&subscription.endpoint)
-        .ok_or_else(|| WebError::bad_request(format!("Invalid SQS endpoint: {}", subscription.endpoint)))?;
+    let queue_id = parse_sqs_endpoint_arn(&subscription.endpoint).ok_or_else(|| {
+        WebError::bad_request(format!("Invalid SQS endpoint: {}", subscription.endpoint))
+    })?;
 
     let sqs_queue = state
         .sqs_store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await?
-        .ok_or_else(|| WebError::bad_request(format!("SQS queue not found: {}", subscription.endpoint)))?;
+        .ok_or_else(|| {
+            WebError::bad_request(format!("SQS queue not found: {}", subscription.endpoint))
+        })?;
 
     let raw_delivery = subscription.raw_message_delivery.as_deref() == Some("true");
 
@@ -763,12 +769,7 @@ fn subscription_error_redirect(
     ))
 }
 
-fn publish_error_redirect(
-    topic_id: i64,
-    message: &str,
-    subject: &str,
-    error: &str,
-) -> Redirect {
+fn publish_error_redirect(topic_id: i64, message: &str, subject: &str, error: &str) -> Redirect {
     Redirect::to(&append_query_params(
         topic_detail_path(topic_id),
         &[

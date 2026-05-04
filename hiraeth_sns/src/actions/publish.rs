@@ -138,13 +138,17 @@ where
     QS: SqsStore + Send + Sync,
 {
     let queue_id = crate::actions::action_support::parse_sqs_endpoint_arn(&subscription.endpoint)
-        .ok_or_else(|| SnsError::BadRequest(format!("Invalid SQS endpoint: {}", subscription.endpoint)))?;
+        .ok_or_else(|| {
+        SnsError::BadRequest(format!("Invalid SQS endpoint: {}", subscription.endpoint))
+    })?;
 
     let sqs_queue = store
         .sqs_store
         .get_queue(&queue_id.name, &queue_id.region, &queue_id.account_id)
         .await?
-        .ok_or_else(|| SnsError::BadRequest(format!("SQS queue not found: {}", subscription.endpoint)))?;
+        .ok_or_else(|| {
+            SnsError::BadRequest(format!("SQS queue not found: {}", subscription.endpoint))
+        })?;
 
     let queue_arn = format!(
         "arn:aws:sqs:{}:{}:{}",
@@ -243,7 +247,11 @@ where
     )
     .await;
 
-    let deliver_status = if enqueue_result.is_ok() { "ok" } else { "error" };
+    let deliver_status = if enqueue_result.is_ok() {
+        "ok"
+    } else {
+        "error"
+    };
     let deliver_attributes = HashMap::from([
         ("topic_arn".to_string(), request_body.topic_arn.clone()),
         ("protocol".to_string(), subscription.protocol.clone()),
@@ -382,10 +390,7 @@ mod tests {
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
-        headers.insert(
-            "x-amz-target".to_string(),
-            "AmazonSNS.Publish".to_string(),
-        );
+        headers.insert("x-amz-target".to_string(), "AmazonSNS.Publish".to_string());
 
         ResolvedRequest {
             request_id: "test-request-id".to_string(),

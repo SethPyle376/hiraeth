@@ -2,6 +2,58 @@
 
 All notable changes to Hiraeth will be documented in this file.
 
+## Unreleased
+
+SNS feature completion, IAM expansion, and web UI polish.
+
+### Added
+
+- SNS Query API support for topics, SQS subscriptions, and publishing:
+  - `CreateTopic`
+  - `Subscribe`
+  - `Publish`
+- SNS subscription attributes: `DeliveryPolicy`, `FilterPolicy`,
+  `FilterPolicyScope`, `RawMessageDelivery`, `RedrivePolicy`,
+  `SubscriptionRoleArn`, and `ReplayPolicy`.
+- Raw message delivery for SQS protocol subscriptions. When enabled, the raw
+  message body is delivered instead of the SNS notification JSON wrapper.
+- SNS admin UI with topic browsing, creation, deletion, subscription
+  management, and a publish form.
+- IAM Query API additions:
+  - `GetPolicy`
+  - `GetPolicyVersion`
+  - `GetUserPolicy`
+  - `ListAttachedUserPolicies`
+- Comprehensive SNS unit tests with `SnsTestStore` and SNS integration tests
+  using the AWS Rust SDK.
+- SNS publish trace spans with per-subscription authorization evaluation.
+
+### Changed
+
+- Web UI asset caching changed from `must-revalidate` to immutable caching
+  (`max-age=31536000, immutable`) since assets are embedded in the binary.
+- Removed auto-refreshing HTMX fragments from dashboard and list pages to reduce
+  server load and visual noise.
+- Removed drawer/collapse position memory from the web UI to eliminate rendering
+  flashes.
+- Disabled response compression to measure raw response time impact.
+- Updated service icons across the web UI for visual consistency.
+- Improved web UI styling: alerts with dismiss banners, card shadows, table
+  headers, form-control patterns, empty states, and a warm gradient background.
+
+### Fixed
+
+- Fixed XML serialization for `ListAccessKeys` and `ListAttachedUserPolicies`
+  so AWS SDK clients can deserialize responses correctly.
+
+### Known Gaps
+
+- Only the `sqs` delivery protocol is supported for SNS subscriptions.
+- Subscription confirmation is not modeled; all subscriptions are treated as
+  confirmed.
+- SNS topic policies and subscription attributes are not modifiable through the
+  Query API yet.
+
 ## 0.2.1 - 2026-04-29
 
 Tracing and local request inspection slice.

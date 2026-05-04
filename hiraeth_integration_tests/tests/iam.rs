@@ -249,7 +249,11 @@ async fn list_attached_user_policies_returns_attached_policies() -> anyhow::Resu
         .policy_document(r#"{"Version":"2012-10-17","Statement":[]}"#)
         .send()
         .await?;
-    let policy_arn = policy.policy().context("policy should be present")?.arn().context("arn should be present")?;
+    let policy_arn = policy
+        .policy()
+        .context("policy should be present")?
+        .arn()
+        .context("arn should be present")?;
 
     server
         .client
@@ -305,7 +309,10 @@ async fn list_access_keys_returns_keys_for_user() -> anyhow::Result<()> {
     let keys = response.access_key_metadata();
     assert_eq!(keys.len(), 1);
     assert_eq!(keys[0].user_name(), Some(user_name.as_str()));
-    assert_eq!(keys[0].status(), Some(&aws_sdk_iam::types::StatusType::Active));
+    assert_eq!(
+        keys[0].status(),
+        Some(&aws_sdk_iam::types::StatusType::Active)
+    );
 
     Ok(())
 }

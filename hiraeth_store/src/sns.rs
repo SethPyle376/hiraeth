@@ -56,10 +56,7 @@ pub trait SnsStore {
         &self,
         subscription_arn: &str,
     ) -> Result<Option<SnsSubscription>, StoreError>;
-    async fn get_subscription_by_id(
-        &self,
-        id: i64,
-    ) -> Result<Option<SnsSubscription>, StoreError>;
+    async fn get_subscription_by_id(&self, id: i64) -> Result<Option<SnsSubscription>, StoreError>;
     async fn list_subscriptions_by_topic(
         &self,
         topic_arn: &str,

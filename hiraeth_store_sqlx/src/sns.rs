@@ -223,10 +223,7 @@ impl SnsStore for SqliteSnsStore {
         Ok(sub)
     }
 
-    async fn get_subscription_by_id(
-        &self,
-        id: i64,
-    ) -> Result<Option<SnsSubscription>, StoreError> {
+    async fn get_subscription_by_id(&self, id: i64) -> Result<Option<SnsSubscription>, StoreError> {
         let sub = sqlx::query_as!(
             SnsSubscription,
             "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
@@ -280,13 +277,10 @@ impl SnsStore for SqliteSnsStore {
     }
 
     async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError> {
-        let result = sqlx::query!(
-            "DELETE FROM sns_subscriptions WHERE id = ?",
-            id
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(map_sqlx_error)?;
+        let result = sqlx::query!("DELETE FROM sns_subscriptions WHERE id = ?", id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_error)?;
 
         if result.rows_affected() == 0 {
             return Err(StoreError::NotFound("subscription not found".to_string()));
@@ -457,7 +451,10 @@ mod tests {
         assert_eq!(found.signature_version, expected.signature_version);
         assert_eq!(found.tracing_config, expected.tracing_config);
         assert_eq!(found.kms_master_key_id, expected.kms_master_key_id);
-        assert_eq!(found.data_protection_policy, expected.data_protection_policy);
+        assert_eq!(
+            found.data_protection_policy,
+            expected.data_protection_policy
+        );
         assert_eq!(found.created_at, expected.created_at);
     }
 
@@ -587,7 +584,10 @@ mod tests {
             .await
             .expect("delete topic should succeed");
 
-        let topic = store.get_topic(&arn).await.expect("get topic should succeed");
+        let topic = store
+            .get_topic(&arn)
+            .await
+            .expect("get topic should succeed");
         assert!(topic.is_none());
 
         let sub = store
@@ -720,9 +720,18 @@ mod tests {
             "arn:aws:sns:us-east-1:123456789012:topic-2:sub-1",
         );
 
-        store.create_subscription(sub1).await.expect("sub 1 should insert");
-        store.create_subscription(sub2).await.expect("sub 2 should insert");
-        store.create_subscription(sub3).await.expect("sub 3 should insert");
+        store
+            .create_subscription(sub1)
+            .await
+            .expect("sub 1 should insert");
+        store
+            .create_subscription(sub2)
+            .await
+            .expect("sub 2 should insert");
+        store
+            .create_subscription(sub3)
+            .await
+            .expect("sub 3 should insert");
 
         let subs = store
             .list_subscriptions_by_topic(&arn1)

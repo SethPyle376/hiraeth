@@ -583,7 +583,11 @@ impl SnsTestStore {
     fn parse_topic_arn(arn: &str) -> Option<(String, String, String)> {
         let parts: Vec<&str> = arn.split(':').collect();
         if parts.len() == 6 {
-            Some((parts[3].to_string(), parts[4].to_string(), parts[5].to_string()))
+            Some((
+                parts[3].to_string(),
+                parts[4].to_string(),
+                parts[5].to_string(),
+            ))
         } else {
             None
         }
@@ -645,10 +649,8 @@ impl SnsStore for SnsTestStore {
     }
 
     async fn get_topic(&self, topic_arn: &str) -> Result<Option<SnsTopic>, StoreError> {
-        let (region, account_id, name) =
-            Self::parse_topic_arn(topic_arn).ok_or_else(|| {
-                StoreError::NotFound("topic not found".to_string())
-            })?;
+        let (region, account_id, name) = Self::parse_topic_arn(topic_arn)
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
         Ok(self
             .topics
             .lock()
@@ -683,11 +685,7 @@ impl SnsStore for SnsTestStore {
             .expect("topics mutex")
             .iter()
             .filter(|topic| topic.region == region && topic.account_id == account_id)
-            .filter(|topic| {
-                prefix
-                    .map(|p| topic.name.starts_with(p))
-                    .unwrap_or(true)
-            })
+            .filter(|topic| prefix.map(|p| topic.name.starts_with(p)).unwrap_or(true))
             .cloned()
             .collect();
         topics.sort_by(|a, b| a.name.cmp(&b.name));
@@ -698,10 +696,8 @@ impl SnsStore for SnsTestStore {
     }
 
     async fn delete_topic(&self, topic_arn: &str) -> Result<(), StoreError> {
-        let (region, account_id, name) =
-            Self::parse_topic_arn(topic_arn).ok_or_else(|| {
-                StoreError::NotFound("topic not found".to_string())
-            })?;
+        let (region, account_id, name) = Self::parse_topic_arn(topic_arn)
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
         let mut topics = self.topics.lock().expect("topics mutex");
         let before = topics.len();
         topics.retain(|topic| {
@@ -754,10 +750,7 @@ impl SnsStore for SnsTestStore {
             .cloned())
     }
 
-    async fn get_subscription_by_id(
-        &self,
-        id: i64,
-    ) -> Result<Option<SnsSubscription>, StoreError> {
+    async fn get_subscription_by_id(&self, id: i64) -> Result<Option<SnsSubscription>, StoreError> {
         Ok(self
             .subscriptions
             .lock()

@@ -20,9 +20,7 @@ async fn create_topic_then_list_topics() -> anyhow::Result<()> {
         .send()
         .await
         .context("create topic should succeed")?;
-    let arn = created
-        .topic_arn()
-        .context("topic arn should be present")?;
+    let arn = created.topic_arn().context("topic arn should be present")?;
     assert!(arn.contains(&topic_name));
 
     let listed = server
@@ -50,9 +48,7 @@ async fn create_topic_then_get_topic_attributes() -> anyhow::Result<()> {
         .send()
         .await
         .context("create topic should succeed")?;
-    let arn = created
-        .topic_arn()
-        .context("topic arn should be present")?;
+    let arn = created.topic_arn().context("topic arn should be present")?;
 
     let response = server
         .client
@@ -64,10 +60,7 @@ async fn create_topic_then_get_topic_attributes() -> anyhow::Result<()> {
     let attributes = response
         .attributes()
         .context("response should include attributes")?;
-    assert_eq!(
-        attributes.get("TopicArn"),
-        Some(&arn.to_string())
-    );
+    assert_eq!(attributes.get("TopicArn"), Some(&arn.to_string()));
 
     Ok(())
 }
@@ -85,9 +78,7 @@ async fn delete_topic_removes_from_list() -> anyhow::Result<()> {
         .send()
         .await
         .context("create topic should succeed")?;
-    let arn = created
-        .topic_arn()
-        .context("topic arn should be present")?;
+    let arn = created.topic_arn().context("topic arn should be present")?;
 
     server
         .client
@@ -122,9 +113,7 @@ async fn subscribe_then_list_subscriptions() -> anyhow::Result<()> {
         .send()
         .await
         .context("create topic should succeed")?;
-    let topic_arn = created
-        .topic_arn()
-        .context("topic arn should be present")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
 
     let queue_arn = format!("arn:aws:sqs:{DEFAULT_REGION}:{TEST_ACCOUNT_ID}:test-queue");
     let subscribed = server
@@ -148,9 +137,11 @@ async fn subscribe_then_list_subscriptions() -> anyhow::Result<()> {
         .await
         .context("list subscriptions should succeed")?;
     let subscriptions = listed.subscriptions();
-    assert!(subscriptions
-        .iter()
-        .any(|s| s.subscription_arn() == Some(subscription_arn)));
+    assert!(
+        subscriptions
+            .iter()
+            .any(|s| s.subscription_arn() == Some(subscription_arn))
+    );
 
     Ok(())
 }
@@ -168,9 +159,7 @@ async fn publish_to_topic_with_subscriptions() -> anyhow::Result<()> {
         .send()
         .await
         .context("create topic should succeed")?;
-    let topic_arn = created
-        .topic_arn()
-        .context("topic arn should be present")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
 
     let sdk_config = server.server.sdk_config().await;
     let sqs_client = SqsClient::new(&sdk_config);
@@ -204,7 +193,12 @@ async fn publish_to_topic_with_subscriptions() -> anyhow::Result<()> {
         .send()
         .await
         .context("publish should succeed")?;
-    assert!(!published.message_id().expect("message id should be present").is_empty());
+    assert!(
+        !published
+            .message_id()
+            .expect("message id should be present")
+            .is_empty()
+    );
 
     let received = sqs_client
         .receive_message()
@@ -234,9 +228,7 @@ async fn publish_to_topic_without_subscriptions() -> anyhow::Result<()> {
         .send()
         .await
         .context("create topic should succeed")?;
-    let topic_arn = created
-        .topic_arn()
-        .context("topic arn should be present")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
 
     let published = server
         .client
@@ -246,7 +238,12 @@ async fn publish_to_topic_without_subscriptions() -> anyhow::Result<()> {
         .send()
         .await
         .context("publish should succeed")?;
-    assert!(!published.message_id().expect("message id should be present").is_empty());
+    assert!(
+        !published
+            .message_id()
+            .expect("message id should be present")
+            .is_empty()
+    );
 
     Ok(())
 }

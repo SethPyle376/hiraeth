@@ -49,7 +49,9 @@ where
         prefix: Option<&str>,
         limit: Option<i64>,
     ) -> Result<Vec<SnsTopic>, StoreError> {
-        self.sns_store.list_topics(region, account_id, prefix, limit).await
+        self.sns_store
+            .list_topics(region, account_id, prefix, limit)
+            .await
     }
 
     async fn delete_topic(&self, topic_arn: &str) -> Result<(), StoreError> {
@@ -67,10 +69,7 @@ where
         self.sns_store.get_subscription(subscription_arn).await
     }
 
-    async fn get_subscription_by_id(
-        &self,
-        id: i64,
-    ) -> Result<Option<SnsSubscription>, StoreError> {
+    async fn get_subscription_by_id(&self, id: i64) -> Result<Option<SnsSubscription>, StoreError> {
         self.sns_store.get_subscription_by_id(id).await
     }
 

@@ -34,6 +34,16 @@ aws --endpoint-url http://localhost:4566 sns subscribe \
   --notification-endpoint arn:aws:sqs:us-east-1:000000000000:local-queue
 ```
 
+Subscribe with raw message delivery (delivers the raw body instead of the SNS JSON wrapper):
+
+```sh
+aws --endpoint-url http://localhost:4566 sns subscribe \
+  --topic-arn arn:aws:sns:us-east-1:000000000000:local-events \
+  --protocol sqs \
+  --notification-endpoint arn:aws:sqs:us-east-1:000000000000:local-queue \
+  --attributes RawMessageDelivery=true
+```
+
 Publish a message:
 
 ```sh
@@ -64,9 +74,8 @@ coverage includes:
 
 - Topic browsing with account, region, and prefix filters.
 - Topic detail pages with subscription list, publish form, and subscribe form.
-- Live-updating topic counts and subscription stats on the dashboard.
 - Topic creation and deletion.
-- Subscription creation and deletion.
+- Subscription creation and deletion, including a raw message delivery option.
 - A read-only JSON API endpoint for topic lists.
 
 The web UI does not use SigV4 authentication. Keep `HIRAETH_WEB_HOST` bound to a
@@ -84,7 +93,7 @@ Status labels:
 | --- | --- | --- |
 | `CreateTopic` | Supported | Creates a topic with name, region, account, and optional display name. |
 | `Publish` | Partial | Publishes to all SQS subscriptions. Subject and message body are supported. Other protocols are not yet implemented. |
-| `Subscribe` | Partial | Creates an SQS subscription to a topic. Other protocols are not yet implemented. |
+| `Subscribe` | Partial | Creates an SQS subscription to a topic. Subscription attributes are parsed and stored. Other protocols are not yet implemented. |
 | `ConfirmSubscription` | Not implemented | Subscriptions are created in a confirmed state. |
 | `DeleteTopic` | Not implemented | Topic deletion is available through the web UI but not the Query API yet. |
 | `GetSubscriptionAttributes` | Not implemented | Subscriptions can be inspected in the web UI. |
@@ -92,8 +101,8 @@ Status labels:
 | `ListSubscriptions` | Not implemented | Subscriptions can be inspected in the web UI. |
 | `ListSubscriptionsByTopic` | Not implemented | Subscriptions can be inspected in the web UI. |
 | `ListTopics` | Not implemented | Topics can be inspected in the web UI and through the JSON API. |
-| `SetSubscriptionAttributes` | Not implemented | Subscription attributes are not modeled yet. |
-| `SetTopicAttributes` | Not implemented | Topic attributes are not modeled yet. |
+| `SetSubscriptionAttributes` | Not implemented | Subscription attributes can be set at creation time but not updated afterward yet. |
+| `SetTopicAttributes` | Not implemented | Topic attributes can be set at creation time but not updated afterward yet. |
 | `Unsubscribe` | Not implemented | Subscription deletion is available through the web UI but not the Query API yet. |
 
 ## Current Gaps
@@ -102,8 +111,9 @@ Status labels:
   and other protocols are not implemented.
 - Subscription confirmation is not modeled. All subscriptions are treated as
   confirmed.
-- Topic policies and subscription attributes are not evaluated or modifiable
-  through the Query API yet.
-- Message filtering and subscription attributes are not supported.
+- Topic policies are not evaluated or modifiable through the Query API yet.
+- Subscription attributes can be set at creation time but cannot be updated
+  afterward through `SetSubscriptionAttributes` yet.
+- Message filtering is not supported.
 - FIFO topics are not supported.
 - The web UI is a local admin preview and is not authenticated.

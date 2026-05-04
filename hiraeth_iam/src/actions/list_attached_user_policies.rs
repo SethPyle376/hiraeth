@@ -172,10 +172,7 @@ fn list_attached_user_policies_response(
     }
 }
 
-fn attached_policy_member(
-    account_id: &str,
-    policy: ManagedPolicy,
-) -> AttachedPolicyMemberXml {
+fn attached_policy_member(account_id: &str, policy: ManagedPolicy) -> AttachedPolicyMemberXml {
     let policy_path = normalize_policy_path(policy.policy_path.as_deref());
     AttachedPolicyMemberXml {
         policy_name: policy.policy_name.clone(),
@@ -217,9 +214,7 @@ mod tests {
         InMemoryIamStore, ManagedPolicy, ManagedPolicyPrincipalAttachment, Principal,
     };
 
-    use super::{
-        ListAttachedUserPoliciesAction, list_attached_user_policies_response,
-    };
+    use super::{ListAttachedUserPoliciesAction, list_attached_user_policies_response};
 
     fn principal(id: i64, name: &str, path: &str) -> Principal {
         Principal {
@@ -336,9 +331,9 @@ mod tests {
         assert_eq!(response.status_code, 200);
         assert!(body.contains("<ListAttachedUserPoliciesResponse"));
         assert!(body.contains("<PolicyName>orders-readonly</PolicyName>"));
-        assert!(
-            body.contains("<PolicyArn>arn:aws:iam::123456789012:policy/dev/orders-readonly</PolicyArn>")
-        );
+        assert!(body.contains(
+            "<PolicyArn>arn:aws:iam::123456789012:policy/dev/orders-readonly</PolicyArn>"
+        ));
         assert!(body.contains("<PolicyName>admin-full</PolicyName>"));
         assert!(
             body.contains("<PolicyArn>arn:aws:iam::123456789012:policy/admin-full</PolicyArn>")
@@ -363,7 +358,10 @@ mod tests {
 
         assert_eq!(response.status_code, 200);
         assert!(body.contains("<ListAttachedUserPoliciesResponse"));
-        assert!(body.contains("<AttachedPolicies/>") || body.contains("<AttachedPolicies></AttachedPolicies>"));
+        assert!(
+            body.contains("<AttachedPolicies/>")
+                || body.contains("<AttachedPolicies></AttachedPolicies>")
+        );
         assert!(body.contains("<IsTruncated>false</IsTruncated>"));
     }
 
@@ -404,7 +402,9 @@ mod tests {
         ));
         assert!(xml.contains("<AttachedPolicies><member>"));
         assert!(xml.contains("<PolicyName>orders-readonly</PolicyName>"));
-        assert!(xml.contains("<PolicyArn>arn:aws:iam::123456789012:policy/dev/orders-readonly</PolicyArn>"));
+        assert!(xml.contains(
+            "<PolicyArn>arn:aws:iam::123456789012:policy/dev/orders-readonly</PolicyArn>"
+        ));
         assert!(xml.contains("<ResponseMetadata><RequestId>request-id</RequestId>"));
     }
 }

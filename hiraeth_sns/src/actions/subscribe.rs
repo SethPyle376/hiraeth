@@ -292,10 +292,12 @@ mod tests {
             .await
             .expect("subscribe should succeed");
 
-        assert!(response
-            .subscribe_result
-            .subscription_arn
-            .starts_with("arn:aws:sns:us-east-1:123456789012:test-topic:"));
+        assert!(
+            response
+                .subscribe_result
+                .subscription_arn
+                .starts_with("arn:aws:sns:us-east-1:123456789012:test-topic:")
+        );
 
         let created = store.created_subscriptions();
         assert_eq!(created.len(), 1);
@@ -314,17 +316,23 @@ mod tests {
     async fn validation_rejects_empty_fields() {
         let store = SnsTestStore::default();
 
-        let request = resolved_request("TopicArn=&Protocol=sqs&Endpoint=arn:aws:sqs:us-east-1:123456789012:test-queue");
+        let request = resolved_request(
+            "TopicArn=&Protocol=sqs&Endpoint=arn:aws:sqs:us-east-1:123456789012:test-queue",
+        );
         let body: SubscribeRequest = crate::actions::test_support::parse_request_body(&request);
         let result = SubscribeAction.validate(&request, &body, &store).await;
         assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
 
-        let request = resolved_request("TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&Protocol=&Endpoint=arn:aws:sqs:us-east-1:123456789012:test-queue");
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&Protocol=&Endpoint=arn:aws:sqs:us-east-1:123456789012:test-queue",
+        );
         let body: SubscribeRequest = crate::actions::test_support::parse_request_body(&request);
         let result = SubscribeAction.validate(&request, &body, &store).await;
         assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
 
-        let request = resolved_request("TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&Protocol=sqs&Endpoint=");
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&Protocol=sqs&Endpoint=",
+        );
         let body: SubscribeRequest = crate::actions::test_support::parse_request_body(&request);
         let result = SubscribeAction.validate(&request, &body, &store).await;
         assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));

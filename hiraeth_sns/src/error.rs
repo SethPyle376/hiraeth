@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use hiraeth_core::{
-    AwsErrorFault, AwsServiceError, AwsQueryParseError, RequestBodyParseError,
+    AwsErrorFault, AwsQueryParseError, AwsServiceError, RequestBodyParseError,
     ResponseSerializationError, ServiceResponse, xml_body,
 };
 use hiraeth_store::StoreError;
