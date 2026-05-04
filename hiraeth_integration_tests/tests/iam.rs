@@ -176,7 +176,7 @@ async fn get_user_for_missing_user_returns_no_such_entity() -> anyhow::Result<()
 #[tokio::test]
 async fn delete_user_removes_user_from_iam() -> anyhow::Result<()> {
     let server = iam_test_server().await?;
-    let user_name = unique_name("integration-test-delete-user");
+    let user_name = unique_name("integration-test");
 
     server
         .client
@@ -225,6 +225,94 @@ async fn delete_user_for_missing_user_returns_no_such_entity() -> anyhow::Result
         .as_service_error()
         .context("missing user delete should return a modeled service error")?;
     assert_eq!(service_error.meta().code(), Some("NoSuchEntity"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_attached_user_policies_returns_attached_policies() -> anyhow::Result<()> {
+    let server = iam_test_server().await?;
+    let user_name = unique_name("list-attached");
+    let policy_name = unique_name("list-policy");
+
+    server
+        .client
+        .create_user()
+        .user_name(&user_name)
+        .send()
+        .await?;
+
+    let policy = server
+        .client
+        .create_policy()
+        .policy_name(&policy_name)
+        .policy_document(r#"{"Version":"2012-10-17","Statement":[]}"#)
+        .send()
+        .await?;
+    let policy_arn = policy
+        .policy()
+        .context("policy should be present")?
+        .arn()
+        .context("arn should be present")?;
+
+    server
+        .client
+        .attach_user_policy()
+        .user_name(&user_name)
+        .policy_arn(policy_arn)
+        .send()
+        .await?;
+
+    let response = server
+        .client
+        .list_attached_user_policies()
+        .user_name(&user_name)
+        .send()
+        .await
+        .context("list attached user policies should succeed")?;
+
+    let policies = response.attached_policies();
+    assert_eq!(policies.len(), 1);
+    assert_eq!(policies[0].policy_name(), Some(policy_name.as_str()));
+    assert_eq!(policies[0].policy_arn(), Some(policy_arn));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_access_keys_returns_keys_for_user() -> anyhow::Result<()> {
+    let server = iam_test_server().await?;
+    let user_name = unique_name("list-keys");
+
+    server
+        .client
+        .create_user()
+        .user_name(&user_name)
+        .send()
+        .await?;
+
+    server
+        .client
+        .create_access_key()
+        .user_name(&user_name)
+        .send()
+        .await?;
+
+    let response = server
+        .client
+        .list_access_keys()
+        .user_name(&user_name)
+        .send()
+        .await
+        .context("list access keys should succeed")?;
+
+    let keys = response.access_key_metadata();
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0].user_name(), Some(user_name.as_str()));
+    assert_eq!(
+        keys[0].status(),
+        Some(&aws_sdk_iam::types::StatusType::Active)
+    );
 
     Ok(())
 }

@@ -401,6 +401,14 @@ mod tests {
         ) -> Result<(), StoreError> {
             unreachable!("authorization tests do not delete inline policies")
         }
+
+        async fn get_principal_policy(
+            &self,
+            _principle_id: i64,
+            _policy_name: &str,
+        ) -> Result<Option<PrincipalInlinePolicy>, StoreError> {
+            Ok(None)
+        }
     }
 
     #[async_trait]

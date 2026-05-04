@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::error::SqsError;
 
-pub(crate) struct QueueId {
+pub struct QueueId {
     pub name: String,
     pub region: String,
     pub account_id: String,
@@ -15,13 +15,13 @@ pub(crate) struct QueueId {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct MessageAttributeValue {
+pub struct MessageAttributeValue {
     pub data_type: String,
     pub string_value: Option<String>,
     pub binary_value: Option<String>,
 }
 
-pub(crate) fn parse_queue_url(queue_url: &str, default_region: &str) -> Option<QueueId> {
+pub fn parse_queue_url(queue_url: &str, default_region: &str) -> Option<QueueId> {
     let url = url::Url::parse(queue_url).ok()?;
     let path_segments: Vec<&str> = url.path_segments()?.collect();
     if path_segments.len() != 2 {
@@ -217,7 +217,7 @@ fn validate_message_attribute_value(
     )))
 }
 
-pub(crate) fn calculate_message_attributes_md5<'a>(
+pub fn calculate_message_attributes_md5<'a>(
     message_attributes: impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
 ) -> Result<String, SqsError> {
     let mut buffer = Vec::new();
@@ -260,7 +260,7 @@ pub(crate) fn calculate_message_attributes_md5<'a>(
     Ok(format!("{:x}", md5::compute(buffer)))
 }
 
-pub(crate) fn serialize_message_attributes<'a>(
+pub fn serialize_message_attributes<'a>(
     message_attributes: impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
 ) -> Result<String, SqsError> {
     let ordered_attributes = message_attributes
@@ -273,7 +273,7 @@ pub(crate) fn serialize_message_attributes<'a>(
     })
 }
 
-pub(crate) fn extract_aws_trace_header<'a>(
+pub fn extract_aws_trace_header<'a>(
     message_system_attributes: Option<
         impl IntoIterator<Item = (&'a String, &'a MessageAttributeValue)>,
     >,
@@ -307,7 +307,54 @@ fn append_length_prefixed_bytes(buffer: &mut Vec<u8>, bytes: &[u8]) {
     buffer.extend_from_slice(bytes);
 }
 
-pub(crate) fn get_queue_arn(queue: &SqsQueue) -> String {
+pub fn resolve_delay_seconds(
+    requested_delay_seconds: Option<i64>,
+    queue_delay_seconds: i64,
+) -> Result<i64, SqsError> {
+    let delay_seconds = requested_delay_seconds.unwrap_or(queue_delay_seconds);
+    if !(0..=900).contains(&delay_seconds) {
+        return Err(SqsError::BadRequest(
+            "DelaySeconds must be between 0 and 900".to_string(),
+        ));
+    }
+
+    Ok(delay_seconds)
+}
+
+pub fn validate_message_body(
+    message_body: &str,
+    maximum_message_size: i64,
+) -> Result<(), SqsError> {
+    if message_body.is_empty() {
+        return Err(SqsError::BadRequest(
+            "MessageBody must contain at least one character".to_string(),
+        ));
+    }
+
+    if message_body.len() > maximum_message_size as usize {
+        return Err(SqsError::BadRequest(format!(
+            "MessageBody exceeds the queue MaximumMessageSize of {} bytes",
+            maximum_message_size
+        )));
+    }
+
+    if !message_body.chars().all(is_valid_sqs_message_character) {
+        return Err(SqsError::BadRequest(
+            "MessageBody contains characters that are not allowed by SQS".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn is_valid_sqs_message_character(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
+    )
+}
+
+pub fn get_queue_arn(queue: &SqsQueue) -> String {
     format!(
         "arn:aws:sqs:{}:{}:{}",
         queue.region, queue.account_id, queue.name

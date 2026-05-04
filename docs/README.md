@@ -7,6 +7,8 @@ runtime documentation lives beside those service directories.
 
 - [IAM](iam/README.md): user, access key, inline policy, managed policy,
   authorization, web UI, and API support notes.
+- [SNS](sns/README.md): topics, SQS subscriptions, publish, web UI, and API
+  support notes.
 - [SQS](sqs/README.md): queue auth modes, CLI examples, web UI notes, API support, and current gaps.
 
 ## Runtime

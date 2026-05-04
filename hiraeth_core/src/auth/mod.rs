@@ -15,3 +15,14 @@ pub struct AuthorizationCheck {
     pub resource: String,
     pub resource_policy: Option<Policy>,
 }
+
+/// Evaluate a resource policy for a cross-service call where the caller is an
+/// AWS service principal rather than an IAM user.
+pub fn authorize_cross_service(
+    caller: &PolicyPrincipal,
+    action: &str,
+    resource: &str,
+    resource_policy: &Policy,
+) -> PolicyEvalResult {
+    evaluate_resource_policy(caller, resource, action, resource_policy)
+}

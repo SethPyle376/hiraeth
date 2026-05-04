@@ -84,49 +84,47 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<GetUserResponse, IamError> {
-        let timer = trace_context.start_span();
         let requested_user_name = get_user_request.user_name.clone();
-        let principal =
-            match optional_target_user(&request, store, get_user_request.user_name.as_deref())
-                .await?
-            {
-                Some(principal) => principal,
-                None => {
-                    return Err(IamError::NoSuchEntity(format!(
-                        "User with name '{}' not found",
-                        get_user_request.user_name.unwrap_or_else(|| request
-                            .auth_context
-                            .principal
-                            .name
-                            .clone())
-                    )));
-                }
-            };
-        let attributes = HashMap::from([
-            (
-                "requested_user_name".to_string(),
-                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
-            ),
-            ("user_name".to_string(), principal.name.clone()),
-            ("user_id".to_string(), principal.id.to_string()),
-            ("account_id".to_string(), principal.account_id.clone()),
-            ("path".to_string(), principal.path.clone()),
-        ]);
-        trace_context
-            .record_span_or_warn(
+        let account_id = request.auth_context.principal.account_id.clone();
+        let principal = trace_context
+            .record_result_span_with_attributes(
                 trace_recorder,
-                timer,
                 "iam.user.lookup",
                 "iam",
-                "ok",
-                attributes,
+                async {
+                    optional_target_user(&request, store, get_user_request.user_name.as_deref())
+                        .await?
+                        .ok_or_else(|| {
+                            IamError::NoSuchEntity(format!(
+                                "User with name '{}' not found",
+                                get_user_request.user_name.unwrap_or_else(|| {
+                                    request.auth_context.principal.name.clone()
+                                })
+                            ))
+                        })
+                },
+                |result| {
+                    let mut attributes = HashMap::from([
+                        (
+                            "requested_user_name".to_string(),
+                            requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+                        ),
+                        ("account_id".to_string(), account_id),
+                    ]);
+                    if let Ok(principal) = result {
+                        attributes.insert("user_name".to_string(), principal.name.clone());
+                        attributes.insert("user_id".to_string(), principal.id.to_string());
+                        attributes.insert("path".to_string(), principal.path.clone());
+                    }
+                    attributes
+                },
             )
-            .await;
+            .await?;
 
         Ok(get_user_response(principal.into(), request.request_id))
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         get_user_request: GetUserRequest,

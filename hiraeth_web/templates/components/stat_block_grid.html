@@ -1,10 +1,10 @@
 <div class="{{ grid.grid_class }}">
   {% for block in grid.blocks %}
-  <div class="stats border border-base-300 bg-base-100">
-    <div class="stat">
-      <div class="stat-title">{{ block.title }}</div>
-      <div class="stat-value {{ block.value_class }}">{{ block.value }}</div>
-      <div class="stat-desc">{{ block.description }}</div>
+  <div class="stats border border-base-300 bg-base-100 shadow-sm">
+    <div class="stat px-5 py-4">
+      <div class="stat-title text-xs font-semibold uppercase tracking-wider">{{ block.title }}</div>
+      <div class="stat-value text-3xl {{ block.value_class }}">{{ block.value }}</div>
+      <div class="stat-desc text-xs">{{ block.description }}</div>
     </div>
   </div>
   {% endfor %}

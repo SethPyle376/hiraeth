@@ -76,32 +76,29 @@ where
                 delete_request.policy_arn
             )));
         }
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("account_id".to_string(), policy_arn.account_id.clone()),
             ("policy_arn".to_string(), delete_request.policy_arn.clone()),
             ("policy_name".to_string(), policy_arn.policy_name.clone()),
             ("policy_path".to_string(), policy_arn.policy_path.clone()),
         ]);
-        let result = store
-            .delete_managed_policy(
-                &policy_arn.account_id,
-                &policy_arn.policy_name,
-                &policy_arn.policy_path,
-            )
-            .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.policy.delete",
                 "iam",
-                status,
                 attributes,
+                async {
+                    store
+                        .delete_managed_policy(
+                            &policy_arn.account_id,
+                            &policy_arn.policy_name,
+                            &policy_arn.policy_path,
+                        )
+                        .await
+                },
             )
-            .await;
-        result?;
+            .await?;
 
         Ok(DeletePolicyResponse {
             xmlns: IAM_XMLNS,
@@ -109,7 +106,7 @@ where
         })
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         delete_policy_request: DeletePolicyRequest,

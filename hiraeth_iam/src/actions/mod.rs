@@ -5,7 +5,12 @@ mod create_user;
 mod delete_policy;
 mod delete_user;
 mod detach_user_policy;
+mod get_policy;
+mod get_policy_version;
 mod get_user;
+mod get_user_policy;
+mod list_access_keys;
+mod list_attached_user_policies;
 mod put_user_policy;
 mod util;
 
@@ -16,7 +21,10 @@ use crate::actions::{
     attach_user_policy::AttachUserPolicyAction, create_access_key::CreateAccessKeyAction,
     create_policy::CreatePolicyAction, create_user::CreateUserAction,
     delete_policy::DeletePolicyAction, delete_user::DeleteUserAction,
-    detach_user_policy::DetachUserPolicyAction, get_user::GetUserAction,
+    detach_user_policy::DetachUserPolicyAction, get_policy::GetPolicyAction,
+    get_policy_version::GetPolicyVersionAction, get_user::GetUserAction,
+    get_user_policy::GetUserPolicyAction, list_access_keys::ListAccessKeysAction,
+    list_attached_user_policies::ListAttachedUserPoliciesAction,
     put_user_policy::PutUserPolicyAction,
 };
 
@@ -25,14 +33,19 @@ where
     S: IamStore + Send + Sync + 'static,
 {
     let mut registry = AwsActionRegistry::new();
-    registry.register_typed(CreateAccessKeyAction);
-    registry.register_typed(CreateUserAction);
-    registry.register_typed(GetUserAction);
-    registry.register_typed(DeleteUserAction);
-    registry.register_typed(CreatePolicyAction);
-    registry.register_typed(PutUserPolicyAction);
-    registry.register_typed(AttachUserPolicyAction);
-    registry.register_typed(DetachUserPolicyAction);
-    registry.register_typed(DeletePolicyAction);
+    registry.register(CreateAccessKeyAction);
+    registry.register(CreateUserAction);
+    registry.register(GetUserAction);
+    registry.register(DeleteUserAction);
+    registry.register(CreatePolicyAction);
+    registry.register(PutUserPolicyAction);
+    registry.register(AttachUserPolicyAction);
+    registry.register(DetachUserPolicyAction);
+    registry.register(DeletePolicyAction);
+    registry.register(GetUserPolicyAction);
+    registry.register(GetPolicyAction);
+    registry.register(GetPolicyVersionAction);
+    registry.register(ListAccessKeysAction);
+    registry.register(ListAttachedUserPoliciesAction);
     registry
 }

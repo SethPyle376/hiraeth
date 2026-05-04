@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, time::Instant};
+use std::{collections::HashMap, fmt::Display, future::Future, time::Instant};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -194,6 +194,44 @@ impl TraceContext {
             );
         }
     }
+
+    pub async fn record_result_span<R, T, E, F>(
+        &self,
+        recorder: &R,
+        name: &'static str,
+        layer: &'static str,
+        attributes: HashMap<String, String>,
+        operation: F,
+    ) -> Result<T, E>
+    where
+        R: TraceRecorder + ?Sized,
+        F: Future<Output = Result<T, E>>,
+    {
+        self.record_result_span_with_attributes(recorder, name, layer, operation, |_| attributes)
+            .await
+    }
+
+    pub async fn record_result_span_with_attributes<R, T, E, F, A>(
+        &self,
+        recorder: &R,
+        name: &'static str,
+        layer: &'static str,
+        operation: F,
+        attributes: A,
+    ) -> Result<T, E>
+    where
+        R: TraceRecorder + ?Sized,
+        F: Future<Output = Result<T, E>>,
+        A: FnOnce(&Result<T, E>) -> HashMap<String, String>,
+    {
+        let timer = self.start_span();
+        let result = operation.await;
+        let status = if result.is_ok() { "ok" } else { "error" };
+        let attributes = attributes(&result);
+        self.record_span_or_warn(recorder, timer, name, layer, status, attributes)
+            .await;
+        result
+    }
 }
 
 fn new_span_id(request_id: &str) -> String {
@@ -253,5 +291,78 @@ impl TraceRecorder for NoopTraceRecorder {
 
     async fn record_span(&self, _span: TraceSpanRecord) -> Result<(), TraceRecordError> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    #[derive(Debug, Default)]
+    struct RecordingTraceRecorder {
+        spans: Mutex<Vec<TraceSpanRecord>>,
+    }
+
+    #[async_trait]
+    impl TraceRecorder for RecordingTraceRecorder {
+        async fn record_request_trace(
+            &self,
+            _trace: CompletedRequestTrace,
+        ) -> Result<(), TraceRecordError> {
+            Ok(())
+        }
+
+        async fn record_span(&self, span: TraceSpanRecord) -> Result<(), TraceRecordError> {
+            self.spans.lock().unwrap().push(span);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn record_result_span_records_success_status() {
+        let recorder = RecordingTraceRecorder::default();
+        let context = TraceContext::new("request-id");
+
+        let result: Result<&str, &str> = context
+            .record_result_span(
+                &recorder,
+                "test.operation",
+                "test",
+                HashMap::from([("input".to_string(), "value".to_string())]),
+                async { Ok("done") },
+            )
+            .await;
+
+        assert_eq!(result, Ok("done"));
+        let spans = recorder.spans.lock().unwrap();
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].name, "test.operation");
+        assert_eq!(spans[0].layer, "test");
+        assert_eq!(spans[0].status, "ok");
+        assert_eq!(spans[0].attributes.get("input").unwrap(), "value");
+    }
+
+    #[tokio::test]
+    async fn record_result_span_with_attributes_can_derive_attributes_from_error() {
+        let recorder = RecordingTraceRecorder::default();
+        let context = TraceContext::new("request-id");
+
+        let result: Result<&str, &str> = context
+            .record_result_span_with_attributes(
+                &recorder,
+                "test.operation",
+                "test",
+                async { Err("failed") },
+                |result| HashMap::from([("result_is_ok".to_string(), result.is_ok().to_string())]),
+            )
+            .await;
+
+        assert_eq!(result, Err("failed"));
+        let spans = recorder.spans.lock().unwrap();
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].status, "error");
+        assert_eq!(spans[0].attributes.get("result_is_ok").unwrap(), "false");
     }
 }

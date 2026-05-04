@@ -234,69 +234,6 @@ function hiraethHighlightTraceConnections(nodeId, enabled) {
   });
 }
 
-function hiraethCollapseStorageKey(detail) {
-  const collapseKey = detail.dataset.collapseKey || detail.id;
-  if (!collapseKey) {
-    return null;
-  }
-
-  return `hiraeth:collapse:${window.location.pathname}:${collapseKey}`;
-}
-
-function hiraethReadStorage(key) {
-  try {
-    return window.localStorage.getItem(key);
-  } catch (_error) {
-    return null;
-  }
-}
-
-function hiraethWriteStorage(key, value) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch (_error) {
-    // Ignore storage failures so the UI keeps working in private or restricted contexts.
-  }
-}
-
-function hiraethBindCollapsible(detail) {
-  if (detail.dataset.collapsePersistBound === "true") {
-    return;
-  }
-
-  const storageKey = hiraethCollapseStorageKey(detail);
-  if (!storageKey) {
-    return;
-  }
-
-  const priority = detail.dataset.collapsePriority || "saved";
-  const savedState = hiraethReadStorage(storageKey);
-
-  if (priority !== "server" && savedState !== null) {
-    detail.open = savedState === "open";
-  }
-
-  hiraethWriteStorage(storageKey, detail.open ? "open" : "closed");
-  detail.addEventListener("toggle", () => {
-    hiraethWriteStorage(storageKey, detail.open ? "open" : "closed");
-  });
-  detail.dataset.collapsePersistBound = "true";
-}
-
-function hiraethInitCollapsibles(root) {
-  if (!(root instanceof Element) && root !== document) {
-    return;
-  }
-
-  const details = [];
-  if (root instanceof Element && root.matches("details[data-collapse-persist]")) {
-    details.push(root);
-  }
-
-  details.push(...root.querySelectorAll("details[data-collapse-persist]"));
-  details.forEach(hiraethBindCollapsible);
-}
-
 function hiraethOpenHashTarget() {
   if (!window.location.hash) {
     return;
@@ -309,19 +246,37 @@ function hiraethOpenHashTarget() {
   }
 }
 
-function hiraethInitApp(root) {
-  hiraethInitCollapsibles(root);
+function hiraethAutoDismissToasts() {
+  document.querySelectorAll("[data-auto-dismiss]").forEach((toast) => {
+    if (toast.dataset.dismissScheduled === "true") {
+      return;
+    }
+    toast.dataset.dismissScheduled = "true";
+
+    setTimeout(() => {
+      toast.style.transition = "opacity 0.35s ease, transform 0.35s ease";
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(-12px)";
+      setTimeout(() => {
+        toast.remove();
+      }, 350);
+    }, 4000);
+  });
+}
+
+function hiraethInitApp() {
   hiraethOpenHashTarget();
+  hiraethAutoDismissToasts();
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => hiraethInitApp(document));
+  document.addEventListener("DOMContentLoaded", () => hiraethInitApp());
 } else {
-  hiraethInitApp(document);
+  hiraethInitApp();
 }
 
-document.addEventListener("htmx:afterSwap", (event) => {
-  hiraethInitApp(event.target);
+document.addEventListener("htmx:afterSwap", () => {
+  hiraethInitApp();
 });
 
 window.addEventListener("hashchange", hiraethOpenHashTarget);

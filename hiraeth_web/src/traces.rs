@@ -588,7 +588,109 @@ fn pretty_json<T: serde::Serialize>(value: &T) -> String {
 }
 
 fn body_text(body: &[u8]) -> String {
-    String::from_utf8_lossy(body).to_string()
+    let text = String::from_utf8_lossy(body);
+    if text.trim().starts_with('{') || text.trim().starts_with('[') {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+            return serde_json::to_string_pretty(&value).unwrap_or_else(|_| text.to_string());
+        }
+    }
+    if text.trim().starts_with('<') {
+        return pretty_xml(&text);
+    }
+    text.to_string()
+}
+
+fn pretty_xml(xml: &str) -> String {
+    let mut result = String::new();
+    let mut depth: usize = 0;
+    let indent = "  ";
+    let trimmed = xml.trim();
+    let mut chars = trimmed.char_indices().peekable();
+    let mut in_tag = false;
+    let mut tag_start = 0;
+
+    while let Some((i, c)) = chars.next() {
+        if c == '<' {
+            if let Some(&(_, next_c)) = chars.peek() {
+                if next_c == '/' {
+                    // closing tag: decrease depth before writing
+                    if !result.is_empty() && !result.ends_with('\n') {
+                        result.push('\n');
+                    }
+                    depth = depth.saturating_sub(1);
+                    result.push_str(&indent.repeat(depth));
+                    result.push('<');
+                    result.push('/');
+                    chars.next();
+                    // write rest of tag
+                    while let Some((_, c)) = chars.next() {
+                        result.push(c);
+                        if c == '>' {
+                            break;
+                        }
+                    }
+                    result.push('\n');
+                } else if next_c == '!' || next_c == '?' {
+                    // declaration/comment
+                    if !result.is_empty() && !result.ends_with('\n') {
+                        result.push('\n');
+                    }
+                    result.push_str(&indent.repeat(depth));
+                    result.push('<');
+                    while let Some((_, c)) = chars.next() {
+                        result.push(c);
+                        if c == '>' {
+                            break;
+                        }
+                    }
+                    result.push('\n');
+                } else {
+                    // opening tag or self-closing
+                    if !result.is_empty() && !result.ends_with('\n') {
+                        result.push('\n');
+                    }
+                    result.push_str(&indent.repeat(depth));
+                    result.push('<');
+                    // write tag name and attributes
+                    let mut tag_content = String::new();
+                    while let Some((_, c)) = chars.next() {
+                        if c == '>' {
+                            break;
+                        }
+                        tag_content.push(c);
+                    }
+                    let self_closing = tag_content.ends_with('/');
+                    result.push_str(&tag_content);
+                    result.push('>');
+                    if !self_closing {
+                        depth += 1;
+                    }
+                    result.push('\n');
+                }
+            }
+        } else if !c.is_whitespace() {
+            // text content
+            let mut text = String::new();
+            text.push(c);
+            while let Some(&(_, next_c)) = chars.peek() {
+                if next_c == '<' {
+                    break;
+                }
+                text.push(chars.next().unwrap().1);
+            }
+            let trimmed_text = text.trim();
+            if !trimmed_text.is_empty() {
+                if !result.is_empty() && !result.ends_with('\n') {
+                    result.push('\n');
+                }
+                result.push_str(&indent.repeat(depth));
+                result.push_str(trimmed_text);
+                result.push('\n');
+            }
+        }
+    }
+
+    result.trim_end().to_string()
 }
 
 fn status_class(status_code: u16) -> &'static str {

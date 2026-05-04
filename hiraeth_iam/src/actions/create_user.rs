@@ -92,7 +92,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<CreateUserResponse, IamError> {
-        let timer = trace_context.start_span();
         let account_id = &request.auth_context.principal.account_id;
         let attributes = HashMap::from([
             ("account_id".to_string(), account_id.clone()),
@@ -111,27 +110,25 @@ where
         ]);
 
         let path = arn_util::normalize_user_path(&create_user_request.path);
-        let result = store
-            .create_principal(NewPrincipal {
-                account_id: account_id.clone(),
-                kind: "user".to_string(),
-                name: create_user_request.user_name,
-                path,
-                user_id: new_id(),
-            })
-            .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
+        let created_principal = trace_context
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.user.create",
                 "iam",
-                status,
                 attributes,
+                async {
+                    store
+                        .create_principal(NewPrincipal {
+                            account_id: account_id.clone(),
+                            kind: "user".to_string(),
+                            name: create_user_request.user_name,
+                            path,
+                            user_id: new_id(),
+                        })
+                        .await
+                },
             )
-            .await;
-        let created_principal = result?;
+            .await?;
 
         Ok(create_user_response(
             created_principal.into(),
@@ -139,7 +136,7 @@ where
         ))
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         create_user_request: CreateUserRequest,

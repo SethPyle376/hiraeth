@@ -67,26 +67,20 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<(), SqsError> {
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([("queue_url".to_string(), request_body.queue_url.clone())]);
 
-        let result = handle_delete_queue_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "sqs.queue.delete",
                 "sqs",
-                status,
                 attributes,
+                async { handle_delete_queue_typed(&request, store, request_body).await },
             )
-            .await;
-
-        result
+            .await
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         _payload: DeleteQueueRequest,

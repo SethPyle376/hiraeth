@@ -6,21 +6,21 @@
 <section class="mx-auto max-w-[94rem]">
   {{ page_header_html|safe }}
 
-  <div class="mb-5">{{ stats_html|safe }}</div>
+  <div class="mb-6">{{ stats_html|safe }}</div>
 
-  <section class="card border border-base-300 bg-base-100">
+  <section class="card border border-base-300 bg-base-100 shadow-sm">
     <div class="card-body">
       <div class="grid gap-4">
         <div>
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 class="card-title text-xl">Recent requests</h2>
-              <p class="text-sm text-base-content/60">Newest request traces are shown first.</p>
+               <h2 class="card-title text-xl">Recent requests</h2>
+               <p class="text-sm text-base-content/60">Latest requests first.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <div id="trace-request-count" class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded border border-base-content/60 px-3 text-xs font-bold" data-total-count="{{ traces.len() }}">{{ traces.len() }} shown</div>
-              <form method="post" action="/traces/clear" onsubmit="return hiraethConfirmSubmit(this, 'Clear all stored request traces?', 'Clearing')">
-                <button class="btn btn-sm btn-error whitespace-nowrap" type="submit">Clear traces</button>
+              <form method="post" action="/traces/clear" onsubmit="return hiraethConfirmSubmit(this, 'Wipe all traces?', 'Clearing')">
+                <button class="btn btn-sm btn-error whitespace-nowrap" type="submit">Wipe traces</button>
               </form>
             </div>
           </div>
@@ -38,17 +38,17 @@
               >
             </label>
             <div class="flex flex-wrap items-center gap-2 sm:ml-auto">
-              <select class="select select-bordered select-sm w-full sm:w-40" name="service" aria-label="Filter by service">
+              <select class="select select-sm w-full sm:w-40" name="service" aria-label="Filter by service">
                 {% for option in filters.service_options %}
                 <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
               </select>
-              <select class="select select-bordered select-sm w-full sm:w-44" name="action" aria-label="Filter by action">
+              <select class="select select-sm w-full sm:w-44" name="action" aria-label="Filter by action">
                 {% for option in filters.action_options %}
                 <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
               </select>
-              <select class="select select-bordered select-sm w-full sm:w-40" name="status" aria-label="Filter by status">
+              <select class="select select-sm w-full sm:w-40" name="status" aria-label="Filter by status">
                 {% for option in filters.status_options %}
                 <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
@@ -63,45 +63,45 @@
       </div>
 
       {% if has_traces %}
-      <div class="max-h-[34rem] overflow-auto rounded border border-base-300 bg-base-100">
+      <div class="max-h-[34rem] overflow-auto rounded-lg border border-base-300 bg-base-100">
         <table class="table table-sm">
-          <thead class="sticky top-0 z-10 bg-base-100">
-            <tr>
-              <th>Request</th>
-              <th>Service</th>
-              <th>Action</th>
-              <th>Principal</th>
-              <th>Status</th>
-              <th class="text-right">Duration</th>
-              <th>Started</th>
-              <th></th>
+          <thead class="sticky top-0 z-10 border-b border-base-300 bg-base-200/50">
+            <tr class="text-xs font-semibold uppercase tracking-wider">
+              <th class="py-3">Request</th>
+              <th class="py-3">Service</th>
+              <th class="py-3">Action</th>
+              <th class="py-3">Principal</th>
+              <th class="py-3">Status</th>
+              <th class="py-3 text-right">Duration</th>
+              <th class="py-3">Started</th>
+              <th class="py-3"></th>
             </tr>
           </thead>
           <tbody>
             {% for trace in traces %}
-            <tr class="hover:bg-base-200/70" data-trace-row data-trace-request-id="{{ trace.request_id }}">
-              <td>
+            <tr class="hover:bg-base-200/60 transition-colors" data-trace-row data-trace-request-id="{{ trace.request_id }}">
+              <td class="py-3">
                 <div class="font-mono text-sm font-bold">{{ trace.method }} {{ trace.path }}</div>
                 <div class="text-xs text-base-content/50">request {{ trace.request_id }}</div>
               </td>
-              <td>
-                <div class="font-bold">{{ trace.service }}</div>
+              <td class="py-3">
+                <div class="font-semibold">{{ trace.service }}</div>
                 <div class="font-mono text-xs text-base-content/50">{{ trace.region }}</div>
               </td>
-              <td class="font-mono text-xs font-bold">{{ trace.action }}</td>
-              <td>
-                <div class="font-bold">{{ trace.principal }}</div>
+              <td class="py-3 font-mono text-xs font-bold">{{ trace.action }}</td>
+              <td class="py-3">
+                <div class="font-semibold">{{ trace.principal }}</div>
                 <div class="font-mono text-xs text-base-content/50">{{ trace.account_id }}</div>
               </td>
-              <td>
+              <td class="py-3">
                 <span class="badge {{ trace.status_class }}">{{ trace.status_code }}</span>
                 {% if trace.has_error %}
                 <div class="mt-1 max-w-xs truncate text-xs text-error">{{ trace.error_message }}</div>
                 {% endif %}
               </td>
-              <td class="text-right font-mono">{{ trace.duration_ms }} ms</td>
-              <td class="text-sm text-base-content/70">{{ trace.started_at }}</td>
-              <td class="text-right">
+              <td class="py-3 text-right font-mono">{{ trace.duration_ms }} ms</td>
+              <td class="py-3 text-sm text-base-content/70">{{ trace.started_at }}</td>
+              <td class="py-3 text-right">
                 <a class="btn btn-sm btn-primary" href="/traces/{{ trace.request_id }}">Open</a>
               </td>
             </tr>
@@ -110,13 +110,20 @@
         </table>
       </div>
       <div id="trace-request-no-matches" class="mt-4 hidden rounded border border-dashed border-base-300 p-6 text-center">
-        <h3 class="text-base font-bold">No matching traces</h3>
-        <p class="mt-1 text-sm text-base-content/60">Try a shorter request id search or loosen the filters.</p>
+        <h3 class="text-base font-bold">No matches</h3>
+        <p class="mt-1 text-sm text-base-content/60">Try a shorter search term or clear some filters.</p>
       </div>
       {% else %}
-      <div class="rounded border border-dashed border-base-300 p-8 text-center">
-        <h3 class="text-lg font-bold">No traces yet</h3>
-        <p class="mt-2 text-sm text-base-content/60">Send a request to the AWS endpoint and refresh this page.</p>
+      <div class="card border border-dashed border-base-300 bg-base-100/60">
+        <div class="card-body items-center py-12 text-center">
+          <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200 text-base-content/30">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6">
+              <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clip-rule="evenodd"/>
+            </svg>
+          </div>
+          <h3 class="card-title text-lg">Nothing here yet</h3>
+          <p class="max-w-md text-sm text-base-content/60">Make an API call and come back to see it.</p>
+        </div>
       </div>
       {% endif %}
     </div>

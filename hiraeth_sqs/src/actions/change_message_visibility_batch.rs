@@ -152,7 +152,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<ChangeMessageVisibilityBatchResponse, SqsError> {
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), change_request.queue_url.clone()),
             (
@@ -161,24 +160,21 @@ where
             ),
         ]);
 
-        let result =
-            handle_change_message_visibility_batch_typed(&request, store, change_request).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "sqs.change_message_visibility_batch.update",
                 "sqs",
-                status,
                 attributes,
+                async {
+                    handle_change_message_visibility_batch_typed(&request, store, change_request)
+                        .await
+                },
             )
-            .await;
-
-        result
+            .await
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         _payload: ChangeMessageVisibilityBatchRequest,

@@ -21,52 +21,45 @@
     {{ action_card_html|safe }}
   </div>
 
-  {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-5">
-    <span>{{ feedback_message }}</span>
-    <button class="btn btn-ghost btn-xs ml-auto" type="button" onclick="this.closest('.alert').remove()" aria-label="Dismiss">×</button>
-  </div>
-  {% endif %}
+  {% include "components/feedback_toast.html" %}
 
   <div class="mb-6 grid gap-3 md:grid-cols-3">
-    <div class="card border border-base-300 bg-base-100/90">
-      <div class="card-body p-4">
-        <div class="text-sm text-base-content/60">Attachments</div>
-        <div class="text-3xl font-black text-primary">{{ policy.attachment_count }}</div>
-        <div class="text-sm text-base-content/60">principals using this policy</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Attachments</div>
+        <div class="mt-1 text-3xl font-black text-primary">{{ policy.attachment_count }}</div>
+        <div class="text-xs text-base-content/50">principals using this policy</div>
       </div>
     </div>
-    <div class="card border border-base-300 bg-base-100/90">
-      <div class="card-body p-4">
-        <div class="text-sm text-base-content/60">Path</div>
-        <div class="font-mono text-xl font-black text-secondary">{{ policy.policy_path }}</div>
-        <div class="text-sm text-base-content/60">managed policy namespace</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Path</div>
+        <div class="mt-1 font-mono text-xl font-black text-secondary">{{ policy.policy_path }}</div>
+        <div class="text-xs text-base-content/50">managed policy namespace</div>
       </div>
     </div>
-    <div class="card border border-base-300 bg-base-100/90">
-      <div class="card-body p-4">
-        <div class="text-sm text-base-content/60">Updated</div>
-        <div class="font-mono text-sm font-black">{{ policy.updated_at }}</div>
-        <div class="text-sm text-base-content/60">last document change</div>
+    <div class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body p-5">
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Updated</div>
+        <div class="mt-1 font-mono text-sm font-black">{{ policy.updated_at }}</div>
+        <div class="text-xs text-base-content/50">last document change</div>
       </div>
     </div>
   </div>
 
   <div class="grid gap-5 md:grid-cols-[minmax(0,1fr)_24rem]">
     <div class="space-y-5">
-      <section class="card border border-base-300 bg-base-100">
+      <section class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h2 class="card-title text-xl">Policy document</h2>
-              <p class="text-sm text-base-content/60">Review and update the JSON document for this managed policy.</p>
+               <h2 class="card-title text-xl">Policy document</h2>
+               <p class="text-sm text-base-content/60">The actual JSON that defines what this policy allows.</p>
             </div>
             <button class="btn btn-outline btn-sm" type="button" data-copy-value="{{ policy.arn }}" onclick="hiraethCopyText(this)">Copy ARN</button>
           </div>
 
-          <details class="collapse collapse-arrow rounded border border-primary/40 bg-base-200/35"
-                   data-collapse-persist
-                   data-collapse-key="managed-policy-{{ policy.id }}-edit-document"
+          <details class="collapse collapse-arrow rounded-lg border border-primary/20 bg-base-200/35"
                    {% if policy_panel_open %}open{% endif %}>
             <summary class="collapse-title min-h-0 px-4 py-3">
               <div class="flex items-center justify-between gap-3 pr-6">
@@ -74,45 +67,48 @@
                   <h3 class="font-black">Edit document</h3>
                   <p class="text-xs text-base-content/60">Save a replacement policy document.</p>
                 </div>
-                <span class="badge badge-outline">Action</span>
+                <span class="badge badge-primary badge-outline">Action</span>
               </div>
             </summary>
             <div class="collapse-content px-4 pb-4">
               {% if has_policy_error %}
-              <div class="alert alert-error mb-3 py-2 text-sm">{{ policy_error }}</div>
+              <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+                <span>{{ policy_error }}</span>
+                <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['policy_error', 'policy_document'])">&times;</button>
+              </div>
               {% endif %}
-              <form class="space-y-3" method="post" action="/iam/policies/{{ policy.id }}" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
-                <label class="block">
-                  <span class="mb-1 block text-sm text-base-content/70">Policy document</span>
-                  <textarea class="textarea textarea-bordered min-h-64 w-full font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
+              <form class="grid gap-3 pt-1" method="post" action="/iam/policies/{{ policy.id }}" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
+                <label class="form-control">
+                  <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Policy document</span></div>
+                  <textarea class="textarea textarea-bordered min-h-64 font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
                 </label>
-                <button class="btn btn-primary w-full" type="submit">Save policy document</button>
+                <button class="btn btn-primary" type="submit">Save policy document</button>
               </form>
             </div>
           </details>
 
-          <pre class="overflow-x-auto rounded border border-base-300 bg-base-200/45 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
+          <pre class="overflow-x-auto rounded-lg border border-base-300 bg-base-200/45 p-4 text-xs leading-6 whitespace-pre-wrap break-words">{{ policy.pretty_document }}</pre>
         </div>
       </section>
     </div>
 
-    <aside class="space-y-3">
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100" data-collapse-persist data-collapse-key="managed-policy-{{ policy.id }}-attachments" open>
-        <summary class="collapse-title min-h-0 px-4 py-3">
+    <aside class="space-y-4">
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm" open>
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
-              <h2 class="text-base font-black">Attached principals</h2>
-              <p class="text-xs text-base-content/60">Users currently using this policy.</p>
+               <h2 class="text-base font-black">Attached principals</h2>
+               <p class="text-xs text-base-content/60">Who's using this policy right now.</p>
             </div>
             <span class="badge badge-outline">{{ policy.attachment_count }}</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_attached_principals %}
           <div class="space-y-2">
             {% for principal in attached_principals %}
-            <div class="rounded border border-base-300 bg-base-200/45 px-3 py-3">
-              <a class="font-bold hover:text-primary" href="/iam/principals/{{ principal.id }}">{{ principal.name }}</a>
+            <div class="rounded-lg border border-base-300 bg-base-200/45 px-4 py-4">
+              <a class="font-semibold hover:text-primary" href="/iam/principals/{{ principal.id }}">{{ principal.name }}</a>
               <div class="mt-1 text-xs text-base-content/60"><span class="badge badge-outline badge-sm">{{ principal.kind }}</span> <span class="font-mono">{{ principal.account_id }}</span></div>
               <form class="mt-3" method="post" action="/iam/policies/{{ policy.id }}/detach" onsubmit="return hiraethConfirmSubmit(this, 'Detach this policy from {{ principal.name }}?', 'Detaching...')">
                 <input type="hidden" name="principal_id" value="{{ principal.id }}">
@@ -127,27 +123,28 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-primary/40 bg-base-100" data-collapse-persist data-collapse-key="managed-policy-{{ policy.id }}-attach-principal">
-        <summary class="collapse-title min-h-0 px-4 py-3">
+      <details class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
-              <h2 class="text-base font-black">Attach to principal</h2>
-              <p class="text-xs text-base-content/60">Attach this policy to another user in the same account.</p>
+               <h2 class="text-base font-black">Attach to principal</h2>
+               <p class="text-xs text-base-content/60">Give this policy to someone else.</p>
             </div>
+            <span class="badge badge-primary badge-outline">Action</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_attach_options %}
-          <form class="space-y-3" method="post" action="/iam/policies/{{ policy.id }}/attach" onsubmit="return hiraethDisableSubmit(this, 'Attaching...')">
-            <label class="block">
-              <span class="mb-1 block text-sm text-base-content/70">Principal</span>
-              <select class="select select-bordered w-full" name="principal_id" required>
+          <form class="grid gap-3 pt-1" method="post" action="/iam/policies/{{ policy.id }}/attach" onsubmit="return hiraethDisableSubmit(this, 'Attaching...')">
+            <label class="form-control">
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Principal</span></div>
+              <select class="select" name="principal_id" required>
                 {% for principal in attach_options %}
                 <option value="{{ principal.id }}">{{ principal.name }} · {{ principal.kind }}</option>
                 {% endfor %}
               </select>
             </label>
-            <button class="btn btn-primary w-full" type="submit">Attach policy</button>
+            <button class="btn btn-primary" type="submit">Attach policy</button>
           </form>
           {% else %}
           <p class="text-sm text-base-content/60">No additional principals are available in this account.</p>
@@ -155,16 +152,16 @@
         </div>
       </details>
 
-      <details class="collapse collapse-arrow border border-base-300 bg-base-100" data-collapse-persist data-collapse-key="managed-policy-{{ policy.id }}-metadata">
-        <summary class="collapse-title min-h-0 px-4 py-3">
+      <details class="collapse collapse-arrow border border-base-300 bg-base-100 shadow-sm">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
-              <h2 class="text-base font-black">Policy metadata</h2>
-              <p class="text-xs text-base-content/60">Identity and timestamps.</p>
+               <h2 class="text-base font-black">Details</h2>
+               <p class="text-xs text-base-content/60">The basics — who, when, and where.</p>
             </div>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {{ metadata_list_html|safe }}
         </div>
       </details>

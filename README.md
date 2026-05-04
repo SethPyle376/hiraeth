@@ -15,10 +15,12 @@ environments, not as a production AWS replacement.
 - Authorization modes for `audit`, `enforce`, and `off`.
 - SQS queue resource policy authorization and IAM identity policy evaluation.
 - SQLite-backed IAM users, access keys, inline policies, managed policies, SQS
-  queues, messages, attributes, and tags.
+  queues, messages, attributes, tags, and SNS topics with SQS subscriptions.
 - SQS-compatible endpoint for common queue and message operations.
+- Partial SNS endpoint support for topics, SQS subscriptions, subscription
+  attributes, raw message delivery, and publishing.
 - Partial IAM Query API support for users, access keys, inline user policies,
-  managed policies, and policy attachments.
+  managed policies, policy attachments, and policy retrieval.
 - STS `GetCallerIdentity` support.
 - SQLite-backed request tracing with span flow visualization in the web UI.
 - Web admin UI on a separate port for inspecting local service state.
@@ -29,6 +31,7 @@ environments, not as a production AWS replacement.
 
 - [Service docs](docs/README.md)
 - [IAM](docs/iam/README.md)
+- [SNS](docs/sns/README.md)
 - [SQS](docs/sqs/README.md)
 - [Tracing](docs/tracing/README.md)
 
@@ -54,6 +57,7 @@ export AWS_DEFAULT_REGION=us-east-1
 For service-specific examples, API support, and current gaps, see:
 
 - [IAM docs](docs/iam/README.md)
+- [SNS docs](docs/sns/README.md)
 - [SQS docs](docs/sqs/README.md)
 
 Compose writes SQLite data to `/data/db.sqlite` inside the container. Mount your
@@ -104,8 +108,8 @@ When running from source, prefer setting `HIRAETH_DATABASE_URL` to a path under
 ## Web UI
 
 The web UI is an admin/debug surface for local service state. Current
-service-specific UI coverage is documented under [docs/iam](docs/iam/README.md)
-and [docs/sqs](docs/sqs/README.md).
+service-specific UI coverage is documented under [docs/iam](docs/iam/README.md),
+[docs/sns](docs/sns/README.md), and [docs/sqs](docs/sqs/README.md).
 
 The tracing dashboard records local AWS requests, spans through the runtime and
 service layers, and full request/response bodies. See the

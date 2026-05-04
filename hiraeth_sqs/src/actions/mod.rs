@@ -43,23 +43,23 @@ where
     S: SqsStore + Send + Sync + 'static,
 {
     let mut registry = AwsActionRegistry::new();
-    registry.register_typed(ChangeMessageVisibilityAction);
-    registry.register_typed(ChangeMessageVisibilityBatchAction);
-    registry.register_typed(CreateQueueAction);
-    registry.register_typed(DeleteMessageAction);
-    registry.register_typed(DeleteMessageBatchAction);
-    registry.register_typed(DeleteQueueAction);
-    registry.register_typed(GetQueueAttributesAction);
-    registry.register_typed(GetQueueUrlAction);
-    registry.register_typed(ListQueueTagsAction);
-    registry.register_typed(ListQueuesAction);
-    registry.register_typed(PurgeQueueAction);
-    registry.register_typed(ReceiveMessageAction);
-    registry.register_typed(SendMessageAction);
-    registry.register_typed(SendMessageBatchAction);
-    registry.register_typed(SetQueueAttributesAction);
-    registry.register_typed(TagQueueAction);
-    registry.register_typed(UntagQueueAction);
+    registry.register(ChangeMessageVisibilityAction);
+    registry.register(ChangeMessageVisibilityBatchAction);
+    registry.register(CreateQueueAction);
+    registry.register(DeleteMessageAction);
+    registry.register(DeleteMessageBatchAction);
+    registry.register(DeleteQueueAction);
+    registry.register(GetQueueAttributesAction);
+    registry.register(GetQueueUrlAction);
+    registry.register(ListQueueTagsAction);
+    registry.register(ListQueuesAction);
+    registry.register(PurgeQueueAction);
+    registry.register(ReceiveMessageAction);
+    registry.register(SendMessageAction);
+    registry.register(SendMessageBatchAction);
+    registry.register(SetQueueAttributesAction);
+    registry.register(TagQueueAction);
+    registry.register(UntagQueueAction);
     registry
 }
 

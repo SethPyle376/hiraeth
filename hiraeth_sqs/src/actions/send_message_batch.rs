@@ -10,13 +10,10 @@ use hiraeth_core::{
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    action_support::{json_payload_format, parse_payload_error},
-    send_message::{resolve_delay_seconds, validate_message_body},
-};
+use super::action_support::{json_payload_format, parse_payload_error};
 use crate::{
     error::{SqsError, batch_error_details},
-    util::{self, MessageAttributeValue},
+    util::{self, MessageAttributeValue, resolve_delay_seconds, validate_message_body},
 };
 
 pub(crate) struct SendMessageBatchAction;
@@ -235,7 +232,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<SendMessageBatchResponse, SqsError> {
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), request_body.queue_url.clone()),
             (
@@ -281,23 +277,18 @@ where
             ),
         ]);
 
-        let result = handle_send_message_batch_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "sqs.send_message_batch.persist",
                 "sqs",
-                status,
                 attributes,
+                async { handle_send_message_batch_typed(&request, store, request_body).await },
             )
-            .await;
-
-        result
+            .await
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         _payload: SendMessageBatchRequest,

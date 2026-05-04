@@ -86,32 +86,29 @@ where
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<DeleteUserResponse, IamError> {
         let account_id = &request.auth_context.principal.account_id;
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("account_id".to_string(), account_id.clone()),
             ("user_name".to_string(), delete_request.user_name.clone()),
         ]);
 
-        let result = store
-            .delete_user(account_id, &delete_request.user_name)
-            .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.user.delete",
                 "iam",
-                status,
                 attributes,
+                async {
+                    store
+                        .delete_user(account_id, &delete_request.user_name)
+                        .await
+                },
             )
-            .await;
-        result
+            .await
             .map(|_| delete_user_response(request.request_id))
             .map_err(Into::into)
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         delete_user_request: DeleteUserRequest,

@@ -7,14 +7,13 @@ mod principal_inline_policy_store;
 
 pub use access_key_store::{AccessKey, AccessKeyStore, InMemoryAccessKeyStore};
 pub use managed_policy_store::{
-    InMemoryManagedPolicyStore, ManagedPolicy, ManagedPolicyStore, NewManagedPolicy,
+    InMemoryManagedPolicyStore, ManagedPolicy, ManagedPolicyPrincipalAttachment,
+    ManagedPolicyStore, NewManagedPolicy,
 };
 pub use principal::{InMemoryPrincipalStore, NewPrincipal, Principal, PrincipalStore};
 pub use principal_inline_policy_store::{
     InMemoryPrincipalInlinePolicyStore, PrincipalInlinePolicy, PrincipalInlinePolicyStore,
 };
-
-use crate::iam::managed_policy_store::ManagedPolicyPrincipalAttachment;
 
 pub struct InMemoryIamStore {
     pub access_key_store: InMemoryAccessKeyStore,
@@ -160,6 +159,16 @@ impl principal_inline_policy_store::PrincipalInlinePolicyStore for InMemoryIamSt
     ) -> Result<(), crate::StoreError> {
         self.principal_inline_policy_store
             .delete_inline_policy(principal_id, policy_name)
+            .await
+    }
+
+    async fn get_principal_policy(
+        &self,
+        principle_id: i64,
+        policy_name: &str,
+    ) -> Result<Option<PrincipalInlinePolicy>, crate::StoreError> {
+        self.principal_inline_policy_store
+            .get_principal_policy(principle_id, policy_name)
             .await
     }
 }

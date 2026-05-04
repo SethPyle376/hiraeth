@@ -174,6 +174,10 @@ impl AwsQueryParams {
         self.values.get(key).map(Vec::as_slice)
     }
 
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.values.keys()
+    }
+
     pub fn deserialize<T: DeserializeOwned>(&self) -> Result<T, AwsQueryParseError> {
         serde_urlencoded::from_bytes(&self.encoded).map_err(AwsQueryParseError::new)
     }

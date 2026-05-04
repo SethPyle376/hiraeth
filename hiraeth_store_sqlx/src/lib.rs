@@ -1,10 +1,12 @@
 use std::str::FromStr;
 
 mod iam;
+mod sns;
 mod sqs;
 mod trace;
 
 pub use iam::{SqliteAccessKeyStore, SqliteIamStore, SqlitePrincipalStore};
+pub use sns::SqliteSnsStore;
 pub use sqs::SqliteSqsStore;
 pub use trace::SqliteTraceStore;
 
@@ -28,6 +30,7 @@ impl std::error::Error for StoreError {}
 #[derive(Clone)]
 pub struct SqlxStore {
     pub sqs_store: SqliteSqsStore,
+    pub sns_store: SqliteSnsStore,
     pub iam_store: SqliteIamStore,
     pub trace_store: SqliteTraceStore,
 }
@@ -42,6 +45,7 @@ impl SqlxStore {
             .map_err(|err| StoreError::MigrationError(err.to_string()))?;
         Ok(Self {
             sqs_store: SqliteSqsStore::new(&pool),
+            sns_store: SqliteSnsStore::new(&pool),
             iam_store: SqliteIamStore::new(&pool),
             trace_store: SqliteTraceStore::new(&pool),
         })

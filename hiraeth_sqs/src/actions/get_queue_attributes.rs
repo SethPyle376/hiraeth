@@ -72,7 +72,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<GetQueueAttributesResponse, SqsError> {
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             (
                 "queue_url".to_string(),
@@ -88,23 +87,20 @@ where
             ),
         ]);
 
-        let result = handle_get_queue_attributes_typed(&request, store, attributes_request).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "sqs.queue.get_attributes",
                 "sqs",
-                status,
                 attributes,
+                async {
+                    handle_get_queue_attributes_typed(&request, store, attributes_request).await
+                },
             )
-            .await;
-
-        result
+            .await
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         _payload: GetQueueAttributesRequest,

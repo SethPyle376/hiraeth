@@ -1,0 +1,23 @@
+[package]
+name = "hiraeth_sns"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1"
+chrono = "0.4"
+hiraeth_core = { path = "../hiraeth_core" }
+hiraeth_iam = { path = "../hiraeth_iam" }
+hiraeth_router = { path = "../hiraeth_router" }
+hiraeth_store = { path = "../hiraeth_store" }
+hiraeth_sqs = { path = "../hiraeth_sqs" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+uuid = { version = "1.18", features = ["v4"] }
+
+[dev-dependencies]
+hiraeth_http = { path = "../hiraeth_http" }
+hiraeth_store = { path = "../hiraeth_store", features = ["test-support"] }
+serde_urlencoded = "0.7"
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }

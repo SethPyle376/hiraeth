@@ -105,7 +105,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<GetQueueUrlResponse, SqsError> {
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_name".to_string(), request_body.queue_name.clone()),
             ("region".to_string(), request.region.clone()),
@@ -118,23 +117,18 @@ where
             ),
         ]);
 
-        let result = handle_get_queue_url_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "sqs.queue.lookup_url",
                 "sqs",
-                status,
                 attributes,
+                async { handle_get_queue_url_typed(&request, store, request_body).await },
             )
-            .await;
-
-        result
+            .await
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         _payload: GetQueueUrlRequest,

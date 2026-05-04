@@ -88,7 +88,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<(), SqsError> {
-        let timer = trace_context.start_span();
         let attributes = HashMap::from([
             ("queue_url".to_string(), request_body.queue_url.clone()),
             ("tag_count".to_string(), request_body.tags.len().to_string()),
@@ -103,23 +102,14 @@ where
             ),
         ]);
 
-        let result = handle_tag_queue_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
         trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sqs.queue.tag",
-                "sqs",
-                status,
-                attributes,
-            )
-            .await;
-
-        result
+            .record_result_span(trace_recorder, "sqs.queue.tag", "sqs", attributes, async {
+                handle_tag_queue_typed(&request, store, request_body).await
+            })
+            .await
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         _payload: TagQueueRequest,

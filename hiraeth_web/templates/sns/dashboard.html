@@ -1,0 +1,110 @@
+{% extends "layout.html" %}
+
+{% block title %}SNS Dashboard | Hiraeth{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-[94rem]">
+  {{ page_header_html|safe }}
+
+  {% include "components/feedback_toast.html" %}
+
+  {{ dashboard_stats_html|safe }}
+
+  <form class="card mb-6 border border-base-300 bg-base-100 shadow-sm"
+        action="/sns/topics/create"
+        method="post"
+        onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
+    <div class="card-body">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      <div class="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h2 class="card-title text-lg">Create topic</h2>
+          <p class="text-sm text-base-content/60">Start a new topic.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 text-sm text-base-content/60">
+          <span class="badge badge-outline font-mono">{{ account_id }}</span>
+          <span class="badge badge-outline font-mono">{{ region }}</span>
+        </div>
+      </div>
+      {% if has_create_error %}
+      <div class="alert alert-error flex items-center justify-between gap-3 py-2 text-sm">
+        <span>{{ create_error }}</span>
+        <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['create_error', 'create_topic_name', 'create_region', 'create_account_id', 'create_display_name'])">&times;</button>
+      </div>
+      {% endif %}
+      <div class="grid gap-3 xl:grid-cols-[minmax(12rem,1fr)_minmax(12rem,1fr)_10rem_13rem_auto] xl:items-end">
+        <label class="form-control">
+          <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Topic name</span></div>
+          <input class="input input-bordered" name="name" value="{{ create_topic_name }}" placeholder="orders" required>
+        </label>
+        <label class="form-control">
+          <div class="label py-1">
+            <span class="label-text text-xs font-semibold uppercase tracking-wider">Display name</span>
+            <span class="label-text-alt">optional</span>
+          </div>
+          <input class="input input-bordered" name="display_name" value="{{ create_display_name }}" placeholder="Order notifications">
+        </label>
+        <label class="form-control">
+          <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Region</span></div>
+          <input class="input input-bordered" name="region" value="{{ create_region }}" required>
+        </label>
+        <label class="form-control">
+          <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Account ID</span></div>
+          <input class="input input-bordered font-mono" name="account_id" value="{{ create_account_id }}" required>
+        </label>
+        <button class="btn btn-primary" type="submit">Create</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 class="card-title text-lg">Topics</h2>
+            <p class="text-sm text-base-content/60">Up to 100 topics in this account and region.</p>
+          </div>
+          <form id="dashboard-topic-filter"
+                class="grid gap-2 sm:grid-cols-[10rem_13rem_minmax(8rem,1fr)_auto]"
+                action="/sns"
+                method="get"
+                hx-get="/sns/fragments/topics"
+                hx-target="#dashboard-topic-list">
+            <input class="input input-bordered input-sm" name="region" value="{{ region }}" aria-label="Region">
+            <input class="input input-bordered input-sm font-mono" name="account_id" value="{{ account_id }}" aria-label="Account ID">
+            <input class="input input-bordered input-sm" name="prefix" value="{{ prefix }}" placeholder="prefix" aria-label="Topic name prefix">
+            <button class="btn btn-primary btn-sm" type="submit">Refresh</button>
+          </form>
+        </div>
+
+        <div id="dashboard-topic-list"
+             class="mt-4">
+          {% include "sns/fragments/topic_list.html" %}
+        </div>
+      </div>
+    </section>
+
+    <aside class="space-y-4">
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-base">Quick filters</h2>
+          <div class="mt-2 grid gap-2">
+            <a class="btn btn-outline btn-sm justify-start" href="/sns?region=us-east-1&account_id={{ account_id }}">us-east-1</a>
+            <a class="btn btn-outline btn-sm justify-start" href="/sns?region=us-west-2&account_id={{ account_id }}">us-west-2</a>
+            <a class="btn btn-outline btn-sm justify-start" href="/sns?region={{ region }}&account_id=000000000000">default account</a>
+          </div>
+        </div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body">
+          <h2 class="card-title text-base">What you can do</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Open any topic to see subscribers, publish messages, and manage endpoints.
+          </p>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+{% endblock %}

@@ -100,7 +100,6 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<CreateAccessKeyResponse, IamError> {
-        let timer = trace_context.start_span();
         let requested_user_name = create_access_key_request.user_name.clone();
         let target_user = requested_or_signing_user(
             &request,
@@ -120,22 +119,20 @@ where
 
         let access_key_id = new_access_key_id();
         let secret_access_key = new_secret_access_key();
-        let result = store
-            .insert_secret_key(&access_key_id, &secret_access_key, target_user.id)
-            .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        attributes.insert("access_key_id".to_string(), access_key_id);
-        trace_context
-            .record_span_or_warn(
+        attributes.insert("access_key_id".to_string(), access_key_id.clone());
+        let created_access_key = trace_context
+            .record_result_span(
                 trace_recorder,
-                timer,
                 "iam.access_key.create",
                 "iam",
-                status,
                 attributes,
+                async {
+                    store
+                        .insert_secret_key(&access_key_id, &secret_access_key, target_user.id)
+                        .await
+                },
             )
-            .await;
-        let created_access_key = result?;
+            .await?;
 
         Ok(create_access_key_response(
             iam_access_key_xml(&target_user.name, &created_access_key),
@@ -143,7 +140,7 @@ where
         ))
     }
 
-    async fn resolve_authorization_typed(
+    async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
         create_access_key_request: CreateAccessKeyRequest,
