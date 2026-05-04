@@ -1,12 +1,6 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction,
-    arn_util::policy_arn,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::impl_aws_action;
 use hiraeth_store::{IamStore, iam::ManagedPolicy};
 use serde::{Deserialize, Serialize};
 
@@ -54,101 +48,60 @@ struct AttachedPolicyMemberXml {
     policy_arn: String,
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for ListAttachedUserPoliciesAction
-where
-    S: IamStore + Send + Sync,
-{
-    type Request = ListAttachedUserPoliciesRequest;
-    type Response = ListAttachedUserPoliciesResponse;
-    type Error = IamError;
+impl_aws_action! {
+    ListAttachedUserPoliciesAction<S: IamStore> {
+        request: ListAttachedUserPoliciesRequest,
+        response: ListAttachedUserPoliciesResponse,
+        error: IamError,
+        name: "ListAttachedUserPolicies",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, list_request, _store| {
+            if let Some(user_name) = &list_request.user_name {
+                validate_user_name(user_name)?;
+            }
 
-    fn name(&self) -> &'static str {
-        "ListAttachedUserPolicies"
-    }
+            Ok(())
+        },
+        handle: |request, list_request, store, trace_context, trace_recorder| {
+            let requested_user_name = list_request.user_name.clone();
+            let target_user =
+                requested_or_signing_user(&request, store, list_request.user_name.as_deref()).await?;
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
-        parse_payload_error(error)
-    }
+            let attributes = HashMap::from([
+                (
+                    "requested_user_name".to_string(),
+                    requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+                ),
+                ("target_user_name".to_string(), target_user.name.clone()),
+                ("target_user_id".to_string(), target_user.id.to_string()),
+                ("account_id".to_string(), target_user.account_id.clone()),
+            ]);
 
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
+            let policies = trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "iam.attached_policy.list",
+                    "iam",
+                    attributes,
+                    async {
+                        store
+                            .get_managed_policies_attached_to_principal(target_user.id)
+                            .await
+                    },
+                )
+                .await?;
 
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        list_request: &ListAttachedUserPoliciesRequest,
-        _store: &S,
-    ) -> Result<(), IamError> {
-        if let Some(user_name) = &list_request.user_name {
-            validate_user_name(user_name)?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        list_request: ListAttachedUserPoliciesRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ListAttachedUserPoliciesResponse, IamError> {
-        let requested_user_name = list_request.user_name.clone();
-        let target_user =
-            requested_or_signing_user(&request, store, list_request.user_name.as_deref()).await?;
-
-        let attributes = HashMap::from([
-            (
-                "requested_user_name".to_string(),
-                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
-            ),
-            ("target_user_name".to_string(), target_user.name.clone()),
-            ("target_user_id".to_string(), target_user.id.to_string()),
-            ("account_id".to_string(), target_user.account_id.clone()),
-        ]);
-
-        let policies = trace_context
-            .record_result_span(
-                trace_recorder,
-                "iam.attached_policy.list",
-                "iam",
-                attributes,
-                async {
-                    store
-                        .get_managed_policies_attached_to_principal(target_user.id)
-                        .await
-                },
-            )
-            .await?;
-
-        Ok(list_attached_user_policies_response(
-            &target_user.account_id,
-            policies,
-            request.request_id,
-        ))
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        list_request: ListAttachedUserPoliciesRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, IamError> {
-        let target_user =
-            requested_or_signing_user(request, store, list_request.user_name.as_deref()).await?;
-
-        Ok(AuthorizationCheck {
-            action: "iam:ListAttachedUserPolicies".to_string(),
-            resource: hiraeth_core::arn_util::user_arn(
+            Ok(list_attached_user_policies_response(
                 &target_user.account_id,
-                &target_user.path,
-                &target_user.name,
-            ),
-            resource_policy: None,
-        })
+                policies,
+                request.request_id,
+            ))
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("iam:ListAttachedUserPolicies", request, store).await
+        },
     }
 }
 
@@ -176,7 +129,7 @@ fn attached_policy_member(account_id: &str, policy: ManagedPolicy) -> AttachedPo
     let policy_path = normalize_policy_path(policy.policy_path.as_deref());
     AttachedPolicyMemberXml {
         policy_name: policy.policy_name.clone(),
-        policy_arn: policy_arn(account_id, &policy_path, &policy.policy_name),
+        policy_arn: hiraeth_core::arn_util::policy_arn(account_id, &policy_path, &policy.policy_name),
     }
 }
 

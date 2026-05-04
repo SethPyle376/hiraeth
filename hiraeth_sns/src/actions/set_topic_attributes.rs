@@ -1,23 +1,17 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::{ResolvedRequest, TypedAwsAction, impl_aws_action};
 use hiraeth_store::{
     sns::{SnsStore, SnsTopicAttributeUpdate},
     sqs::SqsStore,
 };
 use serde::{Deserialize, Serialize};
 
-    use crate::{
+use crate::{
     SnsServiceStore,
     actions::action_support::{
         ResponseMetadata, SNS_XMLNS, is_valid_topic_attribute, parse_payload_error,
-        parse_sns_topic_arn, query_payload_format,
+        parse_sns_topic_arn,
     },
     auth::resolve_authorization,
     error::SnsError,
@@ -76,86 +70,38 @@ where
     })
 }
 
-#[async_trait]
-impl<SS, QS> TypedAwsAction<SnsServiceStore<SS, QS>> for SetTopicAttributesAction
-where
-    SS: SnsStore + Send + Sync,
-    QS: SqsStore + Send + Sync,
-{
-    type Request = SetTopicAttributesRequest;
-    type Response = SetTopicAttributesResponse;
-    type Error = SnsError;
-
-    fn name(&self) -> &'static str {
-        "SetTopicAttributes"
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        query_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        request_body: &SetTopicAttributesRequest,
-        _store: &SnsServiceStore<SS, QS>,
-    ) -> Result<(), Self::Error> {
-        if is_valid_topic_attribute(&request_body.attribute_name) {
-            Ok(())
-        } else {
-            Err(SnsError::BadRequest(format!(
-                "Unsupported attribute name: {}",
-                request_body.attribute_name
-            )))
-        }
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: SetTopicAttributesRequest,
-        store: &SnsServiceStore<SS, QS>,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<Self::Response, Self::Error> {
-        let attributes = HashMap::from([
-            ("topic_arn".to_string(), request_body.topic_arn.clone()),
-            (
-                "attribute_name".to_string(),
-                request_body.attribute_name.clone(),
-            ),
-            (
-                "attribute_value".to_string(),
-                request_body.attribute_value.clone(),
-            ),
-        ]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sns.topic_attributes.set",
-                "sns",
-                attributes,
-                async { handle_set_topic_attributes(&request, store, request_body).await },
-            )
-            .await
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        request_body: SetTopicAttributesRequest,
-        store: &SnsServiceStore<SS, QS>,
-    ) -> Result<AuthorizationCheck, Self::Error> {
-        resolve_authorization("sns:SetTopicAttributes", request, &store.sns_store).await
+impl_aws_action! {
+    SetTopicAttributesAction<SnsServiceStore<SS, QS>> where SS: SnsStore, QS: SqsStore {
+        request: SetTopicAttributesRequest,
+        response: SetTopicAttributesResponse,
+        error: SnsError,
+        name: "SetTopicAttributes",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, payload, _store| {
+            if is_valid_topic_attribute(&payload.attribute_name) {
+                Ok(())
+            } else {
+                Err(SnsError::BadRequest(format!(
+                    "Unsupported attribute name: {}",
+                    payload.attribute_name
+                )))
+            }
+        },
+        handler: handle_set_topic_attributes,
+        span_name: "sns.topic_attributes.set",
+        span_service: "sns",
+        span_attrs: |payload| {
+            HashMap::from([
+                ("topic_arn".to_string(), payload.topic_arn.clone()),
+                ("attribute_name".to_string(), payload.attribute_name.clone()),
+                ("attribute_value".to_string(), payload.attribute_value.clone()),
+            ])
+        },
+        authorize: |request, _payload, store| {
+            resolve_authorization("sns:SetTopicAttributes", request, &store.sns_store).await
+        },
     }
 }
 
@@ -164,9 +110,9 @@ mod tests {
     use std::collections::HashMap;
 
     use chrono::{TimeZone, Utc};
+    use hiraeth_core::tracing::{NoopTraceRecorder, TraceContext};
     use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
-    use hiraeth_core::tracing::{NoopTraceRecorder, TraceContext};
     use hiraeth_iam::AuthorizationMode;
     use hiraeth_store::{
         principal::Principal,
@@ -355,12 +301,10 @@ mod tests {
             let body: SetTopicAttributesRequest =
                 crate::actions::test_support::parse_request_body(&request);
 
-            let result = SetTopicAttributesAction.validate(&request, &body, &store).await;
-            assert!(
-                result.is_ok(),
-                "expected {} to pass validation",
-                attr
-            );
+            let result = SetTopicAttributesAction
+                .validate(&request, &body, &store)
+                .await;
+            assert!(result.is_ok(), "expected {} to pass validation", attr);
         }
     }
 
@@ -375,7 +319,9 @@ mod tests {
         let body: SetTopicAttributesRequest =
             crate::actions::test_support::parse_request_body(&request);
 
-        let result = SetTopicAttributesAction.validate(&request, &body, &store).await;
+        let result = SetTopicAttributesAction
+            .validate(&request, &body, &store)
+            .await;
         assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
     }
 

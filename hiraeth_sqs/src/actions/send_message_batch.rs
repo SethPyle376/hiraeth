@@ -1,16 +1,11 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use futures::StreamExt;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::{ResolvedRequest, impl_aws_action};
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error};
+use super::action_support::parse_payload_error;
 use crate::{
     error::{SqsError, batch_error_details},
     util::{self, MessageAttributeValue, resolve_delay_seconds, validate_message_body},
@@ -176,125 +171,95 @@ fn batch_error_entry(id: &str, error: SqsError) -> BatchResultErrorEntry {
     }
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for SendMessageBatchAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = SendMessageBatchRequest;
-    type Response = SendMessageBatchResponse;
-    type Error = SqsError;
+impl_aws_action! {
+    SendMessageBatchAction<S: SqsStore> {
+        request: SendMessageBatchRequest,
+        response: SendMessageBatchResponse,
+        error: SqsError,
+        name: "SendMessageBatch",
+        payload: Json,
+        response_format: Json,
+        parse_error: parse_payload_error,
+        validate: |request, payload, store| {
+            let queue =
+                crate::util::load_queue_from_url(request, store, &payload.queue_url).await?;
+            crate::util::validate_batch_request(
+                payload.entries.iter().map(|entry| entry.id.as_str()),
+            )?;
 
-    fn name(&self) -> &'static str {
-        "SendMessageBatch"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        request: &ResolvedRequest,
-        request_body: &SendMessageBatchRequest,
-        store: &S,
-    ) -> Result<(), SqsError> {
-        let queue =
-            crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
-        crate::util::validate_batch_request(
-            request_body.entries.iter().map(|entry| entry.id.as_str()),
-        )?;
-
-        for entry in &request_body.entries {
-            crate::util::validate_batch_entry_id(&entry.id)?;
-            resolve_delay_seconds(entry.delay_seconds, queue.delay_seconds)?;
-            validate_message_body(&entry.message_body, queue.maximum_message_size)?;
-            if let Some(message_attributes) = &entry.message_attributes {
-                util::validate_message_attributes(message_attributes)?;
+            for entry in &payload.entries {
+                crate::util::validate_batch_entry_id(&entry.id)?;
+                resolve_delay_seconds(entry.delay_seconds, queue.delay_seconds)?;
+                validate_message_body(&entry.message_body, queue.maximum_message_size)?;
+                if let Some(message_attributes) = &entry.message_attributes {
+                    util::validate_message_attributes(message_attributes)?;
+                }
+                if let Some(message_system_attributes) = &entry.message_system_attributes {
+                    util::validate_message_system_attributes(message_system_attributes)?;
+                }
             }
-            if let Some(message_system_attributes) = &entry.message_system_attributes {
-                util::validate_message_system_attributes(message_system_attributes)?;
-            }
-        }
 
-        Ok(())
-    }
+            Ok(())
+        },
+        handle: |request, payload, store, trace_context, trace_recorder| {
+            let attributes = HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "entry_count".to_string(),
+                    payload.entries.len().to_string(),
+                ),
+                (
+                    "total_body_bytes".to_string(),
+                    payload
+                        .entries
+                        .iter()
+                        .map(|entry| entry.message_body.len())
+                        .sum::<usize>()
+                        .to_string(),
+                ),
+                (
+                    "entries_with_message_attributes".to_string(),
+                    payload
+                        .entries
+                        .iter()
+                        .filter(|entry| {
+                            entry
+                                .message_attributes
+                                .as_ref()
+                                .is_some_and(|attributes| !attributes.is_empty())
+                        })
+                        .count()
+                        .to_string(),
+                ),
+                (
+                    "entries_with_system_attributes".to_string(),
+                    payload
+                        .entries
+                        .iter()
+                        .filter(|entry| {
+                            entry
+                                .message_system_attributes
+                                .as_ref()
+                                .is_some_and(|attributes| !attributes.is_empty())
+                        })
+                        .count()
+                        .to_string(),
+                ),
+            ]);
 
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: SendMessageBatchRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<SendMessageBatchResponse, SqsError> {
-        let attributes = HashMap::from([
-            ("queue_url".to_string(), request_body.queue_url.clone()),
-            (
-                "entry_count".to_string(),
-                request_body.entries.len().to_string(),
-            ),
-            (
-                "total_body_bytes".to_string(),
-                request_body
-                    .entries
-                    .iter()
-                    .map(|entry| entry.message_body.len())
-                    .sum::<usize>()
-                    .to_string(),
-            ),
-            (
-                "entries_with_message_attributes".to_string(),
-                request_body
-                    .entries
-                    .iter()
-                    .filter(|entry| {
-                        entry
-                            .message_attributes
-                            .as_ref()
-                            .is_some_and(|attributes| !attributes.is_empty())
-                    })
-                    .count()
-                    .to_string(),
-            ),
-            (
-                "entries_with_system_attributes".to_string(),
-                request_body
-                    .entries
-                    .iter()
-                    .filter(|entry| {
-                        entry
-                            .message_system_attributes
-                            .as_ref()
-                            .is_some_and(|attributes| !attributes.is_empty())
-                    })
-                    .count()
-                    .to_string(),
-            ),
-        ]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sqs.send_message_batch.persist",
-                "sqs",
-                attributes,
-                async { handle_send_message_batch_typed(&request, store, request_body).await },
-            )
-            .await
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: SendMessageBatchRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
+            trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "sqs.send_message_batch.persist",
+                    "sqs",
+                    attributes,
+                    async { handle_send_message_batch_typed(&request, store, payload).await },
+                )
+                .await
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
+        },
     }
 }
 

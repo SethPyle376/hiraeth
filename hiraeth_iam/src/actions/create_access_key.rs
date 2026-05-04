@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::SecondsFormat;
 use hiraeth_core::{
-    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
+    AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, impl_aws_action,
+    tracing::{NoopTraceRecorder, TraceContext},
+    xml_body,
 };
 use hiraeth_store::{IamStore, iam::AccessKey};
 use serde::{Deserialize, Serialize};
@@ -58,110 +57,64 @@ struct IamAccessKeyXml {
     create_date: String,
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for CreateAccessKeyAction
-where
-    S: IamStore + Send + Sync,
-{
-    type Request = CreateAccessKeyRequest;
-    type Response = CreateAccessKeyResponse;
-    type Error = IamError;
-
-    fn name(&self) -> &'static str {
-        "CreateAccessKey"
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
-        parse_payload_error(error)
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        create_access_key_request: &CreateAccessKeyRequest,
-        _store: &S,
-    ) -> Result<(), IamError> {
-        if let Some(user_name) = &create_access_key_request.user_name {
-            validate_user_name(user_name)?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        create_access_key_request: CreateAccessKeyRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<CreateAccessKeyResponse, IamError> {
-        let requested_user_name = create_access_key_request.user_name.clone();
-        let target_user = requested_or_signing_user(
-            &request,
-            store,
-            create_access_key_request.user_name.as_deref(),
-        )
-        .await?;
-        let mut attributes = HashMap::from([
-            (
-                "requested_user_name".to_string(),
-                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
-            ),
-            ("target_user_name".to_string(), target_user.name.clone()),
-            ("target_user_id".to_string(), target_user.id.to_string()),
-            ("account_id".to_string(), target_user.account_id.clone()),
-        ]);
-
-        let access_key_id = new_access_key_id();
-        let secret_access_key = new_secret_access_key();
-        attributes.insert("access_key_id".to_string(), access_key_id.clone());
-        let created_access_key = trace_context
-            .record_result_span(
-                trace_recorder,
-                "iam.access_key.create",
-                "iam",
-                attributes,
-                async {
-                    store
-                        .insert_secret_key(&access_key_id, &secret_access_key, target_user.id)
-                        .await
-                },
+impl_aws_action! {
+    CreateAccessKeyAction<S: IamStore> {
+        request: CreateAccessKeyRequest,
+        response: CreateAccessKeyResponse,
+        error: IamError,
+        name: "CreateAccessKey",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, create_access_key_request, _store| {
+            if let Some(user_name) = &create_access_key_request.user_name {
+                validate_user_name(user_name)?;
+            }
+            Ok(())
+        },
+        handle: |request, create_access_key_request, store, trace_context, trace_recorder| {
+            let requested_user_name = create_access_key_request.user_name.clone();
+            let target_user = requested_or_signing_user(
+                &request,
+                store,
+                create_access_key_request.user_name.as_deref(),
             )
             .await?;
+            let mut attributes = HashMap::from([
+                (
+                    "requested_user_name".to_string(),
+                    requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+                ),
+                ("target_user_name".to_string(), target_user.name.clone()),
+                ("target_user_id".to_string(), target_user.id.to_string()),
+                ("account_id".to_string(), target_user.account_id.clone()),
+            ]);
 
-        Ok(create_access_key_response(
-            iam_access_key_xml(&target_user.name, &created_access_key),
-            request.request_id,
-        ))
-    }
+            let access_key_id = new_access_key_id();
+            let secret_access_key = new_secret_access_key();
+            attributes.insert("access_key_id".to_string(), access_key_id.clone());
+            let created_access_key = trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "iam.access_key.create",
+                    "iam",
+                    attributes,
+                    async {
+                        store
+                            .insert_secret_key(&access_key_id, &secret_access_key, target_user.id)
+                            .await
+                    },
+                )
+                .await?;
 
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        create_access_key_request: CreateAccessKeyRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, IamError> {
-        let target_user = requested_or_signing_user(
-            request,
-            store,
-            create_access_key_request.user_name.as_deref(),
-        )
-        .await?;
-
-        Ok(AuthorizationCheck {
-            action: "iam:CreateAccessKey".to_string(),
-            resource: arn_util::user_arn(
-                &target_user.account_id,
-                &target_user.path,
-                &target_user.name,
-            ),
-            resource_policy: None,
-        })
+            Ok(create_access_key_response(
+                iam_access_key_xml(&target_user.name, &created_access_key),
+                request.request_id,
+            ))
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("iam:CreateAccessKey", request, store).await
+        },
     }
 }
 

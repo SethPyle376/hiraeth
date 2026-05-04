@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::SecondsFormat;
 use hiraeth_core::{
-    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction,
-    arn_util::user_arn,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
+    AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, impl_aws_action,
+    tracing::{NoopTraceRecorder, TraceContext},
+    xml_body,
 };
 use hiraeth_store::{IamStore, iam::AccessKey};
 use serde::{Deserialize, Serialize};
@@ -57,96 +55,54 @@ struct AccessKeyMetadataMemberXml {
     create_date: String,
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for ListAccessKeysAction
-where
-    S: IamStore + Send + Sync,
-{
-    type Request = ListAccessKeysRequest;
-    type Response = ListAccessKeysResponse;
-    type Error = IamError;
+impl_aws_action! {
+    ListAccessKeysAction<S: IamStore> {
+        request: ListAccessKeysRequest,
+        response: ListAccessKeysResponse,
+        error: IamError,
+        name: "ListAccessKeys",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, list_request, _store| {
+            if let Some(user_name) = &list_request.user_name {
+                validate_user_name(user_name)?;
+            }
+            Ok(())
+        },
+        handle: |request, list_request, store, trace_context, trace_recorder| {
+            let requested_user_name = list_request.user_name.clone();
+            let target_user =
+                requested_or_signing_user(&request, store, list_request.user_name.as_deref()).await?;
+            let attributes = HashMap::from([
+                (
+                    "requested_user_name".to_string(),
+                    requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+                ),
+                ("target_user_name".to_string(), target_user.name.clone()),
+                ("target_user_id".to_string(), target_user.id.to_string()),
+                ("account_id".to_string(), target_user.account_id.clone()),
+            ]);
 
-    fn name(&self) -> &'static str {
-        "ListAccessKeys"
-    }
+            let access_keys = trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "iam.access_key.list",
+                    "iam",
+                    attributes,
+                    async { store.list_access_keys_for_principal(target_user.id).await },
+                )
+                .await?;
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
-        parse_payload_error(error)
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        list_request: &ListAccessKeysRequest,
-        _store: &S,
-    ) -> Result<(), IamError> {
-        if let Some(user_name) = &list_request.user_name {
-            validate_user_name(user_name)?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        list_request: ListAccessKeysRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ListAccessKeysResponse, IamError> {
-        let requested_user_name = list_request.user_name.clone();
-        let target_user =
-            requested_or_signing_user(&request, store, list_request.user_name.as_deref()).await?;
-        let attributes = HashMap::from([
-            (
-                "requested_user_name".to_string(),
-                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
-            ),
-            ("target_user_name".to_string(), target_user.name.clone()),
-            ("target_user_id".to_string(), target_user.id.to_string()),
-            ("account_id".to_string(), target_user.account_id.clone()),
-        ]);
-
-        let access_keys = trace_context
-            .record_result_span(
-                trace_recorder,
-                "iam.access_key.list",
-                "iam",
-                attributes,
-                async { store.list_access_keys_for_principal(target_user.id).await },
-            )
-            .await?;
-
-        Ok(list_access_keys_response(
-            &target_user.name,
-            access_keys,
-            request.request_id,
-        ))
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        list_request: ListAccessKeysRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, IamError> {
-        let target_user =
-            requested_or_signing_user(request, store, list_request.user_name.as_deref()).await?;
-
-        Ok(AuthorizationCheck {
-            action: "iam:ListAccessKeys".to_string(),
-            resource: user_arn(
-                &target_user.account_id,
-                &target_user.path,
+            Ok(list_access_keys_response(
                 &target_user.name,
-            ),
-            resource_policy: None,
-        })
+                access_keys,
+                request.request_id,
+            ))
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("iam:ListAccessKeys", request, store).await
+        },
     }
 }
 

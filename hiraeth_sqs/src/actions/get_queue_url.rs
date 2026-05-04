@@ -1,16 +1,11 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::{ResolvedRequest, impl_aws_action};
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error},
+    action_support::parse_payload_error,
     queue_support,
 };
 use crate::error::SqsError;
@@ -64,77 +59,47 @@ async fn handle_get_queue_url_typed<S: SqsStore>(
     }
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for GetQueueUrlAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = GetQueueUrlRequest;
-    type Response = GetQueueUrlResponse;
-    type Error = SqsError;
-
-    fn name(&self) -> &'static str {
-        "GetQueueUrl"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        request_body: &GetQueueUrlRequest,
-        _store: &S,
-    ) -> Result<(), SqsError> {
-        queue_support::validate_queue_name(
-            &request_body.queue_name,
-            request_body.queue_name.ends_with(".fifo"),
-        )
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: GetQueueUrlRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<GetQueueUrlResponse, SqsError> {
-        let attributes = HashMap::from([
-            ("queue_name".to_string(), request_body.queue_name.clone()),
-            ("region".to_string(), request.region.clone()),
-            (
-                "queue_owner_account_id".to_string(),
-                request_body
-                    .queue_owner_aws_account_id
-                    .clone()
-                    .unwrap_or_else(|| request.auth_context.principal.account_id.clone()),
-            ),
-        ]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sqs.queue.lookup_url",
-                "sqs",
-                attributes,
-                async { handle_get_queue_url_typed(&request, store, request_body).await },
+impl_aws_action! {
+    GetQueueUrlAction<S: SqsStore> {
+        request: GetQueueUrlRequest,
+        response: GetQueueUrlResponse,
+        error: SqsError,
+        name: "GetQueueUrl",
+        payload: Json,
+        response_format: Json,
+        parse_error: parse_payload_error,
+        validate: |_request, payload, _store| {
+            queue_support::validate_queue_name(
+                &payload.queue_name,
+                payload.queue_name.ends_with(".fifo"),
             )
-            .await
-    }
+        },
+        handle: |request, payload, store, trace_context, trace_recorder| {
+            let attributes = HashMap::from([
+                ("queue_name".to_string(), payload.queue_name.clone()),
+                ("region".to_string(), request.region.clone()),
+                (
+                    "queue_owner_account_id".to_string(),
+                    payload
+                        .queue_owner_aws_account_id
+                        .clone()
+                        .unwrap_or_else(|| request.auth_context.principal.account_id.clone()),
+                ),
+            ]);
 
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: GetQueueUrlRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:GetQueueUrl", request, store).await
+            trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "sqs.queue.lookup_url",
+                    "sqs",
+                    attributes,
+                    async { handle_get_queue_url_typed(&request, store, payload).await },
+                )
+                .await
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sqs:GetQueueUrl", request, store).await
+        },
     }
 }
 

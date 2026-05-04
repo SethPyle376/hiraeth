@@ -1,18 +1,17 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction,
+    ResolvedRequest, TypedAwsAction,
     auth::{AuthorizationCheck, Policy, PolicyPrincipal, authorize_cross_service},
+    impl_aws_action,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::sns::SnsStore;
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{parse_payload_error, query_payload_format};
+use super::action_support::parse_payload_error;
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
@@ -268,97 +267,59 @@ where
         .map_err(|e| SnsError::InternalError(format!("sqs delivery failed: {}", e)))
 }
 
-#[async_trait]
-impl<SS, QS> TypedAwsAction<SnsServiceStore<SS, QS>> for PublishAction
-where
-    SS: SnsStore + Send + Sync,
-    QS: SqsStore + Send + Sync,
-{
-    type Request = PublishRequest;
-    type Response = PublishResponse;
-    type Error = SnsError;
+impl_aws_action! {
+    PublishAction<SnsServiceStore<SS, QS>> where SS: SnsStore, QS: SqsStore {
+        request: PublishRequest,
+        response: PublishResponse,
+        error: SnsError,
+        name: "Publish",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, payload, _store| {
+            if payload.topic_arn.is_empty() {
+                return Err(SnsError::BadRequest("TopicArn is required".to_string()));
+            }
+            if payload.message.is_empty() {
+                return Err(SnsError::BadRequest("Message is required".to_string()));
+            }
+            Ok(())
+        },
+        handle: |request, payload, store, trace_context, trace_recorder| {
+            let attributes = HashMap::from([
+                ("topic_arn".to_string(), payload.topic_arn.clone()),
+                ("message_bytes".to_string(), payload.message.len().to_string()),
+            ]);
 
-    fn name(&self) -> &'static str {
-        "Publish"
-    }
+            let timer = trace_context.start_span();
+            let publish_context = trace_context.child_context(&timer);
 
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        query_payload_format()
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SnsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        request_body: &PublishRequest,
-        _store: &SnsServiceStore<SS, QS>,
-    ) -> Result<(), SnsError> {
-        if request_body.topic_arn.is_empty() {
-            return Err(SnsError::BadRequest("TopicArn is required".to_string()));
-        }
-        if request_body.message.is_empty() {
-            return Err(SnsError::BadRequest("Message is required".to_string()));
-        }
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: PublishRequest,
-        store: &SnsServiceStore<SS, QS>,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<PublishResponse, SnsError> {
-        let attributes = HashMap::from([
-            ("topic_arn".to_string(), request_body.topic_arn.clone()),
-            (
-                "message_bytes".to_string(),
-                request_body.message.len().to_string(),
-            ),
-        ]);
-
-        let timer = trace_context.start_span();
-        let publish_context = trace_context.child_context(&timer);
-
-        let result = handle_publish_typed(
-            &request,
-            store,
-            request_body,
-            &publish_context,
-            trace_recorder,
-        )
-        .await;
-
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
+            let result = handle_publish_typed(
+                &request,
+                store,
+                payload,
+                &publish_context,
                 trace_recorder,
-                timer,
-                "sns.message.publish",
-                "sns",
-                status,
-                attributes,
             )
             .await;
 
-        result
-    }
+            let status = if result.is_ok() { "ok" } else { "error" };
+            trace_context
+                .record_span_or_warn(
+                    trace_recorder,
+                    timer,
+                    "sns.message.publish",
+                    "sns",
+                    status,
+                    attributes,
+                )
+                .await;
 
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: PublishRequest,
-        store: &SnsServiceStore<SS, QS>,
-    ) -> Result<AuthorizationCheck, SnsError> {
-        crate::auth::resolve_authorization("sns:Publish", request, &store.sns_store).await
+            result
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sns:Publish", request, &store.sns_store).await
+        },
     }
 }
 

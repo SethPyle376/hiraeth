@@ -1,15 +1,10 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::{impl_aws_action, ResolvedRequest};
 use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error};
+use super::action_support::parse_payload_error;
 use crate::{
     error::SqsError,
     util::{self, MessageAttributeValue, resolve_delay_seconds, validate_message_body},
@@ -114,114 +109,82 @@ async fn handle_send_message_typed<S: SqsStore>(
     Ok(response)
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for SendMessageAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = SendMessageRequest;
-    type Response = SendMessageResponse;
-    type Error = SqsError;
+impl_aws_action! {
+    SendMessageAction<S: SqsStore> {
+        request: SendMessageRequest,
+        response: SendMessageResponse,
+        error: SqsError,
+        name: "SendMessage",
+        payload: Json,
+        response_format: Json,
+        parse_error: parse_payload_error,
+        validate: |request, payload, store| {
+            let queue = crate::util::load_queue_from_url(request, store, &payload.queue_url).await?;
+            validate_message_body(&payload.message_body, queue.maximum_message_size)?;
+            resolve_delay_seconds(payload.delay_seconds, queue.delay_seconds)?;
+            if let Some(message_attributes) = &payload.message_attributes {
+                util::validate_message_attributes(message_attributes)?;
+            }
+            if let Some(message_system_attributes) = &payload.message_system_attributes {
+                util::validate_message_system_attributes(message_system_attributes)?;
+            }
+            Ok(())
+        },
+        handle: |request, payload, store, trace_context, trace_recorder| {
+            let attributes = HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "body_bytes".to_string(),
+                    payload.message_body.len().to_string(),
+                ),
+                (
+                    "delay_seconds".to_string(),
+                    payload
+                        .delay_seconds
+                        .map(|delay_seconds| delay_seconds.to_string())
+                        .unwrap_or_else(|| "queue_default".to_string()),
+                ),
+                (
+                    "message_attribute_count".to_string(),
+                    payload
+                        .message_attributes
+                        .as_ref()
+                        .map(HashMap::len)
+                        .unwrap_or_default()
+                        .to_string(),
+                ),
+                (
+                    "system_attribute_count".to_string(),
+                    payload
+                        .message_system_attributes
+                        .as_ref()
+                        .map(HashMap::len)
+                        .unwrap_or_default()
+                        .to_string(),
+                ),
+                (
+                    "has_message_group_id".to_string(),
+                    payload.message_group_id.is_some().to_string(),
+                ),
+                (
+                    "has_message_deduplication_id".to_string(),
+                    payload.message_deduplication_id.is_some().to_string(),
+                ),
+            ]);
 
-    fn name(&self) -> &'static str {
-        "SendMessage"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        request: &ResolvedRequest,
-        request_body: &SendMessageRequest,
-        store: &S,
-    ) -> Result<(), SqsError> {
-        let queue =
-            crate::util::load_queue_from_url(request, store, &request_body.queue_url).await?;
-        validate_message_body(&request_body.message_body, queue.maximum_message_size)?;
-        resolve_delay_seconds(request_body.delay_seconds, queue.delay_seconds)?;
-        if let Some(message_attributes) = &request_body.message_attributes {
-            util::validate_message_attributes(message_attributes)?;
-        }
-        if let Some(message_system_attributes) = &request_body.message_system_attributes {
-            util::validate_message_system_attributes(message_system_attributes)?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: SendMessageRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<SendMessageResponse, SqsError> {
-        let attributes = HashMap::from([
-            ("queue_url".to_string(), request_body.queue_url.clone()),
-            (
-                "body_bytes".to_string(),
-                request_body.message_body.len().to_string(),
-            ),
-            (
-                "delay_seconds".to_string(),
-                request_body
-                    .delay_seconds
-                    .map(|delay_seconds| delay_seconds.to_string())
-                    .unwrap_or_else(|| "queue_default".to_string()),
-            ),
-            (
-                "message_attribute_count".to_string(),
-                request_body
-                    .message_attributes
-                    .as_ref()
-                    .map(HashMap::len)
-                    .unwrap_or_default()
-                    .to_string(),
-            ),
-            (
-                "system_attribute_count".to_string(),
-                request_body
-                    .message_system_attributes
-                    .as_ref()
-                    .map(HashMap::len)
-                    .unwrap_or_default()
-                    .to_string(),
-            ),
-            (
-                "has_message_group_id".to_string(),
-                request_body.message_group_id.is_some().to_string(),
-            ),
-            (
-                "has_message_deduplication_id".to_string(),
-                request_body.message_deduplication_id.is_some().to_string(),
-            ),
-        ]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sqs.send_message.persist",
-                "sqs",
-                attributes,
-                async { handle_send_message_typed(&request, store, request_body).await },
-            )
-            .await
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: SendMessageRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
+            trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "sqs.send_message.persist",
+                    "sqs",
+                    attributes,
+                    async { handle_send_message_typed(&request, store, payload).await },
+                )
+                .await
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
+        },
     }
 }
 

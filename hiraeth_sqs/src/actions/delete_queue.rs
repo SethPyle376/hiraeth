@@ -1,16 +1,10 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::{ResolvedRequest, impl_aws_action};
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
-use super::action_support::{json_payload_format, parse_payload_error};
+use super::action_support::parse_payload_error;
 use crate::error::SqsError;
 
 pub(crate) struct DeleteQueueAction;
@@ -34,59 +28,31 @@ async fn handle_delete_queue_typed<S: SqsStore>(
         .map_err(crate::error::map_store_error)
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for DeleteQueueAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = DeleteQueueRequest;
-    type Response = ();
-    type Error = SqsError;
+impl_aws_action! {
+    DeleteQueueAction<S: SqsStore> {
+        request: DeleteQueueRequest,
+        response: (),
+        error: SqsError,
+        name: "DeleteQueue",
+        payload: Json,
+        response_format: Empty,
+        parse_error: parse_payload_error,
+        handle: |request, payload, store, trace_context, trace_recorder| {
+            let attributes = HashMap::from([("queue_url".to_string(), payload.queue_url.clone())]);
 
-    fn name(&self) -> &'static str {
-        "DeleteQueue"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Empty
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: DeleteQueueRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<(), SqsError> {
-        let attributes = HashMap::from([("queue_url".to_string(), request_body.queue_url.clone())]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sqs.queue.delete",
-                "sqs",
-                attributes,
-                async { handle_delete_queue_typed(&request, store, request_body).await },
-            )
-            .await
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: DeleteQueueRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:DeleteQueue", request, store).await
+            trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "sqs.queue.delete",
+                    "sqs",
+                    attributes,
+                    async { handle_delete_queue_typed(&request, store, payload).await },
+                )
+                .await
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sqs:DeleteQueue", request, store).await
+        },
     }
 }
 

@@ -1,11 +1,6 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::impl_aws_action;
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
@@ -34,125 +29,83 @@ pub(crate) struct DetachUserPolicyResponse {
     response_metadata: ResponseMetadata,
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for DetachUserPolicyAction
-where
-    S: IamStore + Send + Sync,
-{
-    type Request = DetachUserPolicyRequest;
-    type Response = DetachUserPolicyResponse;
-    type Error = IamError;
+impl_aws_action! {
+    DetachUserPolicyAction<S: IamStore> {
+        request: DetachUserPolicyRequest,
+        response: DetachUserPolicyResponse,
+        error: IamError,
+        name: "DetachUserPolicy",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, detach_policy_request, _store| {
+            validate_user_name(&detach_policy_request.user_name)?;
+            parse_policy_arn(&detach_policy_request.policy_arn)?;
+            Ok(())
+        },
+        handle: |request, detach_policy_request, store, trace_context, trace_recorder| {
+            let account_id = &request.auth_context.principal.account_id;
+            let user = store
+                .get_principal_by_identity(account_id, "user", &detach_policy_request.user_name)
+                .await?
+                .ok_or_else(|| {
+                    IamError::NoSuchEntity(format!("User {}", detach_policy_request.user_name))
+                })?;
 
-    fn name(&self) -> &'static str {
-        "DetachUserPolicy"
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error {
-        parse_payload_error(error)
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        detach_policy_request: &DetachUserPolicyRequest,
-        _store: &S,
-    ) -> Result<(), Self::Error> {
-        validate_user_name(&detach_policy_request.user_name)?;
-        parse_policy_arn(&detach_policy_request.policy_arn)?;
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        detach_policy_request: DetachUserPolicyRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<DetachUserPolicyResponse, IamError> {
-        let account_id = &request.auth_context.principal.account_id;
-        let user = store
-            .get_principal_by_identity(account_id, "user", &detach_policy_request.user_name)
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!("User {}", detach_policy_request.user_name))
-            })?;
-
-        let policy_arn = parse_policy_arn(&detach_policy_request.policy_arn)?;
-        if policy_arn.account_id != *account_id {
-            return Err(IamError::NoSuchEntity(format!(
-                "Policy {} does not exist",
-                detach_policy_request.policy_arn
-            )));
-        }
-        let policy = store
-            .get_managed_policy(
-                &policy_arn.account_id,
-                &policy_arn.policy_name,
-                &policy_arn.policy_path,
-            )
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!(
+            let policy_arn = parse_policy_arn(&detach_policy_request.policy_arn)?;
+            if policy_arn.account_id != *account_id {
+                return Err(IamError::NoSuchEntity(format!(
                     "Policy {} does not exist",
                     detach_policy_request.policy_arn
-                ))
-            })?;
-        let attributes = HashMap::from([
-            ("account_id".to_string(), account_id.clone()),
-            ("user_name".to_string(), user.name.clone()),
-            ("user_id".to_string(), user.id.to_string()),
-            (
-                "policy_arn".to_string(),
-                detach_policy_request.policy_arn.clone(),
-            ),
-            ("policy_id".to_string(), policy.id.to_string()),
-            ("policy_name".to_string(), policy.policy_name.clone()),
-            (
-                "policy_path".to_string(),
-                policy.policy_path.clone().unwrap_or_default(),
-            ),
-        ]);
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "iam.policy.detach_user",
-                "iam",
-                attributes,
-                async { store.detach_policy_from_principal(policy.id, user.id).await },
-            )
-            .await?;
+                )));
+            }
+            let policy = store
+                .get_managed_policy(
+                    &policy_arn.account_id,
+                    &policy_arn.policy_name,
+                    &policy_arn.policy_path,
+                )
+                .await?
+                .ok_or_else(|| {
+                    IamError::NoSuchEntity(format!(
+                        "Policy {} does not exist",
+                        detach_policy_request.policy_arn
+                    ))
+                })?;
+            let attributes = HashMap::from([
+                ("account_id".to_string(), account_id.clone()),
+                ("user_name".to_string(), user.name.clone()),
+                ("user_id".to_string(), user.id.to_string()),
+                (
+                    "policy_arn".to_string(),
+                    detach_policy_request.policy_arn.clone(),
+                ),
+                ("policy_id".to_string(), policy.id.to_string()),
+                ("policy_name".to_string(), policy.policy_name.clone()),
+                (
+                    "policy_path".to_string(),
+                    policy.policy_path.clone().unwrap_or_default(),
+                ),
+            ]);
+            trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "iam.policy.detach_user",
+                    "iam",
+                    attributes,
+                    async { store.detach_policy_from_principal(policy.id, user.id).await },
+                )
+                .await?;
 
-        let response = DetachUserPolicyResponse {
-            xmlns: IAM_XMLNS,
-            response_metadata: response_metadata(request.request_id),
-        };
-        Ok(response)
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        attach_policy_request: DetachUserPolicyRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, IamError> {
-        let account_id = &request.auth_context.principal.account_id;
-        let user = store
-            .get_principal_by_identity(account_id, "user", &attach_policy_request.user_name)
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!("User {}", attach_policy_request.user_name))
-            })?;
-
-        Ok(AuthorizationCheck {
-            action: "iam:DetachUserPolicy".to_string(),
-            resource: arn_util::user_arn(account_id, &user.path, &user.name),
-            resource_policy: None,
-        })
+            let response = DetachUserPolicyResponse {
+                xmlns: IAM_XMLNS,
+                response_metadata: response_metadata(request.request_id),
+            };
+            Ok(response)
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("iam:DetachUserPolicy", request, store).await
+        },
     }
 }
 

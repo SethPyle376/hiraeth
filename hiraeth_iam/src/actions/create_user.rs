@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
+    AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, arn_util, impl_aws_action,
+    tracing::{NoopTraceRecorder, TraceContext},
+    xml_body,
 };
 use hiraeth_store::{IamStore, iam::NewPrincipal};
 use serde::{Deserialize, Serialize};
@@ -46,111 +45,72 @@ struct CreateUserResult {
     user: IamUserXml,
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for CreateUserAction
-where
-    S: IamStore + Send + Sync,
-{
-    type Request = CreateUserRequest;
-    type Response = CreateUserResponse;
-    type Error = IamError;
+impl_aws_action! {
+    CreateUserAction<S: IamStore> {
+        request: CreateUserRequest,
+        response: CreateUserResponse,
+        error: IamError,
+        name: "CreateUser",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, create_user_request, _store| {
+            validate_user_name(&create_user_request.user_name)?;
+            validate_iam_path("Path", &create_user_request.path)?;
+            if create_user_request.permissions_boundary.is_some() {
+                return Err(IamError::BadRequest(
+                    "PermissionsBoundary is not supported yet".to_string(),
+                ));
+            }
+            Ok(())
+        },
+        handle: |request, create_user_request, store, trace_context, trace_recorder| {
+            let account_id = &request.auth_context.principal.account_id;
+            let attributes = HashMap::from([
+                ("account_id".to_string(), account_id.clone()),
+                (
+                    "user_name".to_string(),
+                    create_user_request.user_name.clone(),
+                ),
+                ("path".to_string(), create_user_request.path.clone()),
+                (
+                    "has_permissions_boundary".to_string(),
+                    create_user_request
+                        .permissions_boundary
+                        .is_some()
+                        .to_string(),
+                ),
+            ]);
 
-    fn name(&self) -> &'static str {
-        "CreateUser"
-    }
+            let path = arn_util::normalize_user_path(&create_user_request.path);
+            let created_principal = trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "iam.user.create",
+                    "iam",
+                    attributes,
+                    async {
+                        store
+                            .create_principal(NewPrincipal {
+                                account_id: account_id.clone(),
+                                kind: "user".to_string(),
+                                name: create_user_request.user_name,
+                                path,
+                                user_id: new_id(),
+                            })
+                            .await
+                    },
+                )
+                .await?;
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
-        parse_payload_error(error)
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        create_user_request: &CreateUserRequest,
-        _store: &S,
-    ) -> Result<(), IamError> {
-        validate_user_name(&create_user_request.user_name)?;
-        validate_iam_path("Path", &create_user_request.path)?;
-        if create_user_request.permissions_boundary.is_some() {
-            return Err(IamError::BadRequest(
-                "PermissionsBoundary is not supported yet".to_string(),
-            ));
-        }
-
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        create_user_request: CreateUserRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<CreateUserResponse, IamError> {
-        let account_id = &request.auth_context.principal.account_id;
-        let attributes = HashMap::from([
-            ("account_id".to_string(), account_id.clone()),
-            (
-                "user_name".to_string(),
-                create_user_request.user_name.clone(),
-            ),
-            ("path".to_string(), create_user_request.path.clone()),
-            (
-                "has_permissions_boundary".to_string(),
-                create_user_request
-                    .permissions_boundary
-                    .is_some()
-                    .to_string(),
-            ),
-        ]);
-
-        let path = arn_util::normalize_user_path(&create_user_request.path);
-        let created_principal = trace_context
-            .record_result_span(
-                trace_recorder,
-                "iam.user.create",
-                "iam",
-                attributes,
-                async {
-                    store
-                        .create_principal(NewPrincipal {
-                            account_id: account_id.clone(),
-                            kind: "user".to_string(),
-                            name: create_user_request.user_name,
-                            path,
-                            user_id: new_id(),
-                        })
-                        .await
-                },
-            )
-            .await?;
-
-        Ok(create_user_response(
-            created_principal.into(),
-            request.request_id,
-        ))
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        create_user_request: CreateUserRequest,
-        _store: &S,
-    ) -> Result<AuthorizationCheck, IamError> {
-        Ok(AuthorizationCheck {
-            action: "iam:CreateUser".to_string(),
-            resource: arn_util::user_arn(
-                &request.auth_context.principal.account_id,
-                &create_user_request.path,
-                &create_user_request.user_name,
-            ),
-            resource_policy: None,
-        })
+            Ok(create_user_response(
+                created_principal.into(),
+                request.request_id,
+            ))
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("iam:CreateUser", request, store).await
+        },
     }
 }
 

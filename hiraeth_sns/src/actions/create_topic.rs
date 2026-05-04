@@ -1,17 +1,15 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction,
+    ResolvedRequest, TypedAwsAction,
     auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
+    impl_aws_action,
 };
 use hiraeth_store::sns::{SnsStore, SnsTopic};
-use serde::{Deserialize, Serialize, de};
+use serde::{Deserialize, Serialize};
 
-use super::action_support::{SnsAttributes, is_valid_topic_attribute, parse_payload_error, query_payload_format};
+use super::action_support::{SnsAttributes, is_valid_topic_attribute, parse_payload_error};
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
@@ -86,86 +84,45 @@ async fn handle_create_topic_typed<S: SnsStore>(
     })
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for CreateTopicAction
-where
-    S: SnsStore + Send + Sync,
-{
-    type Request = CreateTopicRequest;
-    type Response = CreateTopicResponse;
-    type Error = SnsError;
-
-    fn name(&self) -> &'static str {
-        "CreateTopic"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        query_payload_format()
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SnsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        request_body: &CreateTopicRequest,
-        _store: &S,
-    ) -> Result<(), SnsError> {
-        if request_body.name.is_empty() {
-            return Err(SnsError::BadRequest("Name is required".to_string()));
-        }
-        for key in request_body.attributes.keys() {
-            if !is_valid_topic_attribute(key) {
-                return Err(SnsError::BadRequest(format!(
-                    "Unsupported attribute name: {}",
-                    key
-                )));
+impl_aws_action! {
+    CreateTopicAction<S: SnsStore> {
+        request: CreateTopicRequest,
+        response: CreateTopicResponse,
+        error: SnsError,
+        name: "CreateTopic",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, payload, _store| {
+            if payload.name.is_empty() {
+                return Err(SnsError::BadRequest("Name is required".to_string()));
             }
-        }
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: CreateTopicRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<CreateTopicResponse, SnsError> {
-        let attributes = HashMap::from([("topic_name".to_string(), request_body.name.clone())]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sns.topic.create",
-                "sns",
-                attributes,
-                async { handle_create_topic_typed(&request, store, request_body).await },
-            )
-            .await
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: CreateTopicRequest,
-        _store: &S,
-    ) -> Result<AuthorizationCheck, SnsError> {
-        Ok(AuthorizationCheck {
-            action: "sns:CreateTopic".to_string(),
-            resource: format!(
-                "arn:aws:sns:{}:{}:*",
-                request.region, request.auth_context.principal.account_id
-            ),
-            resource_policy: None,
-        })
+            for key in payload.attributes.keys() {
+                if !is_valid_topic_attribute(key) {
+                    return Err(SnsError::BadRequest(format!(
+                        "Unsupported attribute name: {}",
+                        key
+                    )));
+                }
+            }
+            Ok(())
+        },
+        handler: handle_create_topic_typed,
+        span_name: "sns.topic.create",
+        span_service: "sns",
+        span_attrs: |payload| {
+            HashMap::from([("topic_name".to_string(), payload.name.clone())])
+        },
+        authorize: |request, _payload, _store| {
+            Ok(AuthorizationCheck {
+                action: "sns:CreateTopic".to_string(),
+                resource: format!(
+                    "arn:aws:sns:{}:{}:*",
+                    request.region, request.auth_context.principal.account_id
+                ),
+                resource_policy: None,
+            })
+        },
     }
 }
 

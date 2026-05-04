@@ -1,17 +1,11 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::{Duration, Utc};
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::{ResolvedRequest, impl_aws_action};
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::Deserialize;
 
-use super::action_support::{json_payload_format, parse_payload_error};
+use super::action_support::parse_payload_error;
 use crate::error::SqsError;
 
 pub(crate) struct ChangeMessageVisibilityAction;
@@ -54,80 +48,46 @@ pub(super) fn validate_visibility_timeout(visibility_timeout: u32) -> Result<(),
     Ok(())
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for ChangeMessageVisibilityAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = ChangeMessageVisibilityRequest;
-    type Response = ();
-    type Error = SqsError;
+impl_aws_action! {
+    ChangeMessageVisibilityAction<S: SqsStore> {
+        request: ChangeMessageVisibilityRequest,
+        response: (),
+        error: SqsError,
+        name: "ChangeMessageVisibility",
+        payload: Json,
+        response_format: Empty,
+        parse_error: parse_payload_error,
+        validate: |_request, change_request, _store| {
+            validate_visibility_timeout(change_request.visibility_timeout)
+        },
+        handle: |request, change_request, store, trace_context, trace_recorder| {
+            let attributes = HashMap::from([
+                ("queue_url".to_string(), change_request.queue_url.clone()),
+                (
+                    "receipt_handle".to_string(),
+                    change_request.receipt_handle.clone(),
+                ),
+                (
+                    "visibility_timeout_seconds".to_string(),
+                    change_request.visibility_timeout.to_string(),
+                ),
+            ]);
 
-    fn name(&self) -> &'static str {
-        "ChangeMessageVisibility"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Empty
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        change_request: &ChangeMessageVisibilityRequest,
-        _store: &S,
-    ) -> Result<(), SqsError> {
-        validate_visibility_timeout(change_request.visibility_timeout)
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        change_request: ChangeMessageVisibilityRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<(), SqsError> {
-        let attributes = HashMap::from([
-            ("queue_url".to_string(), change_request.queue_url.clone()),
-            (
-                "receipt_handle".to_string(),
-                change_request.receipt_handle.clone(),
-            ),
-            (
-                "visibility_timeout_seconds".to_string(),
-                change_request.visibility_timeout.to_string(),
-            ),
-        ]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sqs.message.change_visibility",
-                "sqs",
-                attributes,
-                async {
-                    handle_change_message_visibility_typed(&request, store, change_request).await
-                },
-            )
-            .await
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: ChangeMessageVisibilityRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
+            trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "sqs.message.change_visibility",
+                    "sqs",
+                    attributes,
+                    async {
+                        handle_change_message_visibility_typed(&request, store, change_request).await
+                    },
+                )
+                .await
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
+        },
     }
 }
 

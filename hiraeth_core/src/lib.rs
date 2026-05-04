@@ -2,6 +2,7 @@ mod action;
 pub mod arn_util;
 pub mod auth;
 mod config;
+mod macros;
 mod protocol;
 mod request;
 pub mod tracing;

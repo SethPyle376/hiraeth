@@ -128,7 +128,7 @@ where
         .map_err(IamError::from)
 }
 
-pub(super) async fn requested_or_signing_user<S>(
+pub(crate) async fn requested_or_signing_user<S>(
     request: &ResolvedRequest,
     store: &S,
     user_name: Option<&str>,

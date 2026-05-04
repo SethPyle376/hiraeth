@@ -1,19 +1,16 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::Utc;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
+    ResolvedRequest, TypedAwsAction,
+    impl_aws_action,
 };
 use hiraeth_store::sns::{SnsStore, SnsSubscription};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{parse_payload_error, query_payload_format};
+use super::action_support::{SnsAttributes, parse_payload_error};
 use crate::{
-    actions::action_support::{ResponseMetadata, SNS_XMLNS, SnsAttributes},
+    actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
 };
 
@@ -99,81 +96,40 @@ async fn handle_subscribe_typed<S: SnsStore>(
     })
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for SubscribeAction
-where
-    S: SnsStore + Send + Sync,
-{
-    type Request = SubscribeRequest;
-    type Response = SubscribeResponse;
-    type Error = SnsError;
-
-    fn name(&self) -> &'static str {
-        "Subscribe"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        query_payload_format()
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SnsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        request_body: &SubscribeRequest,
-        _store: &S,
-    ) -> Result<(), SnsError> {
-        if request_body.topic_arn.is_empty() {
-            return Err(SnsError::BadRequest("TopicArn is required".to_string()));
-        }
-        if request_body.protocol.is_empty() {
-            return Err(SnsError::BadRequest("Protocol is required".to_string()));
-        }
-        if request_body.endpoint.is_empty() {
-            return Err(SnsError::BadRequest("Endpoint is required".to_string()));
-        }
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: SubscribeRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<SubscribeResponse, SnsError> {
-        let attributes = HashMap::from([
-            ("topic_arn".to_string(), request_body.topic_arn.clone()),
-            ("protocol".to_string(), request_body.protocol.clone()),
-            ("endpoint".to_string(), request_body.endpoint.clone()),
-        ]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sns.subscription.create",
-                "sns",
-                attributes,
-                async { handle_subscribe_typed(&request, store, request_body).await },
-            )
-            .await
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: SubscribeRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SnsError> {
-        crate::auth::resolve_authorization("sns:Subscribe", request, store).await
+impl_aws_action! {
+    SubscribeAction<S: SnsStore> {
+        request: SubscribeRequest,
+        response: SubscribeResponse,
+        error: SnsError,
+        name: "Subscribe",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, payload, _store| {
+            if payload.topic_arn.is_empty() {
+                return Err(SnsError::BadRequest("TopicArn is required".to_string()));
+            }
+            if payload.protocol.is_empty() {
+                return Err(SnsError::BadRequest("Protocol is required".to_string()));
+            }
+            if payload.endpoint.is_empty() {
+                return Err(SnsError::BadRequest("Endpoint is required".to_string()));
+            }
+            Ok(())
+        },
+        handler: handle_subscribe_typed,
+        span_name: "sns.subscription.create",
+        span_service: "sns",
+        span_attrs: |payload| {
+            HashMap::from([
+                ("topic_arn".to_string(), payload.topic_arn.clone()),
+                ("protocol".to_string(), payload.protocol.clone()),
+                ("endpoint".to_string(), payload.endpoint.clone()),
+            ])
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sns:Subscribe", request, store).await
+        },
     }
 }
 

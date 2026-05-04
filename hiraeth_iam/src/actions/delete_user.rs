@@ -1,19 +1,16 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction, arn_util,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
+    AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, impl_aws_action,
+    tracing::{NoopTraceRecorder, TraceContext},
+    xml_body,
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, existing_user_by_name, parse_payload_error, response_metadata,
-        validate_user_name,
+        IAM_XMLNS, ResponseMetadata, parse_payload_error, response_metadata, validate_user_name,
     },
     error::IamError,
 };
@@ -43,89 +40,44 @@ fn delete_user_response(request_id: impl Into<String>) -> DeleteUserResponse {
     }
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for DeleteUserAction
-where
-    S: IamStore + Send + Sync,
-{
-    type Request = DeleteUserRequest;
-    type Response = DeleteUserResponse;
-    type Error = IamError;
+impl_aws_action! {
+    DeleteUserAction<S: IamStore> {
+        request: DeleteUserRequest,
+        response: DeleteUserResponse,
+        error: IamError,
+        name: "DeleteUser",
+        payload: AwsQuery,
+        response_format: Xml,
+        parse_error: parse_payload_error,
+        validate: |_request, delete_request, _store| {
+            validate_user_name(&delete_request.user_name)
+        },
+        handle: |request, delete_request, store, trace_context, trace_recorder| {
+            let account_id = &request.auth_context.principal.account_id;
+            let attributes = HashMap::from([
+                ("account_id".to_string(), account_id.clone()),
+                ("user_name".to_string(), delete_request.user_name.clone()),
+            ]);
 
-    fn name(&self) -> &'static str {
-        "DeleteUser"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        AwsActionPayloadFormat::AwsQuery
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        delete_request: &DeleteUserRequest,
-        _store: &S,
-    ) -> Result<(), IamError> {
-        validate_user_name(&delete_request.user_name)
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        delete_request: DeleteUserRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<DeleteUserResponse, IamError> {
-        let account_id = &request.auth_context.principal.account_id;
-        let attributes = HashMap::from([
-            ("account_id".to_string(), account_id.clone()),
-            ("user_name".to_string(), delete_request.user_name.clone()),
-        ]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "iam.user.delete",
-                "iam",
-                attributes,
-                async {
-                    store
-                        .delete_user(account_id, &delete_request.user_name)
-                        .await
-                },
-            )
-            .await
-            .map(|_| delete_user_response(request.request_id))
-            .map_err(Into::into)
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        delete_user_request: DeleteUserRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, IamError> {
-        let principal =
-            existing_user_by_name(request, store, &delete_user_request.user_name).await?;
-
-        Ok(AuthorizationCheck {
-            action: "iam:DeleteUser".to_string(),
-            resource: arn_util::user_arn(
-                &request.auth_context.principal.account_id,
-                &principal.path,
-                &principal.name,
-            ),
-            resource_policy: None,
-        })
+            trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "iam.user.delete",
+                    "iam",
+                    attributes,
+                    async {
+                        store
+                            .delete_user(account_id, &delete_request.user_name)
+                            .await
+                    },
+                )
+                .await
+                .map(|_| delete_user_response(request.request_id))
+                .map_err(Into::into)
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("iam:DeleteUser", request, store).await
+        },
     }
 }
 

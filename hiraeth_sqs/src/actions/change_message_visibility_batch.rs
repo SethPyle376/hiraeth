@@ -1,17 +1,12 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use chrono::{Duration, Utc};
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::{ResolvedRequest, impl_aws_action};
 use hiraeth_store::sqs::{SqsQueue, SqsStore};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error},
+    action_support::parse_payload_error,
     change_message_visibility::validate_visibility_timeout,
 };
 use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error};
@@ -107,80 +102,50 @@ async fn handle_change_message_visibility_batch_typed<S: SqsStore>(
     Ok(ChangeMessageVisibilityBatchResponse { successful, failed })
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for ChangeMessageVisibilityBatchAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = ChangeMessageVisibilityBatchRequest;
-    type Response = ChangeMessageVisibilityBatchResponse;
-    type Error = SqsError;
+impl_aws_action! {
+    ChangeMessageVisibilityBatchAction<S: SqsStore> {
+        request: ChangeMessageVisibilityBatchRequest,
+        response: ChangeMessageVisibilityBatchResponse,
+        error: SqsError,
+        name: "ChangeMessageVisibilityBatch",
+        payload: Json,
+        response_format: Json,
+        parse_error: parse_payload_error,
+        validate: |_request, change_request, _store| {
+            crate::util::validate_batch_request(
+                change_request.entries.iter().map(|entry| entry.id.as_str()),
+            )?;
+            for entry in &change_request.entries {
+                crate::util::validate_batch_entry_id(&entry.id)?;
+            }
 
-    fn name(&self) -> &'static str {
-        "ChangeMessageVisibilityBatch"
-    }
+            Ok(())
+        },
+        handle: |request, change_request, store, trace_context, trace_recorder| {
+            let attributes = HashMap::from([
+                ("queue_url".to_string(), change_request.queue_url.clone()),
+                (
+                    "entry_count".to_string(),
+                    change_request.entries.len().to_string(),
+                ),
+            ]);
 
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        change_request: &ChangeMessageVisibilityBatchRequest,
-        _store: &S,
-    ) -> Result<(), SqsError> {
-        crate::util::validate_batch_request(
-            change_request.entries.iter().map(|entry| entry.id.as_str()),
-        )?;
-        for entry in &change_request.entries {
-            crate::util::validate_batch_entry_id(&entry.id)?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        change_request: ChangeMessageVisibilityBatchRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ChangeMessageVisibilityBatchResponse, SqsError> {
-        let attributes = HashMap::from([
-            ("queue_url".to_string(), change_request.queue_url.clone()),
-            (
-                "entry_count".to_string(),
-                change_request.entries.len().to_string(),
-            ),
-        ]);
-
-        trace_context
-            .record_result_span(
-                trace_recorder,
-                "sqs.change_message_visibility_batch.update",
-                "sqs",
-                attributes,
-                async {
-                    handle_change_message_visibility_batch_typed(&request, store, change_request)
-                        .await
-                },
-            )
-            .await
-    }
-
-    async fn resolve_authorization(
-        &self,
-        request: &ResolvedRequest,
-        _payload: ChangeMessageVisibilityBatchRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
+            trace_context
+                .record_result_span(
+                    trace_recorder,
+                    "sqs.change_message_visibility_batch.update",
+                    "sqs",
+                    attributes,
+                    async {
+                        handle_change_message_visibility_batch_typed(&request, store, change_request)
+                            .await
+                    },
+                )
+                .await
+        },
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
+        },
     }
 }
 
