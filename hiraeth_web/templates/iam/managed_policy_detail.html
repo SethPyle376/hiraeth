@@ -21,12 +21,7 @@
     {{ action_card_html|safe }}
   </div>
 
-  {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-6 flex items-center justify-between gap-3 py-3 text-sm">
-    <span>{{ feedback_message }}</span>
-    <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind'])">&times;</button>
-  </div>
-  {% endif %}
+  {% include "components/feedback_toast.html" %}
 
   <div class="mb-6 grid gap-3 md:grid-cols-3">
     <div class="card border border-base-300 bg-base-100 shadow-sm">
@@ -143,7 +138,7 @@
           <form class="grid gap-3 pt-1" method="post" action="/iam/policies/{{ policy.id }}/attach" onsubmit="return hiraethDisableSubmit(this, 'Attaching...')">
             <label class="form-control">
               <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Principal</span></div>
-              <select class="select select-bordered" name="principal_id" required>
+              <select class="select" name="principal_id" required>
                 {% for principal in attach_options %}
                 <option value="{{ principal.id }}">{{ principal.name }} · {{ principal.kind }}</option>
                 {% endfor %}

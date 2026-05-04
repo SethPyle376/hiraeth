@@ -1,0 +1,7 @@
+{% if has_feedback %}
+<div class="toast toast-bottom toast-end z-[60]" data-auto-dismiss>
+  <div class="alert {{ feedback_class }} shadow-lg">
+    <span>{{ feedback_message }}</span>
+  </div>
+</div>
+{% endif %}

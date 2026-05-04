@@ -6,12 +6,7 @@
 <section class="mx-auto max-w-[94rem]">
   {{ page_header_html|safe }}
 
-  {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-6 flex items-center justify-between gap-3 py-3 text-sm">
-    <span>{{ feedback_message }}</span>
-    <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind'])">&times;</button>
-  </div>
-  {% endif %}
+  {% include "components/feedback_toast.html" %}
 
   <div class="mb-5">{{ stats_html|safe }}</div>
 
@@ -154,7 +149,7 @@
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="form-control">
                 <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Kind</span></div>
-                <select class="select select-bordered" name="kind">
+                <select class="select" name="kind">
                   <option value="user" {% if create_kind == "user" %}selected{% endif %}>user</option>
                   <option value="role" {% if create_kind == "role" %}selected{% endif %}>role</option>
                 </select>

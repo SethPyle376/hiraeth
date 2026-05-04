@@ -38,17 +38,17 @@
               >
             </label>
             <div class="flex flex-wrap items-center gap-2 sm:ml-auto">
-              <select class="select select-bordered select-sm w-full sm:w-40" name="service" aria-label="Filter by service">
+              <select class="select select-sm w-full sm:w-40" name="service" aria-label="Filter by service">
                 {% for option in filters.service_options %}
                 <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
               </select>
-              <select class="select select-bordered select-sm w-full sm:w-44" name="action" aria-label="Filter by action">
+              <select class="select select-sm w-full sm:w-44" name="action" aria-label="Filter by action">
                 {% for option in filters.action_options %}
                 <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}
               </select>
-              <select class="select select-bordered select-sm w-full sm:w-40" name="status" aria-label="Filter by status">
+              <select class="select select-sm w-full sm:w-40" name="status" aria-label="Filter by status">
                 {% for option in filters.status_options %}
                 <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
                 {% endfor %}

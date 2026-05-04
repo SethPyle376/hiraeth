@@ -10,12 +10,7 @@
     <p class="mt-3 text-sm text-base-content/70">All your topics in one place.</p>
   </div>
 
-  {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-6 flex items-center justify-between gap-3 py-3 text-sm">
-    <span>{{ feedback_message }}</span>
-    <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind'])">&times;</button>
-  </div>
-  {% endif %}
+  {% include "components/feedback_toast.html" %}
 
   <form class="card mb-6 border border-base-300 bg-base-100 shadow-sm"
         action="/sns/topics/create"

@@ -246,8 +246,27 @@ function hiraethOpenHashTarget() {
   }
 }
 
+function hiraethAutoDismissToasts() {
+  document.querySelectorAll("[data-auto-dismiss]").forEach((toast) => {
+    if (toast.dataset.dismissScheduled === "true") {
+      return;
+    }
+    toast.dataset.dismissScheduled = "true";
+
+    setTimeout(() => {
+      toast.style.transition = "opacity 0.35s ease, transform 0.35s ease";
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(-12px)";
+      setTimeout(() => {
+        toast.remove();
+      }, 350);
+    }, 4000);
+  });
+}
+
 function hiraethInitApp() {
   hiraethOpenHashTarget();
+  hiraethAutoDismissToasts();
 }
 
 if (document.readyState === "loading") {
