@@ -1,5 +1,6 @@
 mod action_support;
 mod create_topic;
+mod get_topic_attributes;
 mod publish;
 mod set_topic_attributes;
 mod subscribe;
@@ -12,8 +13,9 @@ use serde::Serialize;
 use crate::store::SnsServiceStore;
 
 use self::{
-    create_topic::CreateTopicAction, publish::PublishAction,
-    set_topic_attributes::SetTopicAttributesAction, subscribe::SubscribeAction,
+    create_topic::CreateTopicAction, get_topic_attributes::GetTopicAttributesAction,
+    publish::PublishAction, set_topic_attributes::SetTopicAttributesAction,
+    subscribe::SubscribeAction,
 };
 
 pub(crate) fn registry<SS, QS>() -> AwsActionRegistry<SnsServiceStore<SS, QS>>
@@ -25,6 +27,7 @@ where
     registry.register(CreateTopicAction);
     registry.register(SubscribeAction);
     registry.register(PublishAction);
+    registry.register(GetTopicAttributesAction);
     registry.register(SetTopicAttributesAction);
     registry
 }

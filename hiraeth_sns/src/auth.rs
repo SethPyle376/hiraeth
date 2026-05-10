@@ -15,6 +15,7 @@ pub(crate) fn get_action_name_for_request(request: &ResolvedRequest) -> Result<S
         | "Unsubscribe"
         | "ListSubscriptionsByTopic"
         | "SetTopicAttributes"
+        | "GetTopicAttributes"
         | "Publish" => Ok(action_name),
         _ => Err(SnsError::UnsupportedOperation(action_name)),
     }
