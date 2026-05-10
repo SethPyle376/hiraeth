@@ -131,16 +131,16 @@ impl<'de> serde::Deserialize<'de> for SnsAttributes {
         let mut entries = HashMap::<String, (Option<String>, Option<String>)>::new();
 
         for (key, value) in raw {
-            if let Some(rest) = key.strip_prefix("Attributes.entry.") {
-                if let Some(dot_pos) = rest.find('.') {
-                    let index = &rest[..dot_pos];
-                    let suffix = &rest[dot_pos + 1..];
-                    let entry = entries.entry(index.to_string()).or_insert((None, None));
-                    match suffix {
-                        "key" => entry.0 = Some(value),
-                        "value" => entry.1 = Some(value),
-                        _ => {}
-                    }
+            if let Some(rest) = key.strip_prefix("Attributes.entry.")
+                && let Some(dot_pos) = rest.find('.')
+            {
+                let index = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+                let entry = entries.entry(index.to_string()).or_insert((None, None));
+                match suffix {
+                    "key" => entry.0 = Some(value),
+                    "value" => entry.1 = Some(value),
+                    _ => {}
                 }
             }
         }

@@ -1,14 +1,41 @@
 use std::collections::HashMap;
 
 use chrono::{Duration, Utc};
-use hiraeth_core::{ResolvedRequest, impl_aws_action};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::action_support::parse_payload_error;
 use crate::error::SqsError;
 
 pub(crate) struct ChangeMessageVisibilityAction;
+
+crate::impl_sqs_action! {
+    ChangeMessageVisibilityAction<S: SqsStore> {
+        request: ChangeMessageVisibilityRequest,
+        response: (),
+        name: "ChangeMessageVisibility",
+        response_format: Empty,
+        validate: |_request, change_request, _store| {
+            validate_visibility_timeout(change_request.visibility_timeout)
+        },
+        handler: handle_change_message_visibility_typed,
+        span: "sqs.message.change_visibility",
+        span_attrs: |_request, change_request, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), change_request.queue_url.clone()),
+                (
+                    "receipt_handle".to_string(),
+                    change_request.receipt_handle.clone(),
+                ),
+                (
+                    "visibility_timeout_seconds".to_string(),
+                    change_request.visibility_timeout.to_string(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:ChangeMessageVisibility",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -46,49 +73,6 @@ pub(super) fn validate_visibility_timeout(visibility_timeout: u32) -> Result<(),
     }
 
     Ok(())
-}
-
-impl_aws_action! {
-    ChangeMessageVisibilityAction<S: SqsStore> {
-        request: ChangeMessageVisibilityRequest,
-        response: (),
-        error: SqsError,
-        name: "ChangeMessageVisibility",
-        payload: Json,
-        response_format: Empty,
-        parse_error: parse_payload_error,
-        validate: |_request, change_request, _store| {
-            validate_visibility_timeout(change_request.visibility_timeout)
-        },
-        handle: |request, change_request, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_url".to_string(), change_request.queue_url.clone()),
-                (
-                    "receipt_handle".to_string(),
-                    change_request.receipt_handle.clone(),
-                ),
-                (
-                    "visibility_timeout_seconds".to_string(),
-                    change_request.visibility_timeout.to_string(),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.message.change_visibility",
-                    "sqs",
-                    attributes,
-                    async {
-                        handle_change_message_visibility_typed(&request, store, change_request).await
-                    },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

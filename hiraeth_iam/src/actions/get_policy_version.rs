@@ -2,22 +2,28 @@ use std::collections::HashMap;
 
 use chrono::SecondsFormat;
 use hiraeth_core::{
-    AwsAction, ResolvedRequest, TypedAwsActionAdapter, impl_aws_action,
-    tracing::{NoopTraceRecorder, TraceContext},
-    xml_body,
+    ResolvedRequest,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::{IamStore, iam::ManagedPolicy};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::util::{
-        DEFAULT_POLICY_VERSION_ID, IAM_XMLNS, ResponseMetadata, parse_payload_error,
-        parse_policy_arn,
-    },
+    actions::util::{DEFAULT_POLICY_VERSION_ID, IAM_XMLNS, ResponseMetadata, parse_policy_arn},
     error::IamError,
 };
 
 pub(crate) struct GetPolicyVersionAction;
+
+crate::impl_iam_action! {
+    GetPolicyVersionAction<S: IamStore> {
+        request: GetPolicyVersionRequest,
+        response: GetPolicyVersionResponse,
+        name: "GetPolicyVersion",
+        handler: handle_get_policy_version,
+        authorize_action: "iam:GetPolicyVersion",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -56,60 +62,52 @@ struct PolicyVersionXml {
     create_date: String,
 }
 
-impl_aws_action! {
-    GetPolicyVersionAction<S: IamStore> {
-        request: GetPolicyVersionRequest,
-        response: GetPolicyVersionResponse,
-        error: IamError,
-        name: "GetPolicyVersion",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        handle: |_request, get_request, store, trace_context, trace_recorder| {
-            let policy_arn = parse_policy_arn(&get_request.policy_arn)?;
-            let version_id = normalize_version_id(&get_request.version_id);
-            let attributes = HashMap::from([
-                ("account_id".to_string(), policy_arn.account_id.clone()),
-                ("policy_arn".to_string(), get_request.policy_arn.clone()),
-                ("policy_name".to_string(), policy_arn.policy_name.clone()),
-                ("policy_path".to_string(), policy_arn.policy_path.clone()),
-                ("version_id".to_string(), version_id.clone()),
-            ]);
+async fn handle_get_policy_version<S: IamStore + Send + Sync>(
+    request: ResolvedRequest,
+    get_request: GetPolicyVersionRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<GetPolicyVersionResponse, IamError> {
+    let policy_arn = parse_policy_arn(&get_request.policy_arn)?;
+    let version_id = normalize_version_id(&get_request.version_id);
+    let attributes = HashMap::from([
+        ("account_id".to_string(), policy_arn.account_id.clone()),
+        ("policy_arn".to_string(), get_request.policy_arn.clone()),
+        ("policy_name".to_string(), policy_arn.policy_name.clone()),
+        ("policy_path".to_string(), policy_arn.policy_path.clone()),
+        ("version_id".to_string(), version_id.clone()),
+    ]);
 
-            let policy = trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "iam.policy_version.get",
-                    "iam",
-                    attributes,
-                    async {
-                        store
-                            .get_managed_policy(
-                                &policy_arn.account_id,
-                                &policy_arn.policy_name,
-                                &policy_arn.policy_path,
-                            )
-                            .await?
-                            .ok_or_else(|| {
-                                IamError::NoSuchEntity(format!(
-                                    "Policy {} does not exist",
-                                    get_request.policy_arn
-                                ))
-                            })
-                    },
-                )
-                .await?;
+    let policy = trace_context
+        .record_result_span(
+            trace_recorder,
+            "iam.policy_version.get",
+            "iam",
+            attributes,
+            async {
+                store
+                    .get_managed_policy(
+                        &policy_arn.account_id,
+                        &policy_arn.policy_name,
+                        &policy_arn.policy_path,
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        IamError::NoSuchEntity(format!(
+                            "Policy {} does not exist",
+                            get_request.policy_arn
+                        ))
+                    })
+            },
+        )
+        .await?;
 
-            Ok(get_policy_version_response(
-                &policy,
-                &version_id,
-                _request.request_id,
-            ))
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("iam:GetPolicyVersion", request, store).await
-        },
-    }
+    Ok(get_policy_version_response(
+        &policy,
+        &version_id,
+        request.request_id,
+    ))
 }
 
 fn get_policy_version_response(

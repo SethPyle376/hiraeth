@@ -1,17 +1,47 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, TypedAwsAction, impl_aws_action};
-use hiraeth_core::tracing::{TraceContext, TraceRecorder};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::{
-    action_support::parse_payload_error,
-    queue_attribute_support::parse_queue_attribute_update,
-};
+use super::queue_attribute_support::parse_queue_attribute_update;
 use crate::error::SqsError;
 
 pub(crate) struct SetQueueAttributesAction;
+
+crate::impl_sqs_action! {
+    SetQueueAttributesAction<S: SqsStore> {
+        request: SetQueueAttributesRequest,
+        response: (),
+        name: "SetQueueAttributes",
+        response_format: Empty,
+        validate: |_request, request_body, _store| {
+            parse_queue_attribute_update(&request_body.attributes)?;
+            Ok(())
+        },
+        handler: handle_set_queue_attributes_typed,
+        span: "sqs.queue.set_attributes",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "attribute_count".to_string(),
+                    payload.attributes.len().to_string(),
+                ),
+                (
+                    "attributes".to_string(),
+                    payload
+                        .attributes
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            ])
+        },
+        authorize_action: "sqs:SetQueueAttributes",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -35,53 +65,6 @@ async fn handle_set_queue_attributes_typed<S: SqsStore>(
         )
         .await
         .map_err(crate::error::map_store_error)
-}
-
-impl_aws_action! {
-    SetQueueAttributesAction<S: SqsStore> {
-        request: SetQueueAttributesRequest,
-        response: (),
-        error: SqsError,
-        name: "SetQueueAttributes",
-        payload: Json,
-        response_format: Empty,
-        parse_error: parse_payload_error,
-        validate: |_request, request_body, _store| {
-            parse_queue_attribute_update(&request_body.attributes)?;
-            Ok(())
-        },
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_url".to_string(), payload.queue_url.clone()),
-                (
-                    "attribute_count".to_string(),
-                    payload.attributes.len().to_string(),
-                ),
-                (
-                    "attributes".to_string(),
-                    payload
-                        .attributes
-                        .keys()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(","),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.queue.set_attributes",
-                    "sqs",
-                    attributes,
-                    async { handle_set_queue_attributes_typed(&request, store, payload).await },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:SetQueueAttributes", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

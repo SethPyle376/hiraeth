@@ -1,13 +1,33 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, TypedAwsAction, impl_aws_action};
+use hiraeth_core::ResolvedRequest;
 use hiraeth_store::sns::SnsStore;
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{ResponseMetadata, SNS_XMLNS, parse_payload_error, parse_sns_topic_arn};
-use crate::error::SnsError;
+use super::action_support::{ResponseMetadata, SNS_XMLNS, parse_sns_topic_arn};
+use crate::{error::SnsError, impl_sns_action};
 
 pub(crate) struct GetTopicAttributesAction;
+
+impl_sns_action! {
+    GetTopicAttributesAction<S: SnsStore> {
+        request: GetTopicAttributesRequest,
+        response: GetTopicAttributesResponse,
+        name: "GetTopicAttributes",
+        validate: |_request, payload, _store| {
+            if payload.topic_arn.is_empty() {
+                return Err(SnsError::BadRequest("TopicArn is required".to_string()));
+            }
+            Ok(())
+        },
+        handler: handle_get_topic_attributes_typed,
+        span: "sns.topic.get_attributes",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([("topic_arn".to_string(), payload.topic_arn.clone())])
+        },
+        authorize_action: "sns:GetTopicAttributes",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -143,33 +163,6 @@ async fn handle_get_topic_attributes_typed<S: SnsStore>(
     })
 }
 
-impl_aws_action! {
-    GetTopicAttributesAction<S: SnsStore> {
-        request: GetTopicAttributesRequest,
-        response: GetTopicAttributesResponse,
-        error: SnsError,
-        name: "GetTopicAttributes",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        validate: |_request, payload, _store| {
-            if payload.topic_arn.is_empty() {
-                return Err(SnsError::BadRequest("TopicArn is required".to_string()));
-            }
-            Ok(())
-        },
-        handler: handle_get_topic_attributes_typed,
-        span_name: "sns.topic.get_attributes",
-        span_service: "sns",
-        span_attrs: |payload| {
-            HashMap::from([("topic_arn".to_string(), payload.topic_arn.clone())])
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sns:GetTopicAttributes", request, store).await
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -179,7 +172,9 @@ mod tests {
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{principal::Principal, sns::SnsTopic, test_support::SnsTestStore};
 
-    use super::{GetTopicAttributesAction, GetTopicAttributesRequest, handle_get_topic_attributes_typed};
+    use super::{
+        GetTopicAttributesAction, GetTopicAttributesRequest, handle_get_topic_attributes_typed,
+    };
 
     fn resolved_request(body: &str) -> ResolvedRequest {
         let mut headers = HashMap::new();
@@ -243,7 +238,9 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <GetTopicAttributesAction as TypedAwsAction<SnsTestStore>>::name(&GetTopicAttributesAction),
+            <GetTopicAttributesAction as TypedAwsAction<SnsTestStore>>::name(
+                &GetTopicAttributesAction
+            ),
             "GetTopicAttributes"
         );
     }
@@ -251,9 +248,7 @@ mod tests {
     #[tokio::test]
     async fn get_topic_attributes_returns_expected_attributes() {
         let store = SnsTestStore::with_topic(topic());
-        let request = resolved_request(
-            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic",
-        );
+        let request = resolved_request("TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic");
         let body: GetTopicAttributesRequest =
             crate::actions::test_support::parse_request_body(&request);
 
@@ -288,9 +283,7 @@ mod tests {
     #[tokio::test]
     async fn topic_not_found_error() {
         let store = SnsTestStore::default();
-        let request = resolved_request(
-            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic",
-        );
+        let request = resolved_request("TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic");
         let body: GetTopicAttributesRequest =
             crate::actions::test_support::parse_request_body(&request);
 
@@ -305,7 +298,9 @@ mod tests {
         let body: GetTopicAttributesRequest =
             crate::actions::test_support::parse_request_body(&request);
 
-        let result = GetTopicAttributesAction.validate(&request, &body, &store).await;
+        let result = GetTopicAttributesAction
+            .validate(&request, &body, &store)
+            .await;
         assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
     }
 }

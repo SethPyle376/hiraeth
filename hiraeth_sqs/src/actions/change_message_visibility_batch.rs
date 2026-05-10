@@ -1,17 +1,44 @@
 use std::collections::HashMap;
 
 use chrono::{Duration, Utc};
-use hiraeth_core::{ResolvedRequest, impl_aws_action};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    action_support::parse_payload_error,
-    change_message_visibility::validate_visibility_timeout,
-};
+use super::change_message_visibility::validate_visibility_timeout;
 use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error};
 
 pub(crate) struct ChangeMessageVisibilityBatchAction;
+
+crate::impl_sqs_action! {
+    ChangeMessageVisibilityBatchAction<S: SqsStore> {
+        request: ChangeMessageVisibilityBatchRequest,
+        response: ChangeMessageVisibilityBatchResponse,
+        name: "ChangeMessageVisibilityBatch",
+        validate: |_request, change_request, _store| {
+            crate::util::validate_batch_request(
+                change_request.entries.iter().map(|entry| entry.id.as_str()),
+            )?;
+            for entry in &change_request.entries {
+                crate::util::validate_batch_entry_id(&entry.id)?;
+            }
+
+            Ok(())
+        },
+        handler: handle_change_message_visibility_batch_typed,
+        span: "sqs.change_message_visibility_batch.update",
+        span_attrs: |_request, change_request, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), change_request.queue_url.clone()),
+                (
+                    "entry_count".to_string(),
+                    change_request.entries.len().to_string(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:ChangeMessageVisibility",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -100,53 +127,6 @@ async fn handle_change_message_visibility_batch_typed<S: SqsStore>(
     }
 
     Ok(ChangeMessageVisibilityBatchResponse { successful, failed })
-}
-
-impl_aws_action! {
-    ChangeMessageVisibilityBatchAction<S: SqsStore> {
-        request: ChangeMessageVisibilityBatchRequest,
-        response: ChangeMessageVisibilityBatchResponse,
-        error: SqsError,
-        name: "ChangeMessageVisibilityBatch",
-        payload: Json,
-        response_format: Json,
-        parse_error: parse_payload_error,
-        validate: |_request, change_request, _store| {
-            crate::util::validate_batch_request(
-                change_request.entries.iter().map(|entry| entry.id.as_str()),
-            )?;
-            for entry in &change_request.entries {
-                crate::util::validate_batch_entry_id(&entry.id)?;
-            }
-
-            Ok(())
-        },
-        handle: |request, change_request, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_url".to_string(), change_request.queue_url.clone()),
-                (
-                    "entry_count".to_string(),
-                    change_request.entries.len().to_string(),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.change_message_visibility_batch.update",
-                    "sqs",
-                    attributes,
-                    async {
-                        handle_change_message_visibility_batch_typed(&request, store, change_request)
-                            .await
-                    },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:ChangeMessageVisibility", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

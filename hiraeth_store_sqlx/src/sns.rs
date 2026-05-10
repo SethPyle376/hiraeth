@@ -963,7 +963,10 @@ mod tests {
 
         assert_eq!(found.display_name, Some("UpdatedDisplay".to_string()));
         assert_eq!(found.policy, r#"{"Version":"2012-10-17"}"#);
-        assert_eq!(found.delivery_policy, Some(r#"{"numRetries":3}"#.to_string()));
+        assert_eq!(
+            found.delivery_policy,
+            Some(r#"{"numRetries":3}"#.to_string())
+        );
         assert_eq!(found.signature_version, Some("1".to_string()));
     }
 

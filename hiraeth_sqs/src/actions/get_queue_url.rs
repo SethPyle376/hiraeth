@@ -1,16 +1,43 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, impl_aws_action};
+use hiraeth_core::ResolvedRequest;
 use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    action_support::parse_payload_error,
-    queue_support,
-};
+use super::queue_support;
 use crate::error::SqsError;
 
 pub(crate) struct GetQueueUrlAction;
+
+crate::impl_sqs_action! {
+    GetQueueUrlAction<S: SqsStore> {
+        request: GetQueueUrlRequest,
+        response: GetQueueUrlResponse,
+        name: "GetQueueUrl",
+        validate: |_request, payload, _store| {
+            queue_support::validate_queue_name(
+                &payload.queue_name,
+                payload.queue_name.ends_with(".fifo"),
+            )
+        },
+        handler: handle_get_queue_url_typed,
+        span: "sqs.queue.lookup_url",
+        span_attrs: |request, payload, _store| {
+            HashMap::from([
+                ("queue_name".to_string(), payload.queue_name.clone()),
+                ("region".to_string(), request.region.clone()),
+                (
+                    "queue_owner_account_id".to_string(),
+                    payload
+                        .queue_owner_aws_account_id
+                        .clone()
+                        .unwrap_or_else(|| request.auth_context.principal.account_id.clone()),
+                ),
+            ])
+        },
+        authorize_action: "sqs:GetQueueUrl",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -56,50 +83,6 @@ async fn handle_get_queue_url_typed<S: SqsStore>(
             Ok(response)
         }
         None => Err(SqsError::QueueNotFound),
-    }
-}
-
-impl_aws_action! {
-    GetQueueUrlAction<S: SqsStore> {
-        request: GetQueueUrlRequest,
-        response: GetQueueUrlResponse,
-        error: SqsError,
-        name: "GetQueueUrl",
-        payload: Json,
-        response_format: Json,
-        parse_error: parse_payload_error,
-        validate: |_request, payload, _store| {
-            queue_support::validate_queue_name(
-                &payload.queue_name,
-                payload.queue_name.ends_with(".fifo"),
-            )
-        },
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_name".to_string(), payload.queue_name.clone()),
-                ("region".to_string(), request.region.clone()),
-                (
-                    "queue_owner_account_id".to_string(),
-                    payload
-                        .queue_owner_aws_account_id
-                        .clone()
-                        .unwrap_or_else(|| request.auth_context.principal.account_id.clone()),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.queue.lookup_url",
-                    "sqs",
-                    attributes,
-                    async { handle_get_queue_url_typed(&request, store, payload).await },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:GetQueueUrl", request, store).await
-        },
     }
 }
 

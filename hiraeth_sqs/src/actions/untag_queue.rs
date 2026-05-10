@@ -1,17 +1,38 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, TypedAwsAction, impl_aws_action};
-use hiraeth_core::tracing::{TraceContext, TraceRecorder};
+use hiraeth_core::ResolvedRequest;
 use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::{
-    action_support::parse_payload_error,
-    tag_support::validate_tag_keys,
-};
+use super::tag_support::validate_tag_keys;
 use crate::error::SqsError;
 
 pub(crate) struct UntagQueueAction;
+
+crate::impl_sqs_action! {
+    UntagQueueAction<S: SqsStore> {
+        request: UntagQueueRequest,
+        response: (),
+        name: "UntagQueue",
+        response_format: Empty,
+        validate: |_request, request_body, _store| {
+            validate_tag_keys(&request_body.tag_keys, false)
+        },
+        handler: handle_untag_queue_typed,
+        span: "sqs.queue.untag",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "tag_key_count".to_string(),
+                    payload.tag_keys.len().to_string(),
+                ),
+                ("tag_keys".to_string(), payload.tag_keys.join(",")),
+            ])
+        },
+        authorize_action: "sqs:UntagQueue",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -32,44 +53,6 @@ async fn handle_untag_queue_typed<S: SqsStore>(
         .untag_queue(queue.id, request_body.tag_keys)
         .await
         .map_err(crate::error::map_store_error)
-}
-
-impl_aws_action! {
-    UntagQueueAction<S: SqsStore> {
-        request: UntagQueueRequest,
-        response: (),
-        error: SqsError,
-        name: "UntagQueue",
-        payload: Json,
-        response_format: Empty,
-        parse_error: parse_payload_error,
-        validate: |_request, request_body, _store| {
-            validate_tag_keys(&request_body.tag_keys, false)
-        },
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_url".to_string(), payload.queue_url.clone()),
-                (
-                    "tag_key_count".to_string(),
-                    payload.tag_keys.len().to_string(),
-                ),
-                ("tag_keys".to_string(), payload.tag_keys.join(",")),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.queue.untag",
-                    "sqs",
-                    attributes,
-                    async { handle_untag_queue_typed(&request, store, payload).await },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:UntagQueue", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

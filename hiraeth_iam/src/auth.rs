@@ -1,6 +1,4 @@
-use hiraeth_core::{
-    ResolvedRequest, arn_util, auth::AuthorizationCheck, parse_aws_query_params,
-};
+use hiraeth_core::{ResolvedRequest, arn_util, auth::AuthorizationCheck, parse_aws_query_params};
 use hiraeth_store::IamStore;
 
 use crate::error::IamError;
@@ -91,16 +89,13 @@ pub(crate) async fn resolve_authorization<S: IamStore + Send + Sync>(
                     .get_principal_by_identity(account_id, "user", name)
                     .await
                     .map_err(IamError::from)?
-                    .ok_or_else(|| {
-                        IamError::NoSuchEntity(format!("User {name} does not exist"))
-                    })?,
+                    .ok_or_else(|| IamError::NoSuchEntity(format!("User {name} does not exist")))?,
                 _ => {
                     if request.auth_context.principal.kind == "user" {
                         request.auth_context.principal.clone()
                     } else {
                         return Err(IamError::BadRequest(
-                            "UserName is required when the caller is not an IAM user"
-                                .to_string(),
+                            "UserName is required when the caller is not an IAM user".to_string(),
                         ));
                     }
                 }
@@ -115,7 +110,9 @@ pub(crate) async fn resolve_authorization<S: IamStore + Send + Sync>(
                 resource_policy: None,
             })
         }
-        "iam:PutUserPolicy" | "iam:GetUserPolicy" | "iam:AttachUserPolicy"
+        "iam:PutUserPolicy"
+        | "iam:GetUserPolicy"
+        | "iam:AttachUserPolicy"
         | "iam:DetachUserPolicy" => {
             let user_name = params
                 .get("UserName")
@@ -159,7 +156,9 @@ pub(crate) async fn resolve_authorization<S: IamStore + Send + Sync>(
                 resource_policy: None,
             })
         }
-        _ => Err(IamError::UnsupportedOperation(authorization_action.to_string())),
+        _ => Err(IamError::UnsupportedOperation(
+            authorization_action.to_string(),
+        )),
     }
 }
 

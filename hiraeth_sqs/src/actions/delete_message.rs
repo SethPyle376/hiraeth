@@ -1,13 +1,33 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{impl_aws_action, ResolvedRequest};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::action_support::parse_payload_error;
 use crate::error::SqsError;
 
 pub(crate) struct DeleteMessageAction;
+
+crate::impl_sqs_action! {
+    DeleteMessageAction<S: SqsStore> {
+        request: DeleteMessageRequest,
+        response: (),
+        name: "DeleteMessage",
+        response_format: Empty,
+        handler: handle_delete_message_typed,
+        span: "sqs.message.delete",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "receipt_handle".to_string(),
+                    payload.receipt_handle.clone(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:DeleteMessage",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -29,40 +49,6 @@ async fn handle_delete_message_typed<S: SqsStore>(
         .map_err(crate::error::map_receipt_handle_store_error)?;
 
     Ok(())
-}
-
-impl_aws_action! {
-    DeleteMessageAction<S: SqsStore> {
-        request: DeleteMessageRequest,
-        response: (),
-        error: SqsError,
-        name: "DeleteMessage",
-        payload: Json,
-        response_format: Empty,
-        parse_error: parse_payload_error,
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_url".to_string(), payload.queue_url.clone()),
-                (
-                    "receipt_handle".to_string(),
-                    payload.receipt_handle.clone(),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.message.delete",
-                    "sqs",
-                    attributes,
-                    async { handle_delete_message_typed(&request, store, payload).await },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:DeleteMessage", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

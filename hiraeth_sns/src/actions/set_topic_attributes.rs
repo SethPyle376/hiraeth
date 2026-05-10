@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, TypedAwsAction, impl_aws_action};
+use hiraeth_core::ResolvedRequest;
 use hiraeth_store::{
     sns::{SnsStore, SnsTopicAttributeUpdate},
     sqs::SqsStore,
@@ -10,14 +10,41 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SnsServiceStore,
     actions::action_support::{
-        ResponseMetadata, SNS_XMLNS, is_valid_topic_attribute, parse_payload_error,
-        parse_sns_topic_arn,
+        ResponseMetadata, SNS_XMLNS, is_valid_topic_attribute, parse_sns_topic_arn,
     },
-    auth::resolve_authorization,
     error::SnsError,
+    impl_sns_action,
 };
 
 pub(crate) struct SetTopicAttributesAction;
+
+impl_sns_action! {
+    SetTopicAttributesAction<SnsServiceStore<SS, QS>> where SS: SnsStore, QS: SqsStore {
+        request: SetTopicAttributesRequest,
+        response: SetTopicAttributesResponse,
+        name: "SetTopicAttributes",
+        validate: |_request, payload, _store| {
+            if is_valid_topic_attribute(&payload.attribute_name) {
+                Ok(())
+            } else {
+                Err(SnsError::BadRequest(format!(
+                    "Unsupported attribute name: {}",
+                    payload.attribute_name
+                )))
+            }
+        },
+        handler: handle_set_topic_attributes,
+        span: "sns.topic_attributes.set",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("topic_arn".to_string(), payload.topic_arn.clone()),
+                ("attribute_name".to_string(), payload.attribute_name.clone()),
+                ("attribute_value".to_string(), payload.attribute_value.clone()),
+            ])
+        },
+        authorize_action: "sns:SetTopicAttributes",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -68,41 +95,6 @@ where
             request_id: request.request_id.clone(),
         },
     })
-}
-
-impl_aws_action! {
-    SetTopicAttributesAction<SnsServiceStore<SS, QS>> where SS: SnsStore, QS: SqsStore {
-        request: SetTopicAttributesRequest,
-        response: SetTopicAttributesResponse,
-        error: SnsError,
-        name: "SetTopicAttributes",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        validate: |_request, payload, _store| {
-            if is_valid_topic_attribute(&payload.attribute_name) {
-                Ok(())
-            } else {
-                Err(SnsError::BadRequest(format!(
-                    "Unsupported attribute name: {}",
-                    payload.attribute_name
-                )))
-            }
-        },
-        handler: handle_set_topic_attributes,
-        span_name: "sns.topic_attributes.set",
-        span_service: "sns",
-        span_attrs: |payload| {
-            HashMap::from([
-                ("topic_arn".to_string(), payload.topic_arn.clone()),
-                ("attribute_name".to_string(), payload.attribute_name.clone()),
-                ("attribute_value".to_string(), payload.attribute_value.clone()),
-            ])
-        },
-        authorize: |request, _payload, store| {
-            resolve_authorization("sns:SetTopicAttributes", request, &store.sns_store).await
-        },
-    }
 }
 
 #[cfg(test)]

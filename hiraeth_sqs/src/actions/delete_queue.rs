@@ -1,13 +1,27 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, impl_aws_action};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::action_support::parse_payload_error;
 use crate::error::SqsError;
 
 pub(crate) struct DeleteQueueAction;
+
+crate::impl_sqs_action! {
+    DeleteQueueAction<S: SqsStore> {
+        request: DeleteQueueRequest,
+        response: (),
+        name: "DeleteQueue",
+        response_format: Empty,
+        handler: handle_delete_queue_typed,
+        span: "sqs.queue.delete",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([("queue_url".to_string(), payload.queue_url.clone())])
+        },
+        authorize_action: "sqs:DeleteQueue",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -26,34 +40,6 @@ async fn handle_delete_queue_typed<S: SqsStore>(
         .delete_queue(queue.id)
         .await
         .map_err(crate::error::map_store_error)
-}
-
-impl_aws_action! {
-    DeleteQueueAction<S: SqsStore> {
-        request: DeleteQueueRequest,
-        response: (),
-        error: SqsError,
-        name: "DeleteQueue",
-        payload: Json,
-        response_format: Empty,
-        parse_error: parse_payload_error,
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([("queue_url".to_string(), payload.queue_url.clone())]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.queue.delete",
-                    "sqs",
-                    attributes,
-                    async { handle_delete_queue_typed(&request, store, payload).await },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:DeleteQueue", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

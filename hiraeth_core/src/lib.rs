@@ -7,6 +7,11 @@ mod protocol;
 mod request;
 pub mod tracing;
 
+#[doc(hidden)]
+pub mod __private {
+    pub use async_trait::async_trait;
+}
+
 pub use action::{
     AwsAction, AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionRegistry,
     AwsActionResponseFormat, TypedAwsAction, TypedAwsActionAdapter, get_query_request_action_name,

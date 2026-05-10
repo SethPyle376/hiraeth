@@ -1,22 +1,37 @@
 use std::collections::HashMap;
 
 use hiraeth_core::{
-    AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, impl_aws_action,
-    tracing::{NoopTraceRecorder, TraceContext},
-    xml_body,
+    ResolvedRequest,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, optional_target_user, parse_payload_error,
-        response_metadata, validate_user_name,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, optional_target_user, response_metadata,
+        validate_user_name,
     },
     error::IamError,
 };
 
 pub(crate) struct GetUserAction;
+
+crate::impl_iam_action! {
+    GetUserAction<S: IamStore> {
+        request: GetUserRequest,
+        response: GetUserResponse,
+        name: "GetUser",
+        validate: |_request, get_user_request, _store| {
+            if let Some(user_name) = &get_user_request.user_name {
+                validate_user_name(user_name)?;
+            }
+            Ok(())
+        },
+        handler: handle_get_user,
+        authorize_action: "iam:GetUser",
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -41,65 +56,53 @@ struct GetUserResult {
     user: IamUserXml,
 }
 
-impl_aws_action! {
-    GetUserAction<S: IamStore> {
-        request: GetUserRequest,
-        response: GetUserResponse,
-        error: IamError,
-        name: "GetUser",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        validate: |_request, get_user_request, _store| {
-            if let Some(user_name) = &get_user_request.user_name {
-                validate_user_name(user_name)?;
-            }
-            Ok(())
-        },
-        handle: |request, get_user_request, store, trace_context, trace_recorder| {
-            let requested_user_name = get_user_request.user_name.clone();
-            let account_id = request.auth_context.principal.account_id.clone();
-            let principal = trace_context
-                .record_result_span_with_attributes(
-                    trace_recorder,
-                    "iam.user.lookup",
-                    "iam",
-                    async {
-                        optional_target_user(&request, store, get_user_request.user_name.as_deref())
-                            .await?
-                            .ok_or_else(|| {
-                                IamError::NoSuchEntity(format!(
-                                    "User with name '{}' not found",
-                                    get_user_request.user_name.unwrap_or_else(|| {
-                                        request.auth_context.principal.name.clone()
-                                    })
-                                ))
-                            })
-                    },
-                    |result| {
-                        let mut attributes = HashMap::from([
-                            (
-                                "requested_user_name".to_string(),
-                                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
-                            ),
-                            ("account_id".to_string(), account_id),
-                        ]);
-                        if let Ok(principal) = result {
-                            attributes.insert("user_name".to_string(), principal.name.clone());
-                            attributes.insert("user_id".to_string(), principal.id.to_string());
-                            attributes.insert("path".to_string(), principal.path.clone());
-                        }
-                        attributes
-                    },
-                )
-                .await?;
+async fn handle_get_user<S: IamStore + Send + Sync>(
+    request: ResolvedRequest,
+    get_user_request: GetUserRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<GetUserResponse, IamError> {
+    let requested_user_name = get_user_request.user_name.clone();
+    let account_id = request.auth_context.principal.account_id.clone();
+    let principal = trace_context
+        .record_result_span_with_attributes(
+            trace_recorder,
+            "iam.user.lookup",
+            "iam",
+            async {
+                optional_target_user(&request, store, get_user_request.user_name.as_deref())
+                    .await?
+                    .ok_or_else(|| {
+                        IamError::NoSuchEntity(format!(
+                            "User with name '{}' not found",
+                            get_user_request.user_name.unwrap_or_else(|| request
+                                .auth_context
+                                .principal
+                                .name
+                                .clone())
+                        ))
+                    })
+            },
+            |result| {
+                let mut attributes = HashMap::from([
+                    (
+                        "requested_user_name".to_string(),
+                        requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+                    ),
+                    ("account_id".to_string(), account_id),
+                ]);
+                if let Ok(principal) = result {
+                    attributes.insert("user_name".to_string(), principal.name.clone());
+                    attributes.insert("user_id".to_string(), principal.id.to_string());
+                    attributes.insert("path".to_string(), principal.path.clone());
+                }
+                attributes
+            },
+        )
+        .await?;
 
-            Ok(get_user_response(principal.into(), request.request_id))
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("iam:GetUser", request, store).await
-        },
-    }
+    Ok(get_user_response(principal.into(), request.request_id))
 }
 
 fn get_user_response(user: IamUserXml, request_id: impl Into<String>) -> GetUserResponse {

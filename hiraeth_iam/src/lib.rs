@@ -13,6 +13,7 @@ mod actions;
 mod auth;
 mod authorize;
 mod error;
+mod macros;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthorizationMode {

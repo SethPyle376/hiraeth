@@ -1,18 +1,38 @@
 use std::collections::HashMap;
 
-use hiraeth_core::impl_aws_action;
+use hiraeth_core::{
+    ResolvedRequest,
+    tracing::{TraceContext, TraceRecorder},
+};
 use hiraeth_store::{IamStore, iam::ManagedPolicy};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, ResponseMetadata, parse_payload_error, requested_or_signing_user,
-        response_metadata, validate_user_name,
+        IAM_XMLNS, ResponseMetadata, requested_or_signing_user, response_metadata,
+        validate_user_name,
     },
     error::IamError,
 };
 
 pub(crate) struct ListAttachedUserPoliciesAction;
+
+crate::impl_iam_action! {
+    ListAttachedUserPoliciesAction<S: IamStore> {
+        request: ListAttachedUserPoliciesRequest,
+        response: ListAttachedUserPoliciesResponse,
+        name: "ListAttachedUserPolicies",
+        validate: |_request, list_request, _store| {
+            if let Some(user_name) = &list_request.user_name {
+                validate_user_name(user_name)?;
+            }
+
+            Ok(())
+        },
+        handler: handle_list_attached_user_policies,
+        authorize_action: "iam:ListAttachedUserPolicies",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -48,61 +68,46 @@ struct AttachedPolicyMemberXml {
     policy_arn: String,
 }
 
-impl_aws_action! {
-    ListAttachedUserPoliciesAction<S: IamStore> {
-        request: ListAttachedUserPoliciesRequest,
-        response: ListAttachedUserPoliciesResponse,
-        error: IamError,
-        name: "ListAttachedUserPolicies",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        validate: |_request, list_request, _store| {
-            if let Some(user_name) = &list_request.user_name {
-                validate_user_name(user_name)?;
-            }
+async fn handle_list_attached_user_policies<S: IamStore + Send + Sync>(
+    request: ResolvedRequest,
+    list_request: ListAttachedUserPoliciesRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<ListAttachedUserPoliciesResponse, IamError> {
+    let requested_user_name = list_request.user_name.clone();
+    let target_user =
+        requested_or_signing_user(&request, store, list_request.user_name.as_deref()).await?;
 
-            Ok(())
-        },
-        handle: |request, list_request, store, trace_context, trace_recorder| {
-            let requested_user_name = list_request.user_name.clone();
-            let target_user =
-                requested_or_signing_user(&request, store, list_request.user_name.as_deref()).await?;
+    let attributes = HashMap::from([
+        (
+            "requested_user_name".to_string(),
+            requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+        ),
+        ("target_user_name".to_string(), target_user.name.clone()),
+        ("target_user_id".to_string(), target_user.id.to_string()),
+        ("account_id".to_string(), target_user.account_id.clone()),
+    ]);
 
-            let attributes = HashMap::from([
-                (
-                    "requested_user_name".to_string(),
-                    requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
-                ),
-                ("target_user_name".to_string(), target_user.name.clone()),
-                ("target_user_id".to_string(), target_user.id.to_string()),
-                ("account_id".to_string(), target_user.account_id.clone()),
-            ]);
+    let policies = trace_context
+        .record_result_span(
+            trace_recorder,
+            "iam.attached_policy.list",
+            "iam",
+            attributes,
+            async {
+                store
+                    .get_managed_policies_attached_to_principal(target_user.id)
+                    .await
+            },
+        )
+        .await?;
 
-            let policies = trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "iam.attached_policy.list",
-                    "iam",
-                    attributes,
-                    async {
-                        store
-                            .get_managed_policies_attached_to_principal(target_user.id)
-                            .await
-                    },
-                )
-                .await?;
-
-            Ok(list_attached_user_policies_response(
-                &target_user.account_id,
-                policies,
-                request.request_id,
-            ))
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("iam:ListAttachedUserPolicies", request, store).await
-        },
-    }
+    Ok(list_attached_user_policies_response(
+        &target_user.account_id,
+        policies,
+        request.request_id,
+    ))
 }
 
 fn list_attached_user_policies_response(
@@ -129,7 +134,11 @@ fn attached_policy_member(account_id: &str, policy: ManagedPolicy) -> AttachedPo
     let policy_path = normalize_policy_path(policy.policy_path.as_deref());
     AttachedPolicyMemberXml {
         policy_name: policy.policy_name.clone(),
-        policy_arn: hiraeth_core::arn_util::policy_arn(account_id, &policy_path, &policy.policy_name),
+        policy_arn: hiraeth_core::arn_util::policy_arn(
+            account_id,
+            &policy_path,
+            &policy.policy_name,
+        ),
     }
 }
 

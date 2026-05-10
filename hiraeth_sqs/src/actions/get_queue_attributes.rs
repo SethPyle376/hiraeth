@@ -1,17 +1,40 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, TypedAwsAction, impl_aws_action};
-use hiraeth_core::tracing::{TraceContext, TraceRecorder};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    action_support::parse_payload_error,
-    queue_attribute_support::collect_queue_attributes,
-};
+use super::queue_attribute_support::collect_queue_attributes;
 use crate::error::SqsError;
 
 pub(crate) struct GetQueueAttributesAction;
+
+crate::impl_sqs_action! {
+    GetQueueAttributesAction<S: SqsStore> {
+        request: GetQueueAttributesRequest,
+        response: GetQueueAttributesResponse,
+        name: "GetQueueAttributes",
+        handler: handle_get_queue_attributes_typed,
+        span: "sqs.queue.get_attributes",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                (
+                    "queue_url".to_string(),
+                    payload.queue_url.clone(),
+                ),
+                (
+                    "requested_attribute_count".to_string(),
+                    payload.attribute_names.len().to_string(),
+                ),
+                (
+                    "requested_attributes".to_string(),
+                    payload.attribute_names.join(","),
+                ),
+            ])
+        },
+        authorize_action: "sqs:GetQueueAttributes",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -37,49 +60,6 @@ async fn handle_get_queue_attributes_typed<S: SqsStore>(
         collect_queue_attributes(store, &queue, &attributes_request.attribute_names).await?;
 
     Ok(GetQueueAttributesResponse { attributes })
-}
-
-impl_aws_action! {
-    GetQueueAttributesAction<S: SqsStore> {
-        request: GetQueueAttributesRequest,
-        response: GetQueueAttributesResponse,
-        error: SqsError,
-        name: "GetQueueAttributes",
-        payload: Json,
-        response_format: Json,
-        parse_error: parse_payload_error,
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                (
-                    "queue_url".to_string(),
-                    payload.queue_url.clone(),
-                ),
-                (
-                    "requested_attribute_count".to_string(),
-                    payload.attribute_names.len().to_string(),
-                ),
-                (
-                    "requested_attributes".to_string(),
-                    payload.attribute_names.join(","),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.queue.get_attributes",
-                    "sqs",
-                    attributes,
-                    async {
-                        handle_get_queue_attributes_typed(&request, store, payload).await
-                    },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:GetQueueAttributes", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

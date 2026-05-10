@@ -1,17 +1,94 @@
 use std::collections::HashMap;
 
 use futures::StreamExt;
-use hiraeth_core::{ResolvedRequest, impl_aws_action};
-use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::{SqsMessage, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::parse_payload_error;
 use crate::{
     error::{SqsError, batch_error_details},
     util::{self, MessageAttributeValue, resolve_delay_seconds, validate_message_body},
 };
 
 pub(crate) struct SendMessageBatchAction;
+
+crate::impl_sqs_action! {
+    SendMessageBatchAction<S: SqsStore> {
+        request: SendMessageBatchRequest,
+        response: SendMessageBatchResponse,
+        name: "SendMessageBatch",
+        validate: |request, payload, store| {
+            let queue =
+                crate::util::load_queue_from_url(request, store, &payload.queue_url).await?;
+            crate::util::validate_batch_request(
+                payload.entries.iter().map(|entry| entry.id.as_str()),
+            )?;
+
+            for entry in &payload.entries {
+                crate::util::validate_batch_entry_id(&entry.id)?;
+                resolve_delay_seconds(entry.delay_seconds, queue.delay_seconds)?;
+                validate_message_body(&entry.message_body, queue.maximum_message_size)?;
+                if let Some(message_attributes) = &entry.message_attributes {
+                    util::validate_message_attributes(message_attributes)?;
+                }
+                if let Some(message_system_attributes) = &entry.message_system_attributes {
+                    util::validate_message_system_attributes(message_system_attributes)?;
+                }
+            }
+
+            Ok(())
+        },
+        handler: handle_send_message_batch_typed,
+        span: "sqs.send_message_batch.persist",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "entry_count".to_string(),
+                    payload.entries.len().to_string(),
+                ),
+                (
+                    "total_body_bytes".to_string(),
+                    payload
+                        .entries
+                        .iter()
+                        .map(|entry| entry.message_body.len())
+                        .sum::<usize>()
+                        .to_string(),
+                ),
+                (
+                    "entries_with_message_attributes".to_string(),
+                    payload
+                        .entries
+                        .iter()
+                        .filter(|entry| {
+                            entry
+                                .message_attributes
+                                .as_ref()
+                                .is_some_and(|attributes| !attributes.is_empty())
+                        })
+                        .count()
+                        .to_string(),
+                ),
+                (
+                    "entries_with_system_attributes".to_string(),
+                    payload
+                        .entries
+                        .iter()
+                        .filter(|entry| {
+                            entry
+                                .message_system_attributes
+                                .as_ref()
+                                .is_some_and(|attributes| !attributes.is_empty())
+                        })
+                        .count()
+                        .to_string(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:SendMessage",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -168,98 +245,6 @@ fn batch_error_entry(id: &str, error: SqsError) -> BatchResultErrorEntry {
         code: code.to_string(),
         message: error.to_string(),
         sender_fault,
-    }
-}
-
-impl_aws_action! {
-    SendMessageBatchAction<S: SqsStore> {
-        request: SendMessageBatchRequest,
-        response: SendMessageBatchResponse,
-        error: SqsError,
-        name: "SendMessageBatch",
-        payload: Json,
-        response_format: Json,
-        parse_error: parse_payload_error,
-        validate: |request, payload, store| {
-            let queue =
-                crate::util::load_queue_from_url(request, store, &payload.queue_url).await?;
-            crate::util::validate_batch_request(
-                payload.entries.iter().map(|entry| entry.id.as_str()),
-            )?;
-
-            for entry in &payload.entries {
-                crate::util::validate_batch_entry_id(&entry.id)?;
-                resolve_delay_seconds(entry.delay_seconds, queue.delay_seconds)?;
-                validate_message_body(&entry.message_body, queue.maximum_message_size)?;
-                if let Some(message_attributes) = &entry.message_attributes {
-                    util::validate_message_attributes(message_attributes)?;
-                }
-                if let Some(message_system_attributes) = &entry.message_system_attributes {
-                    util::validate_message_system_attributes(message_system_attributes)?;
-                }
-            }
-
-            Ok(())
-        },
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_url".to_string(), payload.queue_url.clone()),
-                (
-                    "entry_count".to_string(),
-                    payload.entries.len().to_string(),
-                ),
-                (
-                    "total_body_bytes".to_string(),
-                    payload
-                        .entries
-                        .iter()
-                        .map(|entry| entry.message_body.len())
-                        .sum::<usize>()
-                        .to_string(),
-                ),
-                (
-                    "entries_with_message_attributes".to_string(),
-                    payload
-                        .entries
-                        .iter()
-                        .filter(|entry| {
-                            entry
-                                .message_attributes
-                                .as_ref()
-                                .is_some_and(|attributes| !attributes.is_empty())
-                        })
-                        .count()
-                        .to_string(),
-                ),
-                (
-                    "entries_with_system_attributes".to_string(),
-                    payload
-                        .entries
-                        .iter()
-                        .filter(|entry| {
-                            entry
-                                .message_system_attributes
-                                .as_ref()
-                                .is_some_and(|attributes| !attributes.is_empty())
-                        })
-                        .count()
-                        .to_string(),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.send_message_batch.persist",
-                    "sqs",
-                    attributes,
-                    async { handle_send_message_batch_typed(&request, store, payload).await },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:SendMessage", request, store).await
-        },
     }
 }
 

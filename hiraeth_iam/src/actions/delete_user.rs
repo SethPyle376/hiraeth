@@ -1,21 +1,31 @@
 use std::collections::HashMap;
 
 use hiraeth_core::{
-    AuthContext, AwsAction, ResolvedRequest, TypedAwsActionAdapter, impl_aws_action,
-    tracing::{NoopTraceRecorder, TraceContext},
-    xml_body,
+    ResolvedRequest,
+    tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::util::{
-        IAM_XMLNS, ResponseMetadata, parse_payload_error, response_metadata, validate_user_name,
-    },
+    actions::util::{IAM_XMLNS, ResponseMetadata, response_metadata, validate_user_name},
     error::IamError,
 };
 
 pub(crate) struct DeleteUserAction;
+
+crate::impl_iam_action! {
+    DeleteUserAction<S: IamStore> {
+        request: DeleteUserRequest,
+        response: DeleteUserResponse,
+        name: "DeleteUser",
+        validate: |_request, delete_request, _store| {
+            validate_user_name(&delete_request.user_name)
+        },
+        handler: handle_delete_user,
+        authorize_action: "iam:DeleteUser",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -33,51 +43,40 @@ pub(crate) struct DeleteUserResponse {
     response_metadata: ResponseMetadata,
 }
 
+async fn handle_delete_user<S: IamStore + Send + Sync>(
+    request: ResolvedRequest,
+    delete_request: DeleteUserRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<DeleteUserResponse, IamError> {
+    let account_id = &request.auth_context.principal.account_id;
+    let attributes = HashMap::from([
+        ("account_id".to_string(), account_id.clone()),
+        ("user_name".to_string(), delete_request.user_name.clone()),
+    ]);
+
+    trace_context
+        .record_result_span(
+            trace_recorder,
+            "iam.user.delete",
+            "iam",
+            attributes,
+            async {
+                store
+                    .delete_user(account_id, &delete_request.user_name)
+                    .await
+            },
+        )
+        .await
+        .map(|_| delete_user_response(request.request_id))
+        .map_err(Into::into)
+}
+
 fn delete_user_response(request_id: impl Into<String>) -> DeleteUserResponse {
     DeleteUserResponse {
         xmlns: IAM_XMLNS,
         response_metadata: response_metadata(request_id),
-    }
-}
-
-impl_aws_action! {
-    DeleteUserAction<S: IamStore> {
-        request: DeleteUserRequest,
-        response: DeleteUserResponse,
-        error: IamError,
-        name: "DeleteUser",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        validate: |_request, delete_request, _store| {
-            validate_user_name(&delete_request.user_name)
-        },
-        handle: |request, delete_request, store, trace_context, trace_recorder| {
-            let account_id = &request.auth_context.principal.account_id;
-            let attributes = HashMap::from([
-                ("account_id".to_string(), account_id.clone()),
-                ("user_name".to_string(), delete_request.user_name.clone()),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "iam.user.delete",
-                    "iam",
-                    attributes,
-                    async {
-                        store
-                            .delete_user(account_id, &delete_request.user_name)
-                            .await
-                    },
-                )
-                .await
-                .map(|_| delete_user_response(request.request_id))
-                .map_err(Into::into)
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("iam:DeleteUser", request, store).await
-        },
     }
 }
 

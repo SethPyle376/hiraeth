@@ -1,17 +1,43 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, TypedAwsAction, impl_aws_action};
-use hiraeth_core::tracing::{TraceContext, TraceRecorder};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::{
-    action_support::parse_payload_error,
-    tag_support::validate_tags,
-};
+use super::tag_support::validate_tags;
 use crate::error::SqsError;
 
 pub(crate) struct TagQueueAction;
+
+crate::impl_sqs_action! {
+    TagQueueAction<S: SqsStore> {
+        request: TagQueueRequest,
+        response: (),
+        name: "TagQueue",
+        response_format: Empty,
+        validate: |_request, request_body, _store| {
+            validate_tags(&request_body.tags, false)
+        },
+        handler: handle_tag_queue_typed,
+        span: "sqs.queue.tag",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                ("tag_count".to_string(), payload.tags.len().to_string()),
+                (
+                    "tag_keys".to_string(),
+                    payload
+                        .tags
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            ])
+        },
+        authorize_action: "sqs:TagQueue",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -39,45 +65,6 @@ async fn handle_tag_queue_typed<S: SqsStore>(
         .tag_queue(queue.id, request_body.tags)
         .await
         .map_err(crate::error::map_store_error)
-}
-
-impl_aws_action! {
-    TagQueueAction<S: SqsStore> {
-        request: TagQueueRequest,
-        response: (),
-        error: SqsError,
-        name: "TagQueue",
-        payload: Json,
-        response_format: Empty,
-        parse_error: parse_payload_error,
-        validate: |_request, request_body, _store| {
-            validate_tags(&request_body.tags, false)
-        },
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_url".to_string(), payload.queue_url.clone()),
-                ("tag_count".to_string(), payload.tags.len().to_string()),
-                (
-                    "tag_keys".to_string(),
-                    payload
-                        .tags
-                        .keys()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(","),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(trace_recorder, "sqs.queue.tag", "sqs", attributes, async {
-                    handle_tag_queue_typed(&request, store, payload).await
-                })
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:TagQueue", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

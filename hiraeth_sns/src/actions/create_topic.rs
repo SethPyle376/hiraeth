@@ -1,21 +1,55 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use hiraeth_core::{
-    ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    impl_aws_action,
-};
+use hiraeth_core::{ResolvedRequest, auth::AuthorizationCheck};
 use hiraeth_store::sns::{SnsStore, SnsTopic};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{SnsAttributes, is_valid_topic_attribute, parse_payload_error};
+use super::action_support::{SnsAttributes, is_valid_topic_attribute};
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
+    impl_sns_action,
 };
 
 pub(crate) struct CreateTopicAction;
+
+impl_sns_action! {
+    CreateTopicAction<S: SnsStore> {
+        request: CreateTopicRequest,
+        response: CreateTopicResponse,
+        name: "CreateTopic",
+        validate: |_request, payload, _store| {
+            if payload.name.is_empty() {
+                return Err(SnsError::BadRequest("Name is required".to_string()));
+            }
+            for key in payload.attributes.keys() {
+                if !is_valid_topic_attribute(key) {
+                    return Err(SnsError::BadRequest(format!(
+                        "Unsupported attribute name: {}",
+                        key
+                    )));
+                }
+            }
+            Ok(())
+        },
+        handler: handle_create_topic_typed,
+        span: "sns.topic.create",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([("topic_name".to_string(), payload.name.clone())])
+        },
+        authorize: |request, _payload, _store| {
+            Ok(AuthorizationCheck {
+                action: "sns:CreateTopic".to_string(),
+                resource: format!(
+                    "arn:aws:sns:{}:{}:*",
+                    request.region, request.auth_context.principal.account_id
+                ),
+                resource_policy: None,
+            })
+        },
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -69,7 +103,9 @@ async fn handle_create_topic_typed<S: SnsStore>(
         data_protection_policy: attrs.get("DataProtectionPolicy").map(|s| s.to_string()),
         archive_policy: attrs.get("ArchivePolicy").map(|s| s.to_string()),
         beginning_archive_time: None,
-        content_based_deduplication: attrs.get("ContentBasedDeduplication").map(|s| s.to_string()),
+        content_based_deduplication: attrs
+            .get("ContentBasedDeduplication")
+            .map(|s| s.to_string()),
         created_at: now,
     };
 
@@ -82,48 +118,6 @@ async fn handle_create_topic_typed<S: SnsStore>(
             request_id: request.request_id.clone(),
         },
     })
-}
-
-impl_aws_action! {
-    CreateTopicAction<S: SnsStore> {
-        request: CreateTopicRequest,
-        response: CreateTopicResponse,
-        error: SnsError,
-        name: "CreateTopic",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        validate: |_request, payload, _store| {
-            if payload.name.is_empty() {
-                return Err(SnsError::BadRequest("Name is required".to_string()));
-            }
-            for key in payload.attributes.keys() {
-                if !is_valid_topic_attribute(key) {
-                    return Err(SnsError::BadRequest(format!(
-                        "Unsupported attribute name: {}",
-                        key
-                    )));
-                }
-            }
-            Ok(())
-        },
-        handler: handle_create_topic_typed,
-        span_name: "sns.topic.create",
-        span_service: "sns",
-        span_attrs: |payload| {
-            HashMap::from([("topic_name".to_string(), payload.name.clone())])
-        },
-        authorize: |request, _payload, _store| {
-            Ok(AuthorizationCheck {
-                action: "sns:CreateTopic".to_string(),
-                resource: format!(
-                    "arn:aws:sns:{}:{}:*",
-                    request.region, request.auth_context.principal.account_id
-                ),
-                resource_policy: None,
-            })
-        },
-    }
 }
 
 #[cfg(test)]
@@ -294,11 +288,7 @@ mod tests {
                 crate::actions::test_support::parse_request_body(&request);
 
             let result = CreateTopicAction.validate(&request, &body, &store).await;
-            assert!(
-                result.is_ok(),
-                "expected {} to pass validation",
-                attr
-            );
+            assert!(result.is_ok(), "expected {} to pass validation", attr);
         }
     }
 

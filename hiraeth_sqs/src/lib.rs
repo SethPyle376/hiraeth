@@ -10,6 +10,7 @@ use hiraeth_store::sqs::SqsStore;
 mod actions;
 mod auth;
 pub mod error;
+mod macros;
 pub mod operations;
 pub mod util;
 

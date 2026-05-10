@@ -41,6 +41,51 @@ struct ResponseMetadata {
     request_id: String,
 }
 
+async fn handle_get_caller_identity<S: IamStore>(
+    request: ResolvedRequest,
+    _get_caller_identity_request: GetCallerIdentityRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<GetCallerIdentityResponse, StsError> {
+    let account_id = &request.auth_context.principal.account_id;
+    let name = &request.auth_context.principal.name;
+
+    let user = trace_context
+        .record_result_span(
+            trace_recorder,
+            "sts.identity.lookup",
+            "sts",
+            HashMap::from([
+                ("account_id".to_string(), account_id.clone()),
+                ("principal_name".to_string(), name.clone()),
+                (
+                    "principal_kind".to_string(),
+                    request.auth_context.principal.kind.clone(),
+                ),
+            ]),
+            async {
+                store
+                    .get_principal_by_identity(account_id, "user", name)
+                    .await
+            },
+        )
+        .await?
+        .ok_or_else(|| StsError::InternalError("User not found".to_string()))?;
+
+    Ok(GetCallerIdentityResponse {
+        xmlns: "https://sts.amazonaws.com/doc/2011-06-15/",
+        result: GetCallerIdentityResult {
+            arn: arn_util::user_arn(account_id, &user.path, &user.name),
+            user_id: user.user_id.clone(),
+            account: account_id.clone(),
+        },
+        response_metadata: ResponseMetadata {
+            request_id: request.request_id,
+        },
+    })
+}
+
 #[async_trait]
 impl<S> TypedAwsAction<S> for GetCallerIdentityAction
 where
@@ -70,51 +115,21 @@ where
         trace_context: &TraceContext,
         trace_recorder: &dyn TraceRecorder,
     ) -> Result<GetCallerIdentityResponse, Self::Error> {
-        let account_id = &request.auth_context.principal.account_id;
-        let name = &request.auth_context.principal.name;
-
-        let user = trace_context
-            .record_result_span(
-                trace_recorder,
-                "sts.identity.lookup",
-                "sts",
-                HashMap::from([
-                    ("account_id".to_string(), account_id.clone()),
-                    ("principal_name".to_string(), name.clone()),
-                    (
-                        "principal_kind".to_string(),
-                        request.auth_context.principal.kind.clone(),
-                    ),
-                ]),
-                async {
-                    store
-                        .get_principal_by_identity(account_id, "user", name)
-                        .await
-                },
-            )
-            .await?
-            .ok_or_else(|| StsError::InternalError("User not found".to_string()))?;
-
-        let response = GetCallerIdentityResponse {
-            xmlns: "https://sts.amazonaws.com/doc/2011-06-15/",
-            result: GetCallerIdentityResult {
-                arn: arn_util::user_arn(account_id, &user.path, &user.name),
-                user_id: user.user_id.clone(),
-                account: account_id.clone(),
-            },
-            response_metadata: ResponseMetadata {
-                request_id: request.request_id,
-            },
-        };
-
-        Ok(response)
+        handle_get_caller_identity(
+            request,
+            get_caller_identity_request,
+            store,
+            trace_context,
+            trace_recorder,
+        )
+        .await
     }
 
     async fn resolve_authorization(
         &self,
         request: &ResolvedRequest,
-        get_caller_identity_request: GetCallerIdentityRequest,
-        store: &S,
+        _get_caller_identity_request: GetCallerIdentityRequest,
+        _store: &S,
     ) -> Result<AuthorizationCheck, StsError> {
         Ok(AuthorizationCheck {
             action: "sts:GetCallerIdentity".to_string(),

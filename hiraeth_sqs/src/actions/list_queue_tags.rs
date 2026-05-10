@@ -1,14 +1,26 @@
 use std::collections::HashMap;
 
-use hiraeth_core::{ResolvedRequest, TypedAwsAction, impl_aws_action};
-use hiraeth_core::tracing::{TraceContext, TraceRecorder};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use super::action_support::parse_payload_error;
 use crate::error::SqsError;
 
 pub(crate) struct ListQueueTagsAction;
+
+crate::impl_sqs_action! {
+    ListQueueTagsAction<S: SqsStore> {
+        request: ListQueueTagsRequest,
+        response: ListQueueTagsResponse,
+        name: "ListQueueTags",
+        handler: handle_list_queue_tags_typed,
+        span: "sqs.queue.list_tags",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([("queue_url".to_string(), payload.queue_url.clone())])
+        },
+        authorize_action: "sqs:ListQueueTags",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -35,34 +47,6 @@ async fn handle_list_queue_tags_typed<S: SqsStore>(
         .map_err(crate::error::map_store_error)?;
 
     Ok(ListQueueTagsResponse { tags })
-}
-
-impl_aws_action! {
-    ListQueueTagsAction<S: SqsStore> {
-        request: ListQueueTagsRequest,
-        response: ListQueueTagsResponse,
-        error: SqsError,
-        name: "ListQueueTags",
-        payload: Json,
-        response_format: Json,
-        parse_error: parse_payload_error,
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([("queue_url".to_string(), payload.queue_url.clone())]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.queue.list_tags",
-                    "sqs",
-                    attributes,
-                    async { handle_list_queue_tags_typed(&request, store, payload).await },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:ListQueueTags", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

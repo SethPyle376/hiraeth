@@ -12,6 +12,7 @@ use hiraeth_store::sqs::SqsStore;
 mod actions;
 mod auth;
 pub mod error;
+mod macros;
 mod store;
 
 pub use store::SnsServiceStore;

@@ -1,15 +1,28 @@
 use std::collections::HashMap;
 
-use hiraeth_core::impl_aws_action;
+use hiraeth_core::{
+    ResolvedRequest,
+    tracing::{TraceContext, TraceRecorder},
+};
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::util::{IAM_XMLNS, ResponseMetadata, parse_payload_error},
+    actions::util::{IAM_XMLNS, ResponseMetadata},
     error::IamError,
 };
 
 pub(crate) struct GetUserPolicyAction;
+
+crate::impl_iam_action! {
+    GetUserPolicyAction<S: IamStore> {
+        request: GetUserPolicyRequest,
+        response: GetUserPolicyResponse,
+        name: "GetUserPolicy",
+        handler: handle_get_user_policy,
+        authorize_action: "iam:GetUserPolicy",
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -35,79 +48,70 @@ struct GetUserPolicyResult {
     policy_document: String,
 }
 
-impl_aws_action! {
-    GetUserPolicyAction<S: IamStore> {
-        request: GetUserPolicyRequest,
-        response: GetUserPolicyResponse,
-        error: IamError,
-        name: "GetUserPolicy",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        handle: |request, get_user_policy_request, store, trace_context, trace_recorder| {
-            let account_id = &request.auth_context.principal.account_id;
-            let attributes = HashMap::from([
-                (
-                    "user_name".to_string(),
-                    get_user_policy_request.user_name.clone(),
-                ),
-                (
-                    "policy_name".to_string(),
-                    get_user_policy_request.policy_name.clone(),
-                ),
-            ]);
+async fn handle_get_user_policy<S: IamStore + Send + Sync>(
+    request: ResolvedRequest,
+    get_user_policy_request: GetUserPolicyRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<GetUserPolicyResponse, IamError> {
+    let account_id = &request.auth_context.principal.account_id;
+    let attributes = HashMap::from([
+        (
+            "user_name".to_string(),
+            get_user_policy_request.user_name.clone(),
+        ),
+        (
+            "policy_name".to_string(),
+            get_user_policy_request.policy_name.clone(),
+        ),
+    ]);
 
-            let (principal, policy) = trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "iam.get_user_policy",
-                    "iam",
-                    attributes,
-                    async {
-                        let principal = store
-                            .get_principal_by_identity(
-                                account_id,
-                                "user",
-                                get_user_policy_request.user_name.as_str(),
-                            )
-                            .await?
-                            .ok_or_else(|| {
-                                IamError::NoSuchEntity(format!(
-                                    "User {} does not exist",
-                                    get_user_policy_request.user_name
-                                ))
-                            })?;
+    let (principal, policy) = trace_context
+        .record_result_span(
+            trace_recorder,
+            "iam.get_user_policy",
+            "iam",
+            attributes,
+            async {
+                let principal = store
+                    .get_principal_by_identity(
+                        account_id,
+                        "user",
+                        get_user_policy_request.user_name.as_str(),
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        IamError::NoSuchEntity(format!(
+                            "User {} does not exist",
+                            get_user_policy_request.user_name
+                        ))
+                    })?;
 
-                        let policy = store
-                            .get_principal_policy(principal.id, &get_user_policy_request.policy_name)
-                            .await?
-                            .ok_or_else(|| {
-                                IamError::NoSuchEntity(format!(
-                                    "Policy {} does not exist for user {}",
-                                    get_user_policy_request.policy_name,
-                                    get_user_policy_request.user_name
-                                ))
-                            })?;
+                let policy = store
+                    .get_principal_policy(principal.id, &get_user_policy_request.policy_name)
+                    .await?
+                    .ok_or_else(|| {
+                        IamError::NoSuchEntity(format!(
+                            "Policy {} does not exist for user {}",
+                            get_user_policy_request.policy_name, get_user_policy_request.user_name
+                        ))
+                    })?;
 
-                        Ok::<_, IamError>((principal, policy))
-                    },
-                )
-                .await?;
+                Ok::<_, IamError>((principal, policy))
+            },
+        )
+        .await?;
 
-            Ok(GetUserPolicyResponse {
-                xmlns: IAM_XMLNS,
-                get_user_policy_result: GetUserPolicyResult {
-                    user_name: principal.name,
-                    policy_name: policy.policy_name,
-                    policy_document: policy.policy_document,
-                },
-                response_metadata: ResponseMetadata {
-                    request_id: request.request_id,
-                },
-            })
+    Ok(GetUserPolicyResponse {
+        xmlns: IAM_XMLNS,
+        get_user_policy_result: GetUserPolicyResult {
+            user_name: principal.name,
+            policy_name: policy.policy_name,
+            policy_document: policy.policy_document,
         },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("iam:GetUserPolicy", request, store).await
+        response_metadata: ResponseMetadata {
+            request_id: request.request_id,
         },
-    }
+    })
 }

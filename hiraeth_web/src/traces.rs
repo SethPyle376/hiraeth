@@ -589,10 +589,10 @@ fn pretty_json<T: serde::Serialize>(value: &T) -> String {
 
 fn body_text(body: &[u8]) -> String {
     let text = String::from_utf8_lossy(body);
-    if text.trim().starts_with('{') || text.trim().starts_with('[') {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-            return serde_json::to_string_pretty(&value).unwrap_or_else(|_| text.to_string());
-        }
+    if (text.trim().starts_with('{') || text.trim().starts_with('['))
+        && let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+    {
+        return serde_json::to_string_pretty(&value).unwrap_or_else(|_| text.to_string());
     }
     if text.trim().starts_with('<') {
         return pretty_xml(&text);
@@ -623,7 +623,7 @@ fn pretty_xml(xml: &str) -> String {
                     result.push('/');
                     chars.next();
                     // write rest of tag
-                    while let Some((_, c)) = chars.next() {
+                    for (_, c) in chars.by_ref() {
                         result.push(c);
                         if c == '>' {
                             break;
@@ -637,7 +637,7 @@ fn pretty_xml(xml: &str) -> String {
                     }
                     result.push_str(&indent.repeat(depth));
                     result.push('<');
-                    while let Some((_, c)) = chars.next() {
+                    for (_, c) in chars.by_ref() {
                         result.push(c);
                         if c == '>' {
                             break;
@@ -653,7 +653,7 @@ fn pretty_xml(xml: &str) -> String {
                     result.push('<');
                     // write tag name and attributes
                     let mut tag_content = String::new();
-                    while let Some((_, c)) = chars.next() {
+                    for (_, c) in chars.by_ref() {
                         if c == '>' {
                             break;
                         }

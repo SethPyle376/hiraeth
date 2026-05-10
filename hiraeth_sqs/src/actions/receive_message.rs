@@ -4,14 +4,65 @@ use std::{
 };
 
 use chrono::Utc;
-use hiraeth_core::{impl_aws_action, ResolvedRequest};
-use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::{SqsMessage, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::parse_payload_error;
 use crate::{error::SqsError, util};
 
 pub(crate) struct ReceiveMessageAction;
+
+crate::impl_sqs_action! {
+    ReceiveMessageAction<S: SqsStore> {
+        request: ReceiveMessageRequest,
+        response: ReceiveMessageResponse,
+        name: "ReceiveMessage",
+        validate: |_request, payload, _store| {
+            validate_receive_request(payload)
+        },
+        handler: handle_receive_message_typed,
+        span: "sqs.receive_message.poll",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "max_number_of_messages".to_string(),
+                    payload.max_number_of_messages.to_string(),
+                ),
+                (
+                    "visibility_timeout_seconds".to_string(),
+                    payload
+                        .visibility_timeout
+                        .map(|visibility_timeout| visibility_timeout.to_string())
+                        .unwrap_or_else(|| "queue_default".to_string()),
+                ),
+                (
+                    "wait_time_seconds".to_string(),
+                    payload
+                        .wait_time_seconds
+                        .map(|wait_time_seconds| wait_time_seconds.to_string())
+                        .unwrap_or_else(|| "queue_default".to_string()),
+                ),
+                (
+                    "requested_system_attribute_count".to_string(),
+                    payload.attribute_names.len().to_string(),
+                ),
+                (
+                    "requested_message_attribute_count".to_string(),
+                    payload.message_attribute_names.len().to_string(),
+                ),
+                (
+                    "requested_message_system_attribute_count".to_string(),
+                    payload
+                        .message_system_attribute_names
+                        .len()
+                        .to_string(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:ReceiveMessage",
+    }
+}
 
 fn default_max_number_of_messages() -> i64 {
     1
@@ -258,72 +309,6 @@ fn filter_message_attributes(
         .into_iter()
         .filter(|(name, _)| include_requested_message_attribute(name, requested_names))
         .collect()
-}
-
-impl_aws_action! {
-    ReceiveMessageAction<S: SqsStore> {
-        request: ReceiveMessageRequest,
-        response: ReceiveMessageResponse,
-        error: SqsError,
-        name: "ReceiveMessage",
-        payload: Json,
-        response_format: Json,
-        parse_error: parse_payload_error,
-        validate: |_request, payload, _store| {
-            validate_receive_request(payload)
-        },
-        handle: |request, payload, store, trace_context, trace_recorder| {
-            let attributes = HashMap::from([
-                ("queue_url".to_string(), payload.queue_url.clone()),
-                (
-                    "max_number_of_messages".to_string(),
-                    payload.max_number_of_messages.to_string(),
-                ),
-                (
-                    "visibility_timeout_seconds".to_string(),
-                    payload
-                        .visibility_timeout
-                        .map(|visibility_timeout| visibility_timeout.to_string())
-                        .unwrap_or_else(|| "queue_default".to_string()),
-                ),
-                (
-                    "wait_time_seconds".to_string(),
-                    payload
-                        .wait_time_seconds
-                        .map(|wait_time_seconds| wait_time_seconds.to_string())
-                        .unwrap_or_else(|| "queue_default".to_string()),
-                ),
-                (
-                    "requested_system_attribute_count".to_string(),
-                    payload.attribute_names.len().to_string(),
-                ),
-                (
-                    "requested_message_attribute_count".to_string(),
-                    payload.message_attribute_names.len().to_string(),
-                ),
-                (
-                    "requested_message_system_attribute_count".to_string(),
-                    payload
-                        .message_system_attribute_names
-                        .len()
-                        .to_string(),
-                ),
-            ]);
-
-            trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "sqs.receive_message.poll",
-                    "sqs",
-                    attributes,
-                    async { handle_receive_message_typed(&request, store, payload).await },
-                )
-                .await
-        },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("sqs:ReceiveMessage", request, store).await
-        },
-    }
 }
 
 #[cfg(test)]

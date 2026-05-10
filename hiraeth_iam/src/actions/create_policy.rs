@@ -1,19 +1,38 @@
 use std::collections::HashMap;
 
-use hiraeth_core::impl_aws_action;
+use hiraeth_core::{
+    ResolvedRequest,
+    tracing::{TraceContext, TraceRecorder},
+};
 use hiraeth_store::{IamStore, iam::NewManagedPolicy};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
         IAM_XMLNS, IamPolicyXml, ResponseMetadata, new_id, normalize_policy_path,
-        parse_payload_error, response_metadata, validate_iam_path, validate_policy_document,
-        validate_policy_name,
+        response_metadata, validate_iam_path, validate_policy_document, validate_policy_name,
     },
     error::IamError,
 };
 
 pub(crate) struct CreatePolicyAction;
+
+crate::impl_iam_action! {
+    CreatePolicyAction<S: IamStore> {
+        request: CreatePolicyRequest,
+        response: CreatePolicyResponse,
+        name: "CreatePolicy",
+        validate: |_request, create_policy_request, _store| {
+            validate_policy_name(&create_policy_request.policy_name)?;
+            let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
+            validate_iam_path("Path", &policy_path)?;
+            validate_policy_document(&create_policy_request.policy_document)?;
+            Ok(())
+        },
+        handler: handle_create_policy,
+        authorize_action: "iam:CreatePolicy",
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -38,69 +57,54 @@ struct CreatePolicyResult {
     policy: IamPolicyXml,
 }
 
-impl_aws_action! {
-    CreatePolicyAction<S: IamStore> {
-        request: CreatePolicyRequest,
-        response: CreatePolicyResponse,
-        error: IamError,
-        name: "CreatePolicy",
-        payload: AwsQuery,
-        response_format: Xml,
-        parse_error: parse_payload_error,
-        validate: |_request, create_policy_request, _store| {
-            validate_policy_name(&create_policy_request.policy_name)?;
-            let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
-            validate_iam_path("Path", &policy_path)?;
-            validate_policy_document(&create_policy_request.policy_document)?;
-            Ok(())
-        },
-        handle: |request, create_policy_request, store, trace_context, trace_recorder| {
-            let account_id = request.auth_context.principal.account_id.clone();
-            let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
-            let attributes = HashMap::from([
-                ("account_id".to_string(), account_id.clone()),
-                (
-                    "policy_name".to_string(),
-                    create_policy_request.policy_name.clone(),
-                ),
-                ("policy_path".to_string(), policy_path.clone()),
-                (
-                    "policy_document_bytes".to_string(),
-                    create_policy_request.policy_document.len().to_string(),
-                ),
-            ]);
-            let created_policy = trace_context
-                .record_result_span(
-                    trace_recorder,
-                    "iam.policy.create",
-                    "iam",
-                    attributes,
-                    async {
-                        store
-                            .insert_managed_policy(NewManagedPolicy {
-                                account_id,
-                                policy_id: new_id(),
-                                policy_name: create_policy_request.policy_name.clone(),
-                                policy_path: Some(policy_path),
-                                policy_document: create_policy_request.policy_document.clone(),
-                            })
-                            .await
-                    },
-                )
-                .await?;
+async fn handle_create_policy<S: IamStore + Send + Sync>(
+    request: ResolvedRequest,
+    create_policy_request: CreatePolicyRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<CreatePolicyResponse, IamError> {
+    let account_id = request.auth_context.principal.account_id.clone();
+    let policy_path = normalize_policy_path(create_policy_request.path.as_deref());
+    let attributes = HashMap::from([
+        ("account_id".to_string(), account_id.clone()),
+        (
+            "policy_name".to_string(),
+            create_policy_request.policy_name.clone(),
+        ),
+        ("policy_path".to_string(), policy_path.clone()),
+        (
+            "policy_document_bytes".to_string(),
+            create_policy_request.policy_document.len().to_string(),
+        ),
+    ]);
+    let created_policy = trace_context
+        .record_result_span(
+            trace_recorder,
+            "iam.policy.create",
+            "iam",
+            attributes,
+            async {
+                store
+                    .insert_managed_policy(NewManagedPolicy {
+                        account_id,
+                        policy_id: new_id(),
+                        policy_name: create_policy_request.policy_name.clone(),
+                        policy_path: Some(policy_path),
+                        policy_document: create_policy_request.policy_document.clone(),
+                    })
+                    .await
+            },
+        )
+        .await?;
 
-            Ok(CreatePolicyResponse {
-                xmlns: IAM_XMLNS,
-                create_policy_result: CreatePolicyResult {
-                    policy: created_policy.into(),
-                },
-                response_metadata: response_metadata(request.request_id),
-            })
+    Ok(CreatePolicyResponse {
+        xmlns: IAM_XMLNS,
+        create_policy_result: CreatePolicyResult {
+            policy: created_policy.into(),
         },
-        authorize: |request, _payload, store| {
-            crate::auth::resolve_authorization("iam:CreatePolicy", request, store).await
-        },
-    }
+        response_metadata: response_metadata(request.request_id),
+    })
 }
 
 #[cfg(test)]
