@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::error::IamError;
 
 pub(super) const IAM_XMLNS: &str = "https://iam.amazonaws.com/doc/2010-05-08/";
+pub(super) const DEFAULT_POLICY_VERSION_ID: &str = "v1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PolicyArn {
@@ -17,7 +18,7 @@ pub(super) struct PolicyArn {
     pub policy_name: String,
 }
 
-pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> IamError {
+pub(crate) fn parse_payload_error(error: AwsActionPayloadParseError) -> IamError {
     match error {
         AwsActionPayloadParseError::AwsQuery(error) => IamError::from(error),
         AwsActionPayloadParseError::Json(error) => IamError::BadRequest(error.to_string()),
@@ -69,7 +70,7 @@ impl From<Principal> for IamUserXml {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct IamPolicyXml {
     pub path: Option<String>,
@@ -88,7 +89,7 @@ impl From<ManagedPolicy> for IamPolicyXml {
         IamPolicyXml {
             path: Some(policy_path.clone()),
             policy_name: Some(policy.policy_name.clone()),
-            default_version_id: None,
+            default_version_id: Some(DEFAULT_POLICY_VERSION_ID.to_string()),
             policy_id: Some(policy.policy_id.clone()),
             arn: Some(arn_util::policy_arn(
                 &policy.account_id,
@@ -127,7 +128,7 @@ where
         .map_err(IamError::from)
 }
 
-pub(super) async fn requested_or_signing_user<S>(
+pub(crate) async fn requested_or_signing_user<S>(
     request: &ResolvedRequest,
     store: &S,
     user_name: Option<&str>,

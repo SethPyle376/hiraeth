@@ -26,18 +26,18 @@ Each request can also include spans for the request-processing flow:
 request.handle
   authn.authenticate
     iam.resolve_identity
-      router.route
-        router.resolve_service
-          authz.resolve_check
-            authz.evaluate
-              service.handle
-                action.handle
-                  action-specific spans
+      authz.evaluate
+        action.handle
+          action-specific spans
 ```
 
 Spans include their own ids, parent ids, names, categories, timing, status, and
 attributes. Action spans carry the resolved action name, which powers the action
 filter in the UI.
+
+The UI is intentionally flow-first. Timing is still captured in stored trace
+data, but the pages emphasize request shape, span status, routing,
+authorization, payloads, and response details over sub-millisecond durations.
 
 ## Web UI
 

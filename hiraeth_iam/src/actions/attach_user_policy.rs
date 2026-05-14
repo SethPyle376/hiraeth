@@ -1,22 +1,35 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
-    auth::AuthorizationCheck,
+    ResolvedRequest,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::util::{
-        IAM_XMLNS, ResponseMetadata, parse_payload_error, parse_policy_arn, validate_user_name,
-    },
+    actions::util::{IAM_XMLNS, ResponseMetadata, parse_policy_arn, validate_user_name},
     error::IamError,
 };
 
 pub(crate) struct AttachUserPolicyAction;
+
+hiraeth_core::impl_aws_action! {
+    AttachUserPolicyAction<S: IamStore> {
+        request: AttachUserPolicyRequest,
+        response: AttachUserPolicyResponse,
+        defaults: crate::IamActionDefaults,
+        name: "AttachUserPolicy",
+        validate: |_request, attach_policy_request, _store| {
+            validate_user_name(&attach_policy_request.user_name)?;
+            parse_policy_arn(&attach_policy_request.policy_arn)?;
+            Ok(())
+        },
+        handler: handle_attach_user_policy,
+        authorize_action: "iam:AttachUserPolicy",
+        authorize_with: crate::auth::resolve_authorization,
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -33,130 +46,70 @@ pub(crate) struct AttachUserPolicyResponse {
     response_metadata: ResponseMetadata,
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for AttachUserPolicyAction
-where
-    S: IamStore + Send + Sync,
-{
-    type Request = AttachUserPolicyRequest;
-    type Response = AttachUserPolicyResponse;
-    type Error = IamError;
+async fn handle_attach_user_policy<S: IamStore + Send + Sync>(
+    request: ResolvedRequest,
+    attach_policy_request: AttachUserPolicyRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<AttachUserPolicyResponse, IamError> {
+    let account_id = &request.auth_context.principal.account_id;
+    let user = store
+        .get_principal_by_identity(account_id, "user", &attach_policy_request.user_name)
+        .await?
+        .ok_or_else(|| {
+            IamError::NoSuchEntity(format!("User {}", attach_policy_request.user_name))
+        })?;
 
-    fn name(&self) -> &'static str {
-        "AttachUserPolicy"
+    let arn = parse_policy_arn(&attach_policy_request.policy_arn)?;
+    if arn.account_id != *account_id {
+        return Err(IamError::NoSuchEntity(format!(
+            "Policy {} does not exist",
+            attach_policy_request.policy_arn
+        )));
     }
 
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> Self::Error {
-        parse_payload_error(error)
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        attach_policy_request: &AttachUserPolicyRequest,
-        _store: &S,
-    ) -> Result<(), Self::Error> {
-        validate_user_name(&attach_policy_request.user_name)?;
-        parse_policy_arn(&attach_policy_request.policy_arn)?;
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        attach_policy_request: AttachUserPolicyRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<AttachUserPolicyResponse, IamError> {
-        let account_id = &request.auth_context.principal.account_id;
-        let user = store
-            .get_principal_by_identity(account_id, "user", &attach_policy_request.user_name)
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!("User {}", attach_policy_request.user_name))
-            })?;
-
-        let arn = parse_policy_arn(&attach_policy_request.policy_arn)?;
-        if arn.account_id != *account_id {
-            return Err(IamError::NoSuchEntity(format!(
+    let policy = store
+        .get_managed_policy(&arn.account_id, &arn.policy_name, &arn.policy_path)
+        .await?
+        .ok_or_else(|| {
+            IamError::NoSuchEntity(format!(
                 "Policy {} does not exist",
                 attach_policy_request.policy_arn
-            )));
-        }
+            ))
+        })?;
 
-        let policy = store
-            .get_managed_policy(&arn.account_id, &arn.policy_name, &arn.policy_path)
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!(
-                    "Policy {} does not exist",
-                    attach_policy_request.policy_arn
-                ))
-            })?;
-
-        let timer = trace_context.start_span();
-        let attributes = HashMap::from([
-            ("account_id".to_string(), account_id.clone()),
-            ("user_name".to_string(), user.name.clone()),
-            ("user_id".to_string(), user.id.to_string()),
-            (
-                "policy_arn".to_string(),
-                attach_policy_request.policy_arn.clone(),
-            ),
-            ("policy_id".to_string(), policy.id.to_string()),
-            ("policy_name".to_string(), policy.policy_name.clone()),
-            (
-                "policy_path".to_string(),
-                policy.policy_path.clone().unwrap_or_default(),
-            ),
-        ]);
-        let result = store.attach_policy_to_principal(policy.id, user.id).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "iam.policy.attach_user",
-                "iam",
-                status,
-                attributes,
-            )
-            .await;
-        result
-            .map(|_| AttachUserPolicyResponse {
-                xmlns: IAM_XMLNS,
-                response_metadata: ResponseMetadata {
-                    request_id: request.request_id,
-                },
-            })
-            .map_err(Into::into)
-    }
-
-    async fn resolve_authorization_typed(
-        &self,
-        request: &ResolvedRequest,
-        attach_policy_request: AttachUserPolicyRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, IamError> {
-        let account_id = &request.auth_context.principal.account_id;
-        let user = store
-            .get_principal_by_identity(account_id, "user", &attach_policy_request.user_name)
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!("User {}", attach_policy_request.user_name))
-            })?;
-
-        Ok(AuthorizationCheck {
-            action: "iam:AttachUserPolicy".to_string(),
-            resource: arn_util::user_arn(account_id, &user.path, &user.name),
-            resource_policy: None,
+    let attributes = HashMap::from([
+        ("account_id".to_string(), account_id.clone()),
+        ("user_name".to_string(), user.name.clone()),
+        ("user_id".to_string(), user.id.to_string()),
+        (
+            "policy_arn".to_string(),
+            attach_policy_request.policy_arn.clone(),
+        ),
+        ("policy_id".to_string(), policy.id.to_string()),
+        ("policy_name".to_string(), policy.policy_name.clone()),
+        (
+            "policy_path".to_string(),
+            policy.policy_path.clone().unwrap_or_default(),
+        ),
+    ]);
+    trace_context
+        .record_result_span(
+            trace_recorder,
+            "iam.policy.attach_user",
+            "iam",
+            attributes,
+            async { store.attach_policy_to_principal(policy.id, user.id).await },
+        )
+        .await
+        .map(|_| AttachUserPolicyResponse {
+            xmlns: IAM_XMLNS,
+            response_metadata: ResponseMetadata {
+                request_id: request.request_id,
+            },
         })
-    }
+        .map_err(Into::into)
 }
 
 #[cfg(test)]

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM sns_topics WHERE name = ? AND region = ? AND account_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "2962bcd64805fb28ff24a3f0f6c97993f6cfd111f027be50f2036a7bac730c1b"
+}

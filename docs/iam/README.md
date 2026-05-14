@@ -76,9 +76,10 @@ Hiraeth supports three authorization modes through `HIRAETH_AUTH_MODE`:
 
 The default mode is `audit`.
 
-For v0.2, identity policies are evaluated for local IAM users. Inline user
+For v0.3, identity policies are evaluated for local IAM users. Inline user
 policies and attached managed policies can allow or deny actions. SQS queue
-resource policies are also evaluated for queue-scoped SQS actions.
+resource policies and SNS topic resource policies are also evaluated for
+supported resource-scoped actions.
 
 Policy support is intentionally pragmatic:
 
@@ -100,6 +101,9 @@ coverage includes:
 - Managed policy browsing and detail pages.
 - Managed policy document editing.
 - Managed policy attachment and detachment for users.
+
+Some operations are available in the web UI before they are exposed through the
+IAM Query API.
 
 The web UI does not use SigV4 authentication. Keep `HIRAETH_WEB_HOST` bound to a
 trusted interface unless you intentionally want to expose local test state.
@@ -130,10 +134,11 @@ Status labels:
 | `CreateRole` | Not implemented | Roles and assume-role flows are future work. |
 | `DeleteAccessKey` | Not implemented | Access key deletion exists in the web UI store path but not the IAM Query API yet. |
 | `DeleteUserPolicy` | Not implemented | Inline policy deletion exists in the web UI store path but not the IAM Query API yet. |
-| `GetPolicy` | Not implemented | Managed policy documents can be inspected in the web UI. |
-| `GetUserPolicy` | Not implemented | Inline policy documents can be inspected in the web UI. |
-| `ListAccessKeys` | Not implemented | Access keys can be inspected in the web UI. |
-| `ListAttachedUserPolicies` | Not implemented | Attachments can be inspected in the web UI. |
+| `GetPolicy` | Supported | Returns a customer managed policy by ARN. |
+| `GetPolicyVersion` | Supported | Returns the policy document for the single default version. Policy versions are not modeled. |
+| `GetUserPolicy` | Supported | Returns an inline user policy document. |
+| `ListAccessKeys` | Supported | Lists access keys for a user. Defaults to the signing user when `UserName` is omitted. |
+| `ListAttachedUserPolicies` | Supported | Lists managed policies attached to a user. Defaults to the signing user when `UserName` is omitted. |
 | `ListPolicies` | Not implemented | Managed policies can be inspected in the web UI. |
 | `ListUserPolicies` | Not implemented | Inline policies can be inspected in the web UI. |
 | `ListUsers` | Not implemented | Users can be inspected in the web UI. |
@@ -152,6 +157,7 @@ Status labels:
 - Policy conditions are not implemented yet.
 - Policy validation is intentionally light. Hiraeth stores JSON policy
   documents and evaluates the subset it currently understands.
-- IAM list/get/delete APIs are incomplete. Some data is currently available
-  through the web UI before it is available through the IAM Query API.
+- IAM list/get/delete APIs are incomplete. Some administrative operations are
+  currently available through the web UI before they are available through the
+  IAM Query API.
 - STS support is limited to `GetCallerIdentity`.

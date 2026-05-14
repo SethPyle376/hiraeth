@@ -2,6 +2,108 @@
 
 All notable changes to Hiraeth will be documented in this file.
 
+## Unreleased
+
+No unreleased changes yet.
+
+## 0.3.0 - 2026-05-14
+
+SNS, Terraform compatibility, IAM API expansion, validation, and web UI polish.
+
+### Added
+
+- SNS Query API support for topic, subscription, tag, and publish workflows:
+  - `CreateTopic`
+  - `DeleteTopic`
+  - `GetSubscriptionAttributes`
+  - `GetTopicAttributes`
+  - `ListSubscriptions`
+  - `ListSubscriptionsByTopic`
+  - `ListTagsForResource`
+  - `ListTopics`
+  - `Subscribe`
+  - `Unsubscribe`
+  - `Publish`
+  - `SetSubscriptionAttributes`
+  - `SetTopicAttributes`
+  - `TagResource`
+  - `UntagResource`
+- SNS subscription attributes: `DeliveryPolicy`, `FilterPolicy`,
+  `FilterPolicyScope`, `RawMessageDelivery`, `RedrivePolicy`,
+  `SubscriptionRoleArn`, and `ReplayPolicy`.
+- Raw message delivery for SQS protocol subscriptions. When enabled, the raw
+  message body is delivered instead of the SNS notification JSON wrapper.
+- SNS topic tags through create, list, tag, and untag flows.
+- SNS topic attribute storage and validation for common Terraform/SDK refresh
+  paths, including policy-shaped JSON attributes.
+- SNS admin UI with topic browsing, creation, deletion, subscription
+  management, raw delivery toggling, tag management, and a publish form.
+- IAM Query API additions:
+  - `AttachUserPolicy`
+  - `CreatePolicy`
+  - `DetachUserPolicy`
+  - `GetPolicy`
+  - `GetPolicyVersion`
+  - `GetUserPolicy`
+  - `ListAccessKeys`
+  - `ListAttachedUserPolicies`
+  - `PutUserPolicy`
+- Comprehensive SNS unit tests with `SnsTestStore` and SNS integration tests
+  using the AWS Rust SDK.
+- SNS publish trace spans with per-subscription authorization evaluation.
+- Terraform-oriented SNS compatibility coverage for topic creation, topic
+  attributes, subscriptions, tags, and managed-policy refresh paths.
+
+### Changed
+
+- AWS action boilerplate was reduced with service/action macro refinements and
+  typed action response serialization.
+- SNS request validation now covers topic name rules, FIFO name/attribute
+  relationships, publish payload size, subject length, tag limits, tag
+  characters, and JSON-shaped attributes.
+- SNS topic-scoped authorization now includes stored topic resource policies
+  when present.
+- SQLx SNS subscription queries now use shared row mapping for more stable
+  offline metadata behavior.
+- Web UI asset caching changed from `must-revalidate` to immutable caching
+  (`max-age=31536000, immutable`) since assets are embedded in the binary.
+- Removed auto-refreshing HTMX fragments from dashboard and list pages to reduce
+  server load and visual noise.
+- Removed drawer/collapse position memory from the web UI to eliminate rendering
+  flashes.
+- Disabled response compression to measure raw response time impact.
+- Updated service icons across the web UI for visual consistency.
+- Improved web UI styling: alerts with dismiss banners, card shadows, table
+  headers, form-control patterns, empty states, and a warm gradient background.
+- Refined web UI copy and formatting across SQS, SNS, IAM, and tracing pages.
+- Tracing pages now emphasize request flow and payload details over sub-
+  millisecond timing noise.
+
+### Fixed
+
+- Fixed XML serialization for `ListAccessKeys` and `ListAttachedUserPolicies`
+  so AWS SDK clients can deserialize responses correctly.
+- Fixed managed policy ARN parsing so policy paths are preserved when attaching,
+  detaching, deleting, and authorizing policies.
+- Fixed `AttachUserPolicy` so the policy ARN account is respected instead of
+  silently looking up a same-named policy in the caller account.
+- Fixed SNS publish delivery failures caused by accepting invalid SQS queue
+  resource policies that omitted `Resource`.
+- Fixed SNS Terraform refresh gaps for `ListTagsForResource`,
+  `GetSubscriptionAttributes`, `ListSubscriptionsByTopic`,
+  `ListSubscriptions`, and `SetSubscriptionAttributes`.
+
+### Known Gaps
+
+- Only the `sqs` delivery protocol is supported for SNS subscriptions.
+- Subscription confirmation is not modeled; all subscriptions are treated as
+  confirmed.
+- SNS message filtering is not implemented yet, even though `FilterPolicy` is
+  stored.
+- SNS FIFO topic behavior is limited to storing selected attributes.
+- SNS topic policy evaluation is useful for local allow/deny tests, but remains
+  smaller than full AWS IAM/resource-policy semantics.
+
 ## 0.2.1 - 2026-04-29
 
 Tracing and local request inspection slice.

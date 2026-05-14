@@ -3,20 +3,68 @@ use std::{
     collections::{BTreeMap, HashMap},
 };
 
-use async_trait::async_trait;
 use chrono::Utc;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
-use hiraeth_store::sqs::{SqsMessage, SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::{SqsMessage, SqsStore};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error};
 use crate::{error::SqsError, util};
 
 pub(crate) struct ReceiveMessageAction;
+
+hiraeth_core::impl_aws_action! {
+    ReceiveMessageAction<S: SqsStore> {
+        request: ReceiveMessageRequest,
+        response: ReceiveMessageResponse,
+        defaults: crate::SqsActionDefaults,
+        name: "ReceiveMessage",
+        validate: |_request, payload, _store| {
+            validate_receive_request(payload)
+        },
+        handler: handle_receive_message_typed,
+        span: "sqs.receive_message.poll",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "max_number_of_messages".to_string(),
+                    payload.max_number_of_messages.to_string(),
+                ),
+                (
+                    "visibility_timeout_seconds".to_string(),
+                    payload
+                        .visibility_timeout
+                        .map(|visibility_timeout| visibility_timeout.to_string())
+                        .unwrap_or_else(|| "queue_default".to_string()),
+                ),
+                (
+                    "wait_time_seconds".to_string(),
+                    payload
+                        .wait_time_seconds
+                        .map(|wait_time_seconds| wait_time_seconds.to_string())
+                        .unwrap_or_else(|| "queue_default".to_string()),
+                ),
+                (
+                    "requested_system_attribute_count".to_string(),
+                    payload.attribute_names.len().to_string(),
+                ),
+                (
+                    "requested_message_attribute_count".to_string(),
+                    payload.message_attribute_names.len().to_string(),
+                ),
+                (
+                    "requested_message_system_attribute_count".to_string(),
+                    payload
+                        .message_system_attribute_names
+                        .len()
+                        .to_string(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:ReceiveMessage",
+        authorize_with: crate::auth::resolve_authorization,
+    }
+}
 
 fn default_max_number_of_messages() -> i64 {
     1
@@ -263,108 +311,6 @@ fn filter_message_attributes(
         .into_iter()
         .filter(|(name, _)| include_requested_message_attribute(name, requested_names))
         .collect()
-}
-
-#[async_trait]
-impl<S> TypedAwsAction<S> for ReceiveMessageAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = ReceiveMessageRequest;
-    type Response = ReceiveMessageResponse;
-    type Error = SqsError;
-
-    fn name(&self) -> &'static str {
-        "ReceiveMessage"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        receive_request: &ReceiveMessageRequest,
-        _store: &S,
-    ) -> Result<(), SqsError> {
-        validate_receive_request(receive_request)
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        receive_request: ReceiveMessageRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ReceiveMessageResponse, SqsError> {
-        let timer = trace_context.start_span();
-        let attributes = HashMap::from([
-            ("queue_url".to_string(), receive_request.queue_url.clone()),
-            (
-                "max_number_of_messages".to_string(),
-                receive_request.max_number_of_messages.to_string(),
-            ),
-            (
-                "visibility_timeout_seconds".to_string(),
-                receive_request
-                    .visibility_timeout
-                    .map(|visibility_timeout| visibility_timeout.to_string())
-                    .unwrap_or_else(|| "queue_default".to_string()),
-            ),
-            (
-                "wait_time_seconds".to_string(),
-                receive_request
-                    .wait_time_seconds
-                    .map(|wait_time_seconds| wait_time_seconds.to_string())
-                    .unwrap_or_else(|| "queue_default".to_string()),
-            ),
-            (
-                "requested_system_attribute_count".to_string(),
-                receive_request.attribute_names.len().to_string(),
-            ),
-            (
-                "requested_message_attribute_count".to_string(),
-                receive_request.message_attribute_names.len().to_string(),
-            ),
-            (
-                "requested_message_system_attribute_count".to_string(),
-                receive_request
-                    .message_system_attribute_names
-                    .len()
-                    .to_string(),
-            ),
-        ]);
-
-        let result = handle_receive_message_typed(&request, store, receive_request).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sqs.receive_message.poll",
-                "sqs",
-                status,
-                attributes,
-            )
-            .await;
-
-        result
-    }
-
-    async fn resolve_authorization_typed(
-        &self,
-        request: &ResolvedRequest,
-        _payload: ReceiveMessageRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:ReceiveMessage", request, store).await
-    }
 }
 
 #[cfg(test)]

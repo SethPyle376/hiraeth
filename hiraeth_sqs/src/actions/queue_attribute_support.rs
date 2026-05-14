@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use hiraeth_core::auth::Policy;
 use hiraeth_store::sqs::{SqsQueue, SqsQueueAttributeUpdate, SqsStore};
 
 use crate::error::SqsError;
@@ -486,6 +487,12 @@ fn parse_json_string_attribute(
     serde_json::from_str::<serde_json::Value>(raw)
         .map_err(|e| SqsError::BadRequest(format!("{} must be valid JSON: {}", name, e)))?;
 
+    if name == "Policy" && raw.trim() != "{}" {
+        serde_json::from_str::<Policy>(raw).map_err(|e| {
+            SqsError::BadRequest(format!("Policy must be a valid queue policy: {}", e))
+        })?;
+    }
+
     Ok(Some(raw.clone()))
 }
 
@@ -565,7 +572,7 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use hiraeth_store::{sqs::SqsQueue, test_support::SqsTestStore};
 
-    use super::{QueueAttributeValues, collect_queue_attributes};
+    use super::{QueueAttributeValues, collect_queue_attributes, parse_queue_attribute_update};
     use crate::error::SqsError;
 
     fn queue() -> SqsQueue {
@@ -679,6 +686,46 @@ mod tests {
             ("VisibilityTimeout".to_string(), "not-a-number".to_string()),
             ("DelaySeconds".to_string(), "5".to_string()),
         ]));
+
+        assert!(matches!(result, Err(SqsError::BadRequest(_))));
+    }
+
+    #[test]
+    fn queue_attribute_values_rejects_policy_statement_without_resource() {
+        let result = QueueAttributeValues::from_attribute_map(&HashMap::from([(
+            "Policy".to_string(),
+            r#"{
+                "Version":"2012-10-17",
+                "Statement":[
+                    {
+                        "Effect":"Allow",
+                        "Principal":{"Service":"sns.amazonaws.com"},
+                        "Action":"sqs:SendMessage"
+                    }
+                ]
+            }"#
+            .to_string(),
+        )]));
+
+        assert!(matches!(result, Err(SqsError::BadRequest(_))));
+    }
+
+    #[test]
+    fn parse_queue_attribute_update_rejects_policy_statement_without_resource() {
+        let result = parse_queue_attribute_update(&HashMap::from([(
+            "Policy".to_string(),
+            r#"{
+                "Version":"2012-10-17",
+                "Statement":[
+                    {
+                        "Effect":"Allow",
+                        "Principal":{"Service":"sns.amazonaws.com"},
+                        "Action":"sqs:SendMessage"
+                    }
+                ]
+            }"#
+            .to_string(),
+        )]));
 
         assert!(matches!(result, Err(SqsError::BadRequest(_))));
     }

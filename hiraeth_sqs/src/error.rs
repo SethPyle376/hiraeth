@@ -7,7 +7,7 @@ use hiraeth_core::{
 use hiraeth_store::StoreError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SqsError {
+pub enum SqsError {
     QueueNotFound,
     BadRequest(String),
     BatchEntryIdsNotDistinct,
@@ -76,7 +76,7 @@ impl From<ResponseSerializationError> for SqsError {
     }
 }
 
-pub(crate) fn map_store_error(error: StoreError) -> SqsError {
+pub fn map_store_error(error: StoreError) -> SqsError {
     match error {
         StoreError::NotFound(_) => SqsError::QueueNotFound,
         StoreError::Conflict(msg) => SqsError::BadRequest(msg),
@@ -84,7 +84,7 @@ pub(crate) fn map_store_error(error: StoreError) -> SqsError {
     }
 }
 
-pub(crate) fn map_receipt_handle_store_error(error: StoreError) -> SqsError {
+pub fn map_receipt_handle_store_error(error: StoreError) -> SqsError {
     match error {
         StoreError::NotFound(msg) => SqsError::ReceiptHandleIsInvalid(msg),
         StoreError::Conflict(msg) => SqsError::BadRequest(msg),
@@ -92,7 +92,7 @@ pub(crate) fn map_receipt_handle_store_error(error: StoreError) -> SqsError {
     }
 }
 
-pub(crate) fn batch_error_details(error: &SqsError) -> (&'static str, bool) {
+pub fn batch_error_details(error: &SqsError) -> (&'static str, bool) {
     aws_batch_error_details(error)
 }
 

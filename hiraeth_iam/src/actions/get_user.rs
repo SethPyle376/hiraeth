@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
 use hiraeth_core::{
-    AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest, TypedAwsAction, arn_util,
-    auth::AuthorizationCheck,
+    ResolvedRequest,
     tracing::{TraceContext, TraceRecorder},
 };
 use hiraeth_store::IamStore;
@@ -11,13 +9,31 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     actions::util::{
-        IAM_XMLNS, IamUserXml, ResponseMetadata, optional_target_user, parse_payload_error,
-        response_metadata, validate_user_name,
+        IAM_XMLNS, IamUserXml, ResponseMetadata, optional_target_user, response_metadata,
+        validate_user_name,
     },
     error::IamError,
 };
 
 pub(crate) struct GetUserAction;
+
+hiraeth_core::impl_aws_action! {
+    GetUserAction<S: IamStore> {
+        request: GetUserRequest,
+        response: GetUserResponse,
+        defaults: crate::IamActionDefaults,
+        name: "GetUser",
+        validate: |_request, get_user_request, _store| {
+            if let Some(user_name) = &get_user_request.user_name {
+                validate_user_name(user_name)?;
+            }
+            Ok(())
+        },
+        handler: handle_get_user,
+        authorize_action: "iam:GetUser",
+        authorize_with: crate::auth::resolve_authorization,
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -42,115 +58,53 @@ struct GetUserResult {
     user: IamUserXml,
 }
 
-#[async_trait]
-impl<S> TypedAwsAction<S> for GetUserAction
-where
-    S: IamStore + Send + Sync,
-{
-    type Request = GetUserRequest;
-    type Response = GetUserResponse;
-    type Error = IamError;
-
-    fn name(&self) -> &'static str {
-        "GetUser"
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> IamError {
-        parse_payload_error(error)
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Xml
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        get_user_request: &GetUserRequest,
-        _store: &S,
-    ) -> Result<(), IamError> {
-        if let Some(user_name) = &get_user_request.user_name {
-            validate_user_name(user_name)?;
-        }
-
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        get_user_request: GetUserRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<GetUserResponse, IamError> {
-        let timer = trace_context.start_span();
-        let requested_user_name = get_user_request.user_name.clone();
-        let principal =
-            match optional_target_user(&request, store, get_user_request.user_name.as_deref())
-                .await?
-            {
-                Some(principal) => principal,
-                None => {
-                    return Err(IamError::NoSuchEntity(format!(
-                        "User with name '{}' not found",
-                        get_user_request.user_name.unwrap_or_else(|| request
-                            .auth_context
-                            .principal
-                            .name
-                            .clone())
-                    )));
+async fn handle_get_user<S: IamStore + Send + Sync>(
+    request: ResolvedRequest,
+    get_user_request: GetUserRequest,
+    store: &S,
+    trace_context: &TraceContext,
+    trace_recorder: &dyn TraceRecorder,
+) -> Result<GetUserResponse, IamError> {
+    let requested_user_name = get_user_request.user_name.clone();
+    let account_id = request.auth_context.principal.account_id.clone();
+    let principal = trace_context
+        .record_result_span_with_attributes(
+            trace_recorder,
+            "iam.user.lookup",
+            "iam",
+            async {
+                optional_target_user(&request, store, get_user_request.user_name.as_deref())
+                    .await?
+                    .ok_or_else(|| {
+                        IamError::NoSuchEntity(format!(
+                            "User with name '{}' not found",
+                            get_user_request.user_name.unwrap_or_else(|| request
+                                .auth_context
+                                .principal
+                                .name
+                                .clone())
+                        ))
+                    })
+            },
+            |result| {
+                let mut attributes = HashMap::from([
+                    (
+                        "requested_user_name".to_string(),
+                        requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
+                    ),
+                    ("account_id".to_string(), account_id),
+                ]);
+                if let Ok(principal) = result {
+                    attributes.insert("user_name".to_string(), principal.name.clone());
+                    attributes.insert("user_id".to_string(), principal.id.to_string());
+                    attributes.insert("path".to_string(), principal.path.clone());
                 }
-            };
-        let attributes = HashMap::from([
-            (
-                "requested_user_name".to_string(),
-                requested_user_name.unwrap_or_else(|| "signing_user".to_string()),
-            ),
-            ("user_name".to_string(), principal.name.clone()),
-            ("user_id".to_string(), principal.id.to_string()),
-            ("account_id".to_string(), principal.account_id.clone()),
-            ("path".to_string(), principal.path.clone()),
-        ]);
-        trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "iam.user.lookup",
-                "iam",
-                "ok",
-                attributes,
-            )
-            .await;
+                attributes
+            },
+        )
+        .await?;
 
-        Ok(get_user_response(principal.into(), request.request_id))
-    }
-
-    async fn resolve_authorization_typed(
-        &self,
-        request: &ResolvedRequest,
-        get_user_request: GetUserRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, IamError> {
-        let principal = optional_target_user(request, store, get_user_request.user_name.as_deref())
-            .await?
-            .ok_or_else(|| {
-                IamError::NoSuchEntity(format!(
-                    "User with name '{}' not found",
-                    get_user_request.user_name.unwrap_or_else(|| request
-                        .auth_context
-                        .principal
-                        .name
-                        .clone())
-                ))
-            })?;
-
-        Ok(AuthorizationCheck {
-            action: "iam:GetUser".to_string(),
-            resource: arn_util::user_arn(&principal.account_id, &principal.path, &principal.name),
-            resource_policy: None,
-        })
-    }
+    Ok(get_user_response(principal.into(), request.request_id))
 }
 
 fn get_user_response(user: IamUserXml, request_id: impl Into<String>) -> GetUserResponse {

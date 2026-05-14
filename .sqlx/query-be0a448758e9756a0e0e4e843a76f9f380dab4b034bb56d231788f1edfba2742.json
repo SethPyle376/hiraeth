@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sns_topics SET display_name = ?, policy = ?, delivery_policy = ?,\n             signature_version = ?, tracing_config = ?, kms_master_key_id = ?,\n             fifo_topic = ?, data_protection_policy = ?, archive_policy = ?,\n             beginning_archive_time = ?, content_based_deduplication = ?\n             WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "be0a448758e9756a0e0e4e843a76f9f380dab4b034bb56d231788f1edfba2742"
+}

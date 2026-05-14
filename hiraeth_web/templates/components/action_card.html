@@ -1,6 +1,6 @@
-<div class="card border border-base-300 bg-base-100/90">
-  <div class="card-body p-4">
-    <div class="mb-2 text-xs font-semibold uppercase tracking-wider text-base-content/50">{{ card.title }}</div>
+<div class="card border border-base-300 bg-base-100 shadow-sm">
+  <div class="card-body p-5">
+    <div class="mb-3 text-xs font-semibold uppercase tracking-wider text-base-content/50">{{ card.title }}</div>
     <div class="grid gap-2 {{ card.grid_class }}">
       {% for action in card.actions %}
         {% match action.href %}

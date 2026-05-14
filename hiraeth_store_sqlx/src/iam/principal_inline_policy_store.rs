@@ -91,6 +91,26 @@ impl PrincipalInlinePolicyStore for SqlitePrincipalInlinePolicyStore {
 
         Ok(())
     }
+
+    async fn get_principal_policy(
+        &self,
+        principle_id: i64,
+        policy_name: &str,
+    ) -> Result<Option<PrincipalInlinePolicy>, StoreError> {
+        sqlx::query_as!(
+            PrincipalInlinePolicy,
+            r#"
+            SELECT *
+            FROM iam_principal_inline_policies
+            WHERE principal_id = ? AND policy_name = ?
+            "#,
+            principle_id,
+            policy_name
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| StoreError::StorageFailure(err.to_string()))
+    }
 }
 
 fn map_sqlx_error(err: sqlx::Error) -> StoreError {

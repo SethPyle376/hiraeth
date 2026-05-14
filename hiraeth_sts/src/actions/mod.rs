@@ -11,6 +11,6 @@ where
     S: IamStore + Send + Sync + 'static,
 {
     let mut registry = AwsActionRegistry::new();
-    registry.register_typed(GetCallerIdentityAction);
+    registry.register(GetCallerIdentityAction);
     registry
 }

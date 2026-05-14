@@ -1,21 +1,16 @@
 {% extends "layout.html" %}
 
-{% block title %}Hiraeth SQS{% endblock %}
+{% block title %}SQS Dashboard | Hiraeth{% endblock %}
 
 {% block content %}
 <section class="mx-auto max-w-[94rem]">
   {{ page_header_html|safe }}
 
-  {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-5 flex items-center justify-between gap-3 py-3 text-sm">
-    <span>{{ feedback_message }}</span>
-    <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['feedback', 'feedback_kind'])">&times;</button>
-  </div>
-  {% endif %}
+  {% include "components/feedback_toast.html" %}
 
   {{ dashboard_stats_html|safe }}
 
-  <form class="card mb-5 border border-primary/30 bg-base-100"
+  <form class="card mb-6 border border-base-300 bg-base-100 shadow-sm"
         action="/sqs/queues/create"
         method="post"
         onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
@@ -23,8 +18,8 @@
       <input type="hidden" name="return_to" value="{{ return_to }}">
       <div class="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h2 class="card-title text-xl">Create queue</h2>
-          <p class="text-sm text-base-content/60">Create a queue in the selected account and region.</p>
+          <h2 class="card-title text-lg">Create queue</h2>
+          <p class="text-sm text-base-content/60">Spin up a new queue.</p>
         </div>
         <div class="flex flex-wrap gap-2 text-sm text-base-content/60">
           <span class="badge badge-outline font-mono">{{ account_id }}</span>
@@ -39,22 +34,22 @@
       {% endif %}
       <div class="grid gap-3 xl:grid-cols-[minmax(12rem,1fr)_8rem_10rem_13rem_auto] xl:items-end">
         <label class="form-control">
-          <div class="label py-1"><span class="label-text">Queue name</span></div>
+          <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Queue name</span></div>
           <input class="input input-bordered" name="queue_name" value="{{ create_queue_name }}" placeholder="orders" required>
         </label>
         <label class="form-control">
-          <div class="label py-1"><span class="label-text">Type</span></div>
-          <select class="select select-bordered" name="queue_type">
+          <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Type</span></div>
+          <select class="select" name="queue_type">
             <option value="standard"{% if create_queue_type == "standard" %} selected{% endif %}>standard</option>
             <option value="fifo"{% if create_queue_type == "fifo" %} selected{% endif %}>fifo</option>
           </select>
         </label>
         <label class="form-control">
-          <div class="label py-1"><span class="label-text">Region</span></div>
+          <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Region</span></div>
           <input class="input input-bordered" name="region" value="{{ create_region }}" required>
         </label>
         <label class="form-control">
-          <div class="label py-1"><span class="label-text">Account ID</span></div>
+          <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Account ID</span></div>
           <input class="input input-bordered font-mono" name="account_id" value="{{ create_account_id }}" required>
         </label>
         <button class="btn btn-primary" type="submit">Create</button>
@@ -63,12 +58,12 @@
   </form>
 
   <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_21rem]">
-    <section class="card border border-base-300 bg-base-100">
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
       <div class="card-body">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 class="card-title text-xl">Queues</h2>
-            <p class="text-sm text-base-content/60">Showing up to 100 queues for the selected account and region.</p>
+            <h2 class="card-title text-lg">Queues</h2>
+            <p class="text-sm text-base-content/60">Up to 100 queues in this account and region.</p>
           </div>
           <form id="dashboard-queue-filter"
                 class="grid gap-2 sm:grid-cols-[10rem_13rem_minmax(8rem,1fr)_auto]"
@@ -84,38 +79,30 @@
         </div>
 
         <div id="dashboard-queue-list"
-             class="mt-4"
-             hx-get="/sqs/fragments/queues"
-             hx-trigger="every 3s"
-             hx-include="#dashboard-queue-filter"
-             hx-swap="innerHTML">
+             class="mt-4">
           {% include "sqs/fragments/queue_list.html" %}
         </div>
       </div>
     </section>
 
-    <aside class="space-y-3">
-      <div class="card border border-base-300 bg-base-100/80">
+    <aside class="space-y-4">
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
-          <h2 class="card-title">Quick filters</h2>
-          <div class="grid gap-2">
+          <h2 class="card-title text-base">Quick filters</h2>
+          <div class="mt-2 grid gap-2">
             <a class="btn btn-outline btn-sm justify-start" href="/sqs?region=us-east-1&account_id={{ account_id }}">us-east-1</a>
             <a class="btn btn-outline btn-sm justify-start" href="/sqs?region=us-west-2&account_id={{ account_id }}">us-west-2</a>
             <a class="btn btn-outline btn-sm justify-start" href="/sqs?region={{ region }}&account_id=000000000000">default account</a>
           </div>
         </div>
       </div>
-      <div class="card border border-base-300 bg-base-100/80">
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
-          <h2 class="card-title">Queue actions</h2>
-          <p class="text-sm text-base-content/70">
-            Open a queue to review message payloads, attributes, tags, receipt handles, and delivery timing.
-            Destructive actions require browser confirmation.
+          <h2 class="card-title text-base">What you can do</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Open any queue to see messages, tags, and timing details.
           </p>
         </div>
-      </div>
-      <div class="alert border-warning/40 bg-warning/10 py-3 text-sm">
-        <span>This interface is intended for trusted internal use. Do not expose it publicly.</span>
       </div>
     </aside>
   </div>

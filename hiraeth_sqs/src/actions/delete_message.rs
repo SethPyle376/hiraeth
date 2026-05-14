@@ -1,19 +1,35 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct DeleteMessageAction;
+
+hiraeth_core::impl_aws_action! {
+    DeleteMessageAction<S: SqsStore> {
+        request: DeleteMessageRequest,
+        response: (),
+        defaults: crate::SqsActionDefaults,
+        name: "DeleteMessage",
+        response_format: Empty,
+        handler: handle_delete_message_typed,
+        span: "sqs.message.delete",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "receipt_handle".to_string(),
+                    payload.receipt_handle.clone(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:DeleteMessage",
+        authorize_with: crate::auth::resolve_authorization,
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -35,74 +51,6 @@ async fn handle_delete_message_typed<S: SqsStore>(
         .map_err(crate::error::map_receipt_handle_store_error)?;
 
     Ok(())
-}
-
-#[async_trait]
-impl<S> TypedAwsAction<S> for DeleteMessageAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = DeleteMessageRequest;
-    type Response = ();
-    type Error = SqsError;
-
-    fn name(&self) -> &'static str {
-        "DeleteMessage"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Empty
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        delete_request: DeleteMessageRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<(), SqsError> {
-        let timer = trace_context.start_span();
-        let attributes = HashMap::from([
-            ("queue_url".to_string(), delete_request.queue_url.clone()),
-            (
-                "receipt_handle".to_string(),
-                delete_request.receipt_handle.clone(),
-            ),
-        ]);
-
-        let result = handle_delete_message_typed(&request, store, delete_request).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sqs.message.delete",
-                "sqs",
-                status,
-                attributes,
-            )
-            .await;
-
-        result
-    }
-
-    async fn resolve_authorization_typed(
-        &self,
-        request: &ResolvedRequest,
-        _payload: DeleteMessageRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:DeleteMessage", request, store).await
-    }
 }
 
 #[cfg(test)]

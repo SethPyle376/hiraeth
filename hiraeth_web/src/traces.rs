@@ -240,8 +240,8 @@ async fn trace_detail(
         eyebrow: "Request Trace".to_string(),
         title: format!("request {}", detail.request_id),
         description: format!(
-            "{} {} returned {} in {} ms",
-            detail.method, detail.path, detail.response_status_code, detail.duration_ms
+            "{} {} returned {}",
+            detail.method, detail.path, detail.response_status_code
         ),
         actions: vec![
             HeaderAction::link("Back", "/traces", "btn btn-ghost"),
@@ -453,7 +453,7 @@ fn trace_graph_view(trace: &TraceDetailView, spans: &[TraceSpanView]) -> TraceGr
         parent_graph_id: String::new(),
         has_parent_graph_id: false,
         label: format!("{} {}", trace.method, trace.path),
-        meta: format!("{} ms total", trace.duration_ms),
+        meta: String::new(),
         status: trace.response_status_code.to_string(),
         status_class: trace.response_status_class,
         node_class: graph_root_node_class_for_http_status(trace.response_status_code),
@@ -527,7 +527,7 @@ fn trace_graph_view(trace: &TraceDetailView, spans: &[TraceSpanView]) -> TraceGr
             parent_graph_id: parent_graph_id.clone(),
             has_parent_graph_id: true,
             label: span.name.clone(),
-            meta: format!("{} / {} ms", span.layer, span.duration_ms),
+            meta: span.layer.clone(),
             status: span.status.clone(),
             status_class: span.status_class,
             node_class: graph_node_class_for_span_status(&span.status, is_tiny),
@@ -588,7 +588,109 @@ fn pretty_json<T: serde::Serialize>(value: &T) -> String {
 }
 
 fn body_text(body: &[u8]) -> String {
-    String::from_utf8_lossy(body).to_string()
+    let text = String::from_utf8_lossy(body);
+    if (text.trim().starts_with('{') || text.trim().starts_with('['))
+        && let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+    {
+        return serde_json::to_string_pretty(&value).unwrap_or_else(|_| text.to_string());
+    }
+    if text.trim().starts_with('<') {
+        return pretty_xml(&text);
+    }
+    text.to_string()
+}
+
+fn pretty_xml(xml: &str) -> String {
+    let mut result = String::new();
+    let mut depth: usize = 0;
+    let indent = "  ";
+    let trimmed = xml.trim();
+    let mut chars = trimmed.char_indices().peekable();
+    let mut in_tag = false;
+    let mut tag_start = 0;
+
+    while let Some((i, c)) = chars.next() {
+        if c == '<' {
+            if let Some(&(_, next_c)) = chars.peek() {
+                if next_c == '/' {
+                    // closing tag: decrease depth before writing
+                    if !result.is_empty() && !result.ends_with('\n') {
+                        result.push('\n');
+                    }
+                    depth = depth.saturating_sub(1);
+                    result.push_str(&indent.repeat(depth));
+                    result.push('<');
+                    result.push('/');
+                    chars.next();
+                    // write rest of tag
+                    for (_, c) in chars.by_ref() {
+                        result.push(c);
+                        if c == '>' {
+                            break;
+                        }
+                    }
+                    result.push('\n');
+                } else if next_c == '!' || next_c == '?' {
+                    // declaration/comment
+                    if !result.is_empty() && !result.ends_with('\n') {
+                        result.push('\n');
+                    }
+                    result.push_str(&indent.repeat(depth));
+                    result.push('<');
+                    for (_, c) in chars.by_ref() {
+                        result.push(c);
+                        if c == '>' {
+                            break;
+                        }
+                    }
+                    result.push('\n');
+                } else {
+                    // opening tag or self-closing
+                    if !result.is_empty() && !result.ends_with('\n') {
+                        result.push('\n');
+                    }
+                    result.push_str(&indent.repeat(depth));
+                    result.push('<');
+                    // write tag name and attributes
+                    let mut tag_content = String::new();
+                    for (_, c) in chars.by_ref() {
+                        if c == '>' {
+                            break;
+                        }
+                        tag_content.push(c);
+                    }
+                    let self_closing = tag_content.ends_with('/');
+                    result.push_str(&tag_content);
+                    result.push('>');
+                    if !self_closing {
+                        depth += 1;
+                    }
+                    result.push('\n');
+                }
+            }
+        } else if !c.is_whitespace() {
+            // text content
+            let mut text = String::new();
+            text.push(c);
+            while let Some(&(_, next_c)) = chars.peek() {
+                if next_c == '<' {
+                    break;
+                }
+                text.push(chars.next().unwrap().1);
+            }
+            let trimmed_text = text.trim();
+            if !trimmed_text.is_empty() {
+                if !result.is_empty() && !result.ends_with('\n') {
+                    result.push('\n');
+                }
+                result.push_str(&indent.repeat(depth));
+                result.push_str(trimmed_text);
+                result.push('\n');
+            }
+        }
+    }
+
+    result.trim_end().to_string()
 }
 
 fn status_class(status_code: u16) -> &'static str {

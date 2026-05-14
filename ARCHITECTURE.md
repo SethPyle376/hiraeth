@@ -21,11 +21,13 @@ Hiraeth uses a Rust workspace with focused, single-responsibility crates:
 hiraeth_http            → HTTP primitives (request/response types)
 hiraeth_store           → Storage trait definitions
 hiraeth_store_sqlx      → SQLite implementation via SQLx
-hiraeth_core            → Shared types, protocol parsing, error handling
+hiraeth_core            → Shared types, protocol parsing, error handling, config
 hiraeth_auth            → AWS SigV4 authentication
 hiraeth_router          → Service routing and authorization orchestration
 hiraeth_sqs             → SQS service implementation
+hiraeth_sns             → SNS service implementation
 hiraeth_iam             → IAM service implementation
+hiraeth_sts             → STS service implementation
 hiraeth_web             → Admin web UI (Askama templates + HTMX)
 hiraeth_runtime         → Binary entry point, configuration, HTTP server
 hiraeth_integration_tests → End-to-end tests with real AWS SDKs
@@ -39,8 +41,9 @@ runtime
   ├─> web
   ├─> router ──> auth
   ├─> sqs ──┐
-  └─> iam ──┼─> core ──┬─> http
-            │          └─> store ──> store_sqlx
+  ├─> sns ──┼─> core ──┬─> http
+  ├─> iam ──┤          └─> store ──> store_sqlx
+  └─> sts ──┘
             └─> store
 ```
 
@@ -345,6 +348,18 @@ pub async fn authorize(
 - **How** to authorize is pluggable (different authorizer implementations)
 - **When** to enforce is controlled by `AuthMode` (audit/enforce/off)
 
+### Authorization Modes
+
+`AuthMode` controls when policy decisions are enforced:
+
+| Mode | Behavior |
+|------|----------|
+| `enforce` | Denies requests that lack an explicit `Allow` or are explicitly `Deny`. |
+| `audit` | Evaluates policies, records the real allow/deny decision in traces, but always allows the request to continue. |
+| `off` | Skips authorization entirely. |
+
+The default is `audit`, which lets local tests run while still producing traceable authorization data.
+
 ## Request Lifecycle
 
 ```
@@ -569,19 +584,9 @@ All config uses the `HIRAETH_*` prefix and follows 12-factor app principles.
 
 ## Web UI Architecture
 
-The admin UI uses **server-driven rendering** with HTMX:
-
-```html
-<!-- Template returns HTML fragments -->
-<div hx-get="/sqs/queues" hx-trigger="every 5s">
-    {% for queue in queues %}
-        <tr>
-            <td>{{ queue.name }}</td>
-            <td>{{ queue.message_count }}</td>
-        </tr>
-    {% endfor %}
-</div>
-```
+The admin UI uses **server-driven rendering** with HTMX. Most interactions are
+user-initiated: clicking a refresh button, submitting a form, or following a
+link. The server returns HTML fragments that HTMX swaps into the page.
 
 **Handler:**
 ```rust
@@ -599,6 +604,28 @@ async fn queue_list_fragment(
 - Progressive enhancement
 - Simple state management (server-side only)
 - Fast development iteration
+
+### Web UI Components
+
+Reusable Rust-typed components live in `hiraeth_web/src/components.rs` and are
+rendered via Askama:
+
+- `ActionCard` / `ActionCardAction` — card with optional action buttons
+- `PageHeader` / `HeaderAction` — page title with optional actions
+- `StatBlock` / `StatBlockGrid` — numeric dashboard stats
+- `MetadataEntry` / `MetadataList` — key/value read-only metadata
+- `SummaryCard` / `SummaryCardGrid` — entity summary cards
+- `EmptyState` — placeholder when a list is empty
+
+These are composed in handlers rather than rendered directly in templates.
+
+### Form Error Handling
+
+The web UI uses a consistent redirect-with-query-params pattern for form
+validation errors. When a form fails validation, the handler redirects back to
+the form page with error details and the submitted values encoded in the query
+string. The target handler re-renders the form, displaying the error banner and
+restoring user input so the state is preserved across the redirect.
 
 ## Performance Considerations
 
@@ -651,6 +678,40 @@ let pool = SqlitePoolOptions::new()
 4. Implement `Service` trait with action registry
 5. Register service in `hiraeth_router`
 6. Add web UI endpoints if needed
+
+### Cross-Service Operations
+
+Some workflows need to bypass the HTTP pipeline and operate directly against
+another service's store. For example, SNS `Publish` delivers messages to SQS
+queues without making HTTP requests.
+
+**Pattern:** Define a cross-service primitive in the target service crate:
+
+```rust
+// hiraeth_sqs/src/operations.rs
+pub async fn enqueue_message(
+    store: &impl SqsStore,
+    queue_url: &str,
+    body: &str,
+    attributes: Vec<MessageAttribute>,
+) -> Result<SqsMessage, SqsError> {
+    // Build and persist the message directly
+}
+```
+
+The calling service (SNS) receives both stores through a composite wrapper:
+
+```rust
+// hiraeth_sns/src/store.rs
+pub struct SnsServiceStore<SS, QS> {
+    pub sns_store: SS,
+    pub sqs_store: QS,
+    pub auth_mode: AuthorizationMode,
+}
+```
+
+This lets SNS actions evaluate authorization and then deliver directly to SQS
+without an additional HTTP round-trip.
 
 ### Error Handling
 

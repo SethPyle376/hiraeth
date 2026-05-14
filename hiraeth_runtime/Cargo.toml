@@ -12,6 +12,7 @@ hiraeth_core = { path = "../hiraeth_core" }
 hiraeth_http = { path = "../hiraeth_http" }
 hiraeth_iam = { path = "../hiraeth_iam" }
 hiraeth_router = { path = "../hiraeth_router" }
+hiraeth_sns = { path = "../hiraeth_sns" }
 hiraeth_sqs = { path = "../hiraeth_sqs" }
 hiraeth_store = { path = "../hiraeth_store" }
 hiraeth_store_sqlx = { path = "../hiraeth_store_sqlx" }

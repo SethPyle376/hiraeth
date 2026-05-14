@@ -1,11 +1,6 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::ResolvedRequest;
 use hiraeth_store::{
     StoreError,
     sqs::{SqsQueue, SqsStore},
@@ -13,14 +8,54 @@ use hiraeth_store::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    action_support::{json_payload_format, parse_payload_error},
-    queue_attribute_support::QueueAttributeValues,
-    queue_support,
-    tag_support::validate_tags,
+    queue_attribute_support::QueueAttributeValues, queue_support, tag_support::validate_tags,
 };
 use crate::error::SqsError;
 
 pub(crate) struct CreateQueueAction;
+
+hiraeth_core::impl_aws_action! {
+    CreateQueueAction<S: SqsStore> {
+        request: CreateQueueRequest,
+        response: CreateQueueResponse,
+        defaults: crate::SqsActionDefaults,
+        name: "CreateQueue",
+        validate: |_request, payload, _store| {
+            let queue_attributes = QueueAttributeValues::from_attribute_map(&payload.attributes)?;
+            queue_support::validate_queue_name(&payload.queue_name, queue_attributes.fifo_queue)?;
+            validate_tags(&payload.tags, true)?;
+            Ok(())
+        },
+        handler: handle_create_queue_typed,
+        span: "sqs.queue.create",
+        span_attrs: |request, payload, _store| {
+            HashMap::from([
+                ("queue_name".to_string(), payload.queue_name.clone()),
+                ("region".to_string(), request.region.clone()),
+                (
+                    "account_id".to_string(),
+                    request.auth_context.principal.account_id.clone(),
+                ),
+                (
+                    "requested_attribute_count".to_string(),
+                    payload.attributes.len().to_string(),
+                ),
+                ("tag_count".to_string(), payload.tags.len().to_string()),
+                (
+                    "fifo_queue".to_string(),
+                    payload
+                        .attributes
+                        .get("FifoQueue")
+                        .map(String::as_str)
+                        .unwrap_or("false")
+                        .to_string(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:CreateQueue",
+        authorize_with: crate::auth::resolve_authorization,
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -146,97 +181,6 @@ fn create_queue_response(
     Ok(CreateQueueResponse {
         queue_url: crate::util::queue_url(&request.request.host, account_id, queue_name),
     })
-}
-
-#[async_trait]
-impl<S> TypedAwsAction<S> for CreateQueueAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = CreateQueueRequest;
-    type Response = CreateQueueResponse;
-    type Error = SqsError;
-
-    fn name(&self) -> &'static str {
-        "CreateQueue"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        request_body: &CreateQueueRequest,
-        _store: &S,
-    ) -> Result<(), SqsError> {
-        let queue_attributes = QueueAttributeValues::from_attribute_map(&request_body.attributes)?;
-        queue_support::validate_queue_name(&request_body.queue_name, queue_attributes.fifo_queue)?;
-        validate_tags(&request_body.tags, true)?;
-        Ok(())
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: CreateQueueRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<CreateQueueResponse, SqsError> {
-        let timer = trace_context.start_span();
-        let attributes = HashMap::from([
-            ("queue_name".to_string(), request_body.queue_name.clone()),
-            ("region".to_string(), request.region.clone()),
-            (
-                "account_id".to_string(),
-                request.auth_context.principal.account_id.clone(),
-            ),
-            (
-                "requested_attribute_count".to_string(),
-                request_body.attributes.len().to_string(),
-            ),
-            ("tag_count".to_string(), request_body.tags.len().to_string()),
-            (
-                "fifo_queue".to_string(),
-                request_body
-                    .attributes
-                    .get("FifoQueue")
-                    .map(String::as_str)
-                    .unwrap_or("false")
-                    .to_string(),
-            ),
-        ]);
-
-        let result = handle_create_queue_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sqs.queue.create",
-                "sqs",
-                status,
-                attributes,
-            )
-            .await;
-
-        result
-    }
-
-    async fn resolve_authorization_typed(
-        &self,
-        request: &ResolvedRequest,
-        _payload: CreateQueueRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:CreateQueue", request, store).await
-    }
 }
 
 #[cfg(test)]

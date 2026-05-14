@@ -489,28 +489,26 @@ async fn seed_unprivileged_user(
         uuid::Uuid::new_v4().simple().to_string().to_uppercase()
     );
 
-    let principal_id = sqlx::query!(
+    let principal_id = sqlx::query(
         "INSERT INTO iam_principals (account_id, kind, name, path, user_id) VALUES (?, ?, ?, ?, ?)",
-        TEST_ACCOUNT_ID,
-        "user",
-        user_name,
-        "/",
-        user_id
     )
+    .bind(TEST_ACCOUNT_ID)
+    .bind("user")
+    .bind(user_name)
+    .bind("/")
+    .bind(user_id)
     .execute(&pool)
     .await
     .context("principal should insert for authz deny test")?
     .last_insert_rowid();
 
-    sqlx::query!(
-        "INSERT INTO iam_access_keys (key_id, secret_key, principal_id) VALUES (?, ?, ?)",
-        access_key_id,
-        secret_access_key,
-        principal_id
-    )
-    .execute(&pool)
-    .await
-    .context("access key should insert for authz deny test")?;
+    sqlx::query("INSERT INTO iam_access_keys (key_id, secret_key, principal_id) VALUES (?, ?, ?)")
+        .bind(access_key_id)
+        .bind(secret_access_key)
+        .bind(principal_id)
+        .execute(&pool)
+        .await
+        .context("access key should insert for authz deny test")?;
 
     Ok(())
 }

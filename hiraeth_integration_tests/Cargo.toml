@@ -9,6 +9,7 @@ anyhow = "1.0"
 aws-config = "1"
 aws-credential-types = "1"
 aws-sdk-iam = "1"
+aws-sdk-sns = "1"
 aws-sdk-sqs = "1"
 hiraeth_iam = { path = "../hiraeth_iam" }
 hiraeth_runtime = { path = "../hiraeth_runtime" }

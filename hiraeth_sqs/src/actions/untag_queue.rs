@@ -1,22 +1,40 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionResponseFormat, ResolvedRequest,
-    TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
+use hiraeth_core::ResolvedRequest;
 use hiraeth_store::sqs::SqsStore;
 use serde::Deserialize;
 
-use super::{
-    action_support::{json_payload_format, parse_payload_error},
-    tag_support::validate_tag_keys,
-};
+use super::tag_support::validate_tag_keys;
 use crate::error::SqsError;
 
 pub(crate) struct UntagQueueAction;
+
+hiraeth_core::impl_aws_action! {
+    UntagQueueAction<S: SqsStore> {
+        request: UntagQueueRequest,
+        response: (),
+        defaults: crate::SqsActionDefaults,
+        name: "UntagQueue",
+        response_format: Empty,
+        validate: |_request, request_body, _store| {
+            validate_tag_keys(&request_body.tag_keys, false)
+        },
+        handler: handle_untag_queue_typed,
+        span: "sqs.queue.untag",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([
+                ("queue_url".to_string(), payload.queue_url.clone()),
+                (
+                    "tag_key_count".to_string(),
+                    payload.tag_keys.len().to_string(),
+                ),
+                ("tag_keys".to_string(), payload.tag_keys.join(",")),
+            ])
+        },
+        authorize_action: "sqs:UntagQueue",
+        authorize_with: crate::auth::resolve_authorization,
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -37,84 +55,6 @@ async fn handle_untag_queue_typed<S: SqsStore>(
         .untag_queue(queue.id, request_body.tag_keys)
         .await
         .map_err(crate::error::map_store_error)
-}
-
-#[async_trait]
-impl<S> TypedAwsAction<S> for UntagQueueAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = UntagQueueRequest;
-    type Response = ();
-    type Error = SqsError;
-
-    fn name(&self) -> &'static str {
-        "UntagQueue"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn response_format(&self) -> AwsActionResponseFormat {
-        AwsActionResponseFormat::Empty
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        request_body: &UntagQueueRequest,
-        _store: &S,
-    ) -> Result<(), SqsError> {
-        validate_tag_keys(&request_body.tag_keys, false)
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: UntagQueueRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<(), SqsError> {
-        let timer = trace_context.start_span();
-        let attributes = HashMap::from([
-            ("queue_url".to_string(), request_body.queue_url.clone()),
-            (
-                "tag_key_count".to_string(),
-                request_body.tag_keys.len().to_string(),
-            ),
-            ("tag_keys".to_string(), request_body.tag_keys.join(",")),
-        ]);
-
-        let result = handle_untag_queue_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sqs.queue.untag",
-                "sqs",
-                status,
-                attributes,
-            )
-            .await;
-
-        result
-    }
-
-    async fn resolve_authorization_typed(
-        &self,
-        request: &ResolvedRequest,
-        _payload: UntagQueueRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:UntagQueue", request, store).await
-    }
 }
 
 #[cfg(test)]

@@ -1,18 +1,52 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct ListQueuesAction;
+
+hiraeth_core::impl_aws_action! {
+    ListQueuesAction<S: SqsStore> {
+        request: ListQueuesRequest,
+        response: ListQueuesResponse,
+        defaults: crate::SqsActionDefaults,
+        name: "ListQueues",
+        validate: |_request, payload, _store| {
+            validate_list_queues_request(payload)
+        },
+        handler: handle_list_queues_typed,
+        span: "sqs.queue.list",
+        span_attrs: |request, payload, _store| {
+            HashMap::from([
+                ("region".to_string(), request.region.clone()),
+                (
+                    "account_id".to_string(),
+                    request.auth_context.principal.account_id.clone(),
+                ),
+                (
+                    "max_results".to_string(),
+                    payload
+                        .max_results
+                        .map(|max_results| max_results.to_string())
+                        .unwrap_or_else(|| "none".to_string()),
+                ),
+                (
+                    "has_next_token".to_string(),
+                    payload.next_token.is_some().to_string(),
+                ),
+                (
+                    "queue_name_prefix".to_string(),
+                    payload.queue_name_prefix.clone().unwrap_or_default(),
+                ),
+            ])
+        },
+        authorize_action: "sqs:ListQueues",
+        authorize_with: crate::auth::resolve_authorization,
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -88,94 +122,6 @@ fn validate_list_queues_request(request_body: &ListQueuesRequest) -> Result<(), 
     }
 
     Ok(())
-}
-
-#[async_trait]
-impl<S> TypedAwsAction<S> for ListQueuesAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = ListQueuesRequest;
-    type Response = ListQueuesResponse;
-    type Error = SqsError;
-
-    fn name(&self) -> &'static str {
-        "ListQueues"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn validate(
-        &self,
-        _request: &ResolvedRequest,
-        request_body: &ListQueuesRequest,
-        _store: &S,
-    ) -> Result<(), SqsError> {
-        validate_list_queues_request(request_body)
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: ListQueuesRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ListQueuesResponse, SqsError> {
-        let timer = trace_context.start_span();
-        let attributes = HashMap::from([
-            ("region".to_string(), request.region.clone()),
-            (
-                "account_id".to_string(),
-                request.auth_context.principal.account_id.clone(),
-            ),
-            (
-                "max_results".to_string(),
-                request_body
-                    .max_results
-                    .map(|max_results| max_results.to_string())
-                    .unwrap_or_else(|| "none".to_string()),
-            ),
-            (
-                "has_next_token".to_string(),
-                request_body.next_token.is_some().to_string(),
-            ),
-            (
-                "queue_name_prefix".to_string(),
-                request_body.queue_name_prefix.clone().unwrap_or_default(),
-            ),
-        ]);
-
-        let result = handle_list_queues_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sqs.queue.list",
-                "sqs",
-                status,
-                attributes,
-            )
-            .await;
-
-        result
-    }
-
-    async fn resolve_authorization_typed(
-        &self,
-        request: &ResolvedRequest,
-        _payload: ListQueuesRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:ListQueues", request, store).await
-    }
 }
 
 #[cfg(test)]

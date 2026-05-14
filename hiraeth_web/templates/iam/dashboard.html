@@ -6,54 +6,49 @@
 <section class="mx-auto max-w-[94rem]">
   {{ page_header_html|safe }}
 
-  {% if has_feedback %}
-  <div class="alert {{ feedback_class }} mb-5">
-    <span>{{ feedback_message }}</span>
-    <button class="btn btn-ghost btn-xs ml-auto" type="button" onclick="this.closest('.alert').remove()" aria-label="Dismiss">×</button>
-  </div>
-  {% endif %}
+  {% include "components/feedback_toast.html" %}
 
   <div class="mb-5">{{ stats_html|safe }}</div>
 
   <div class="grid gap-5 md:grid-cols-[minmax(0,1fr)_22rem]">
     <div class="space-y-5">
-      <section class="card border border-base-300 bg-base-100">
+      <section class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 class="card-title text-xl">Principals</h2>
-              <p class="text-sm text-base-content/60">Open a principal to review its access keys and inline policies.</p>
+              <p class="text-sm text-base-content/60">Click a user or role to see their keys and policies.</p>
             </div>
             <div class="badge badge-outline">{{ principal_count }} total</div>
           </div>
 
           {% if has_principals %}
-          <div class="overflow-x-auto rounded border border-base-300 bg-base-100">
+          <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
             <table class="table table-sm">
               <thead>
-                <tr>
-                  <th>Principal</th>
-                  <th>Kind</th>
-                  <th>Account</th>
-                  <th class="text-right">Keys</th>
-                  <th class="text-right">Inline / managed</th>
-                  <th>Created</th>
-                  <th></th>
+                <tr class="border-b border-base-300 bg-base-200/50 text-xs font-semibold uppercase tracking-wider">
+                  <th class="py-3">Principal</th>
+                  <th class="py-3">Kind</th>
+                  <th class="py-3">Account</th>
+                  <th class="py-3 text-right">Keys</th>
+                  <th class="py-3 text-right">Inline / managed</th>
+                  <th class="py-3">Created</th>
+                  <th class="py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {% for principal in principals %}
-                <tr class="hover:bg-base-200/70">
-                  <td>
-                    <div class="font-bold">{{ principal.name }}</div>
+                <tr class="hover:bg-base-200/60 transition-colors">
+                  <td class="py-3">
+                    <div class="font-semibold">{{ principal.name }}</div>
                     <div class="text-xs text-base-content/50">id {{ principal.id }}</div>
                   </td>
-                  <td><span class="badge badge-outline">{{ principal.kind }}</span></td>
-                  <td class="font-mono text-sm">{{ principal.account_id }}</td>
-                  <td class="text-right">{{ principal.access_key_count }}</td>
-                  <td class="text-right">{{ principal.inline_policy_count }} / {{ principal.managed_policy_count }}</td>
-                  <td class="text-sm text-base-content/70">{{ principal.created_at }}</td>
-                  <td class="text-right">
+                  <td class="py-3"><span class="badge badge-outline">{{ principal.kind }}</span></td>
+                  <td class="py-3 font-mono text-sm">{{ principal.account_id }}</td>
+                  <td class="py-3 text-right font-mono">{{ principal.access_key_count }}</td>
+                  <td class="py-3 text-right font-mono">{{ principal.inline_policy_count }} / {{ principal.managed_policy_count }}</td>
+                  <td class="py-3 text-sm text-base-content/70">{{ principal.created_at }}</td>
+                  <td class="py-3 text-right">
                     <a class="btn btn-sm btn-primary" href="/iam/principals/{{ principal.id }}">Open</a>
                   </td>
                 </tr>
@@ -67,41 +62,41 @@
         </div>
       </section>
 
-      <section id="managed-policies" class="card border border-base-300 bg-base-100">
+      <section id="managed-policies" class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
           <div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 class="card-title text-xl">Managed policies</h2>
-              <p class="text-sm text-base-content/60">Reusable policy documents that can be attached to principals.</p>
+              <p class="text-sm text-base-content/60">Policies you can attach to multiple users or roles.</p>
             </div>
             <div class="badge badge-outline">{{ managed_policy_count }} total</div>
           </div>
 
           {% if has_managed_policies %}
-          <div class="overflow-x-auto rounded border border-base-300 bg-base-100">
+          <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
             <table class="table table-sm">
               <thead>
-                <tr>
-                  <th>Policy</th>
-                  <th>Path</th>
-                  <th>Account</th>
-                  <th class="text-right">Attachments</th>
-                  <th>Updated</th>
-                  <th></th>
+                <tr class="border-b border-base-300 bg-base-200/50 text-xs font-semibold uppercase tracking-wider">
+                  <th class="py-3">Policy</th>
+                  <th class="py-3">Path</th>
+                  <th class="py-3">Account</th>
+                  <th class="py-3 text-right">Attachments</th>
+                  <th class="py-3">Updated</th>
+                  <th class="py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {% for policy in managed_policies %}
-                <tr class="hover:bg-base-200/70">
-                  <td>
-                    <div class="font-bold">{{ policy.policy_name }}</div>
+                <tr class="hover:bg-base-200/60 transition-colors">
+                  <td class="py-3">
+                    <div class="font-semibold">{{ policy.policy_name }}</div>
                     <div class="break-all font-mono text-xs text-base-content/50">{{ policy.arn }}</div>
                   </td>
-                  <td class="font-mono text-sm">{{ policy.policy_path }}</td>
-                  <td class="font-mono text-sm">{{ policy.account_id }}</td>
-                  <td class="text-right">{{ policy.attachment_count }}</td>
-                  <td class="text-sm text-base-content/70">{{ policy.updated_at }}</td>
-                  <td class="text-right">
+                  <td class="py-3 font-mono text-sm">{{ policy.policy_path }}</td>
+                  <td class="py-3 font-mono text-sm">{{ policy.account_id }}</td>
+                  <td class="py-3 text-right font-mono">{{ policy.attachment_count }}</td>
+                  <td class="py-3 text-sm text-base-content/70">{{ policy.updated_at }}</td>
+                  <td class="py-3 text-right">
                     <a class="btn btn-sm btn-primary" href="/iam/policies/{{ policy.id }}">Open</a>
                   </td>
                 </tr>
@@ -110,10 +105,15 @@
             </table>
           </div>
           {% else %}
-          <div class="card border border-dashed border-base-300 bg-base-100/70">
-            <div class="card-body items-center py-10 text-center">
-              <h2 class="card-title">No managed policies</h2>
-              <p class="max-w-md text-base-content/70">Create reusable policies here, then attach them to IAM users.</p>
+          <div class="card border border-dashed border-base-300 bg-base-100/60">
+            <div class="card-body items-center py-12 text-center">
+              <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200 text-base-content/30">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-6 w-6">
+                  <path fill-rule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM12.75 9a.75.75 0 00-1.5 0v2.25H9a.75.75 0 000 1.5h2.25V15a.75.75 0 001.5 0v-2.25H15a.75.75 0 000-1.5h-2.25V9z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+              <h2 class="card-title text-lg">No managed policies</h2>
+              <p class="max-w-md text-sm text-base-content/60">Create reusable policies here, then attach them to IAM users.</p>
             </div>
           </div>
           {% endif %}
@@ -123,110 +123,112 @@
 
     <aside class="space-y-3">
       <details id="add-principal"
-               class="collapse collapse-arrow border border-primary/40 bg-base-100/80"
-               data-collapse-persist
-               data-collapse-key="iam-create-principal"
+               class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm"
                {% if has_create_error %}open{% endif %}>
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Add principal</h2>
-              <p class="text-xs text-base-content/60">Create a local IAM user or role.</p>
+              <p class="text-xs text-base-content/60">Add a new user or role.</p>
             </div>
-            <span class="badge badge-outline">Action</span>
+            <span class="badge badge-primary badge-outline">Action</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_create_error %}
-          <div class="alert alert-error mb-3 py-2 text-sm">{{ create_error }}</div>
+          <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+            <span>{{ create_error }}</span>
+            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['create_error', 'create_name', 'create_kind', 'create_path', 'create_account_id'])">&times;</button>
+          </div>
           {% endif %}
-          <form class="space-y-3" method="post" action="/iam/principals/create" onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
-            <label class="block">
-              <span class="mb-1 block text-sm text-base-content/70">Name</span>
-              <input class="input input-bordered w-full" name="name" value="{{ create_name }}" placeholder="test-user" required>
+          <form class="grid gap-3 pt-1" method="post" action="/iam/principals/create" onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
+            <label class="form-control">
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Name</span></div>
+              <input class="input input-bordered" name="name" value="{{ create_name }}" placeholder="test-user" required>
             </label>
             <div class="grid gap-3 sm:grid-cols-2">
-              <label class="block">
-                <span class="mb-1 block text-sm text-base-content/70">Kind</span>
-                <select class="select select-bordered w-full" name="kind">
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Kind</span></div>
+                <select class="select" name="kind">
                   <option value="user" {% if create_kind == "user" %}selected{% endif %}>user</option>
                   <option value="role" {% if create_kind == "role" %}selected{% endif %}>role</option>
                 </select>
               </label>
-              <label class="block">
-                <span class="mb-1 block text-sm text-base-content/70">Path</span>
-                <input class="input input-bordered w-full font-mono" name="path" value="{{ create_path }}" placeholder="/">
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Path</span></div>
+                <input class="input input-bordered font-mono" name="path" value="{{ create_path }}" placeholder="/">
               </label>
             </div>
-            <label class="block">
-              <span class="mb-1 block text-sm text-base-content/70">Account ID</span>
-              <input class="input input-bordered w-full font-mono" name="account_id" value="{{ create_account_id }}" placeholder="000000000000" required>
+            <label class="form-control">
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Account ID</span></div>
+              <input class="input input-bordered font-mono" name="account_id" value="{{ create_account_id }}" placeholder="000000000000" required>
             </label>
-            <button class="btn btn-primary w-full" type="submit">Create principal</button>
+            <button class="btn btn-primary" type="submit">Create principal</button>
           </form>
         </div>
       </details>
 
       <details id="add-managed-policy"
-               class="collapse collapse-arrow border border-primary/40 bg-base-100/80"
-               data-collapse-persist
-               data-collapse-key="iam-create-managed-policy"
+               class="collapse collapse-arrow border border-primary/20 bg-base-100 shadow-sm"
                {% if policy_panel_open %}open{% endif %}>
-        <summary class="collapse-title min-h-0 px-4 py-3">
+        <summary class="collapse-title min-h-0 px-5 py-4">
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Add managed policy</h2>
-              <p class="text-xs text-base-content/60">Create a reusable identity policy document.</p>
+              <p class="text-xs text-base-content/60">Write a policy you can reuse.</p>
             </div>
-            <span class="badge badge-outline">Action</span>
+            <span class="badge badge-primary badge-outline">Action</span>
           </div>
         </summary>
-        <div class="collapse-content px-4 pb-4">
+        <div class="collapse-content px-5 pb-5">
           {% if has_policy_error %}
-          <div class="alert alert-error mb-3 py-2 text-sm">{{ policy_error }}</div>
+          <div class="alert alert-error mb-3 flex items-center justify-between gap-3 py-2 text-sm">
+            <span>{{ policy_error }}</span>
+            <button class="btn btn-ghost btn-xs btn-square border border-current/40 text-current hover:bg-base-100/20" type="button" aria-label="Dismiss banner" onclick="hiraethDismissBanner(this, ['policy_error', 'policy_name', 'policy_path', 'policy_account_id', 'policy_document'])">&times;</button>
+          </div>
           {% endif %}
-          <form class="space-y-3" method="post" action="/iam/policies/create" onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
-            <label class="block">
-              <span class="mb-1 block text-sm text-base-content/70">Policy name</span>
-              <input class="input input-bordered w-full font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin" required>
+          <form class="grid gap-3 pt-1" method="post" action="/iam/policies/create" onsubmit="return hiraethDisableSubmit(this, 'Creating...')">
+            <label class="form-control">
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Policy name</span></div>
+              <input class="input input-bordered font-mono" name="policy_name" value="{{ policy_name }}" placeholder="local-admin" required>
             </label>
             <div class="grid gap-3 sm:grid-cols-2">
-              <label class="block">
-                <span class="mb-1 block text-sm text-base-content/70">Path</span>
-                <input class="input input-bordered w-full font-mono" name="path" value="{{ policy_path }}" placeholder="/">
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Path</span></div>
+                <input class="input input-bordered font-mono" name="path" value="{{ policy_path }}" placeholder="/">
               </label>
-              <label class="block">
-                <span class="mb-1 block text-sm text-base-content/70">Account ID</span>
-                <input class="input input-bordered w-full font-mono" name="account_id" value="{{ policy_account_id }}" placeholder="000000000000" required>
+              <label class="form-control">
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Account ID</span></div>
+                <input class="input input-bordered font-mono" name="account_id" value="{{ policy_account_id }}" placeholder="000000000000" required>
               </label>
             </div>
-            <label class="block">
-              <span class="mb-1 block text-sm text-base-content/70">Policy document</span>
-              <textarea class="textarea textarea-bordered min-h-48 w-full font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
+            <label class="form-control">
+              <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Policy document</span></div>
+              <textarea class="textarea textarea-bordered min-h-48 font-mono text-xs" name="policy_document" required>{{ policy_document }}</textarea>
             </label>
-            <button class="btn btn-primary w-full" type="submit">Create managed policy</button>
+            <button class="btn btn-primary" type="submit">Create managed policy</button>
           </form>
         </div>
       </details>
 
-      <div class="card border border-base-300 bg-base-100/80">
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
-          <h2 class="card-title">Current capabilities</h2>
+          <h2 class="card-title text-base">What you can do here</h2>
           <p class="text-sm text-base-content/70">
-            This section supports creating principals, managing access keys, and editing inline or managed policies.
+            Create users and roles, manage keys, and edit policies.
           </p>
         </div>
       </div>
-      <div class="card border border-base-300 bg-base-100/80">
+      <div class="card border border-base-300 bg-base-100 shadow-sm">
         <div class="card-body">
-          <h2 class="card-title">Included information</h2>
+          <h2 class="card-title text-base">What's inside</h2>
           <p class="text-sm text-base-content/70">
-            Principal identity, attached access key ids, policy documents, and account scope.
+            User details, access keys, policies, and account info.
           </p>
         </div>
       </div>
       <div class="alert border-warning/40 bg-warning/10 py-3 text-sm">
-        <span>Secret key values are available on principal detail pages, but masked by default.</span>
+        <span>Secret keys are shown on detail pages but hidden by default.</span>
       </div>
     </aside>
   </div>

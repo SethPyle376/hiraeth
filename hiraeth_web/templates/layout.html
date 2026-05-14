@@ -6,30 +6,62 @@
     <meta name="description" content="Hiraeth administration UI for AWS-compatible services">
     <title>{% block title %}Hiraeth{% endblock %}</title>
     <link href="/favicon.svg" rel="icon" type="image/svg+xml">
+    <link rel="preload" href="/assets/app.css" as="style">
+    <style>
+      body{background:#1d2021;color:#ebdbb2;display:flex;min-height:100vh;flex-direction:column;margin:0;font-family:system-ui,sans-serif}
+      .htmx-added{opacity:0}.htmx-settling{opacity:1;transition:opacity .12s ease-out}
+      .htmx-swapping{opacity:0;transition:opacity .08s ease-in}
+      .select{padding-block:.625rem}.select-sm{padding-block:.5rem}
+    </style>
     <link href="/assets/app.css" rel="stylesheet" type="text/css">
     <script defer src="/assets/vendor/htmx.min.js"></script>
     <script defer src="/assets/app.js"></script>
   </head>
-  <body class="min-h-screen bg-gradient-to-br from-base-200 via-base-100 to-accent/10 text-base-content">
-    <div class="navbar sticky top-0 z-10 min-h-14 border-b border-base-300 bg-base-100/90 px-4 backdrop-blur sm:px-6">
+  <body class="flex min-h-screen flex-col bg-gradient-to-br from-base-200 via-base-200 to-primary/[0.03] text-base-content">
+    <div class="navbar sticky top-0 z-50 min-h-14 border-b border-base-300 bg-base-100/95 px-4 backdrop-blur sm:px-6">
       <div class="flex-1">
-        <a class="text-xl font-black tracking-tight" href="/">Hiraeth</a>
-        <span class="ml-3 hidden rounded border border-primary/30 px-2 py-1 text-xs font-semibold uppercase tracking-widest text-primary sm:inline-flex">Admin</span>
+        <a class="flex items-center gap-2 text-xl font-black tracking-tight transition hover:opacity-80" href="/">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-7 w-7 text-primary">
+            <path fill-rule="evenodd" d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.177 7.547 7.547 0 01-1.705-1.715.75.75 0 00-1.152-.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248zM15.75 14.25a3.75 3.75 0 11-7.313-1.172c.628.465 1.35.81 2.133 1a5.99 5.99 0 011.925-3.545 3.75 3.75 0 013.255 3.717z" clip-rule="evenodd" />
+          </svg>
+          Hiraeth
+        </a>
+        <span class="ml-3 hidden rounded bg-primary/10 px-2 py-0.5 text-xs font-semibold uppercase tracking-widest text-primary sm:inline-flex">Admin</span>
       </div>
-      <div class="flex-none gap-2">
-        <a class="btn btn-ghost btn-sm" href="/sqs">SQS</a>
-        <a class="btn btn-ghost btn-sm" href="/iam">IAM</a>
-        <a class="btn btn-ghost btn-sm" href="/traces">Traces</a>
-        <a class="btn btn-ghost btn-sm btn-disabled">S3</a>
+      <div class="flex-none gap-1">
+        <a class="btn btn-ghost btn-sm gap-1.5" href="/sqs">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4"><path fill-rule="evenodd" d="M2.625 6.75a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zm4.875 0A.75.75 0 018.25 6h12a.75.75 0 010 1.5h-12a.75.75 0 01-.75-.75zM2.625 12a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zm4.875 0a.75.75 0 01.75-.75h12a.75.75 0 010 1.5h-12a.75.75 0 01-.75-.75zM2.625 17.25a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0zm4.875 0a.75.75 0 01.75-.75h12a.75.75 0 010 1.5h-12a.75.75 0 01-.75-.75z" clip-rule="evenodd"/></svg>
+          SQS
+        </a>
+        <a class="btn btn-ghost btn-sm gap-1.5" href="/sns">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4"><path fill-rule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0 24.585 24.585 0 01-4.831-1.243.75.75 0 01-.298-1.205A8.217 8.217 0 005.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0 25.057 25.057 0 01-4.496 0z" clip-rule="evenodd"/></svg>
+          SNS
+        </a>
+        <a class="btn btn-ghost btn-sm gap-1.5" href="/iam">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4"><path fill-rule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clip-rule="evenodd"/></svg>
+          IAM
+        </a>
+        <a class="btn btn-ghost btn-sm gap-1.5" href="/traces">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4"><path fill-rule="evenodd" d="M10.5 3.75a6.75 6.75 0 100 13.5 6.75 6.75 0 000-13.5zM2.25 10.5a8.25 8.25 0 1114.59 5.28l4.69 4.69a.75.75 0 11-1.06 1.06l-4.69-4.69A8.25 8.25 0 012.25 10.5z" clip-rule="evenodd"/></svg>
+          Traces
+        </a>
+        <span class="btn btn-ghost btn-sm btn-disabled gap-1.5 opacity-40">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4"><path d="M12.378 1.602a.75.75 0 00-.756 0L3 6.632l9 5.25 9-5.25-8.622-5.03zM21.75 7.93l-9 5.25v9.562l8.628-5.032a.75.75 0 00.372-.648V7.93zM11.25 22.18v-9.562l-9-5.25v8.172a.75.75 0 00.372.648l8.628 5.033z" /></svg>
+          S3
+        </span>
       </div>
     </div>
-    <main class="px-4 py-6 sm:px-6 lg:px-8">
+    <main class="flex-1 px-4 py-8 sm:px-6 lg:px-8">
       <noscript>
         <div class="alert alert-warning mx-auto mb-6 max-w-[94rem]">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
           <span>JavaScript is disabled. Basic forms still work, but live fragments will reload as full pages.</span>
         </div>
       </noscript>
       {% block content %}{% endblock %}
     </main>
+    <footer class="border-t border-base-300 bg-base-100/80 px-4 py-4 text-center text-xs text-base-content/40 backdrop-blur sm:px-6">
+      <span>Hiraeth — your local AWS playground</span>
+    </footer>
   </body>
 </html>

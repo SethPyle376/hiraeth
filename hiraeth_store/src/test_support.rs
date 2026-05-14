@@ -10,6 +10,7 @@ use async_trait::async_trait;
 
 use crate::{
     StoreError,
+    sns::SnsTopicAttributeUpdate,
     sqs::{SqsMessage, SqsQueue, SqsQueueAttributeUpdate, SqsStore},
 };
 
@@ -487,4 +488,489 @@ fn apply_queue_attribute_update(queue: &mut SqsQueue, attributes: SqsQueueAttrib
     }
 
     queue.updated_at = chrono::Utc::now().naive_utc();
+}
+
+// ─── SNS Test Store ───────────────────────────────────────────────────────────
+
+use crate::sns::{SnsStore, SnsSubscription, SnsSubscriptionAttributeUpdate, SnsTopic};
+
+#[derive(Debug)]
+pub struct SnsTestStore {
+    topics: Mutex<Vec<SnsTopic>>,
+    created_topics: Mutex<Vec<SnsTopic>>,
+    deleted_topic_arns: Mutex<Vec<String>>,
+    subscriptions: Mutex<Vec<SnsSubscription>>,
+    created_subscriptions: Mutex<Vec<SnsSubscription>>,
+    deleted_subscription_arns: Mutex<Vec<String>>,
+    deleted_subscription_ids: Mutex<Vec<i64>>,
+    topic_tags: Mutex<HashMap<String, HashMap<String, String>>>,
+}
+
+impl Default for SnsTestStore {
+    fn default() -> Self {
+        Self {
+            topics: Mutex::new(Vec::new()),
+            created_topics: Mutex::new(Vec::new()),
+            deleted_topic_arns: Mutex::new(Vec::new()),
+            subscriptions: Mutex::new(Vec::new()),
+            created_subscriptions: Mutex::new(Vec::new()),
+            deleted_subscription_arns: Mutex::new(Vec::new()),
+            deleted_subscription_ids: Mutex::new(Vec::new()),
+            topic_tags: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl SnsTestStore {
+    pub fn with_topic(topic: SnsTopic) -> Self {
+        Self::with_topics([topic])
+    }
+
+    pub fn with_topics(topics: impl IntoIterator<Item = SnsTopic>) -> Self {
+        let topics: Vec<_> = topics.into_iter().collect();
+        Self {
+            topics: Mutex::new(topics.clone()),
+            created_topics: Mutex::new(topics),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_subscription(subscription: SnsSubscription) -> Self {
+        Self::with_subscriptions([subscription])
+    }
+
+    pub fn with_subscriptions(subscriptions: impl IntoIterator<Item = SnsSubscription>) -> Self {
+        let subscriptions: Vec<_> = subscriptions.into_iter().collect();
+        Self {
+            subscriptions: Mutex::new(subscriptions.clone()),
+            created_subscriptions: Mutex::new(subscriptions),
+            ..Self::default()
+        }
+    }
+
+    pub fn created_topics(&self) -> Vec<SnsTopic> {
+        self.created_topics
+            .lock()
+            .expect("created topics mutex")
+            .clone()
+    }
+
+    pub fn deleted_topic_arns(&self) -> Vec<String> {
+        self.deleted_topic_arns
+            .lock()
+            .expect("deleted topic arns mutex")
+            .clone()
+    }
+
+    pub fn created_subscriptions(&self) -> Vec<SnsSubscription> {
+        self.created_subscriptions
+            .lock()
+            .expect("created subscriptions mutex")
+            .clone()
+    }
+
+    pub fn deleted_subscription_arns(&self) -> Vec<String> {
+        self.deleted_subscription_arns
+            .lock()
+            .expect("deleted subscription arns mutex")
+            .clone()
+    }
+
+    pub fn deleted_subscription_ids(&self) -> Vec<i64> {
+        self.deleted_subscription_ids
+            .lock()
+            .expect("deleted subscription ids mutex")
+            .clone()
+    }
+
+    pub fn topic_tags(&self, topic_arn: &str) -> HashMap<String, String> {
+        self.topic_tags
+            .lock()
+            .expect("topic tags mutex")
+            .get(topic_arn)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn parse_topic_arn(arn: &str) -> Option<(String, String, String)> {
+        let parts: Vec<&str> = arn.split(':').collect();
+        if parts.len() == 6 {
+            Some((
+                parts[3].to_string(),
+                parts[4].to_string(),
+                parts[5].to_string(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn next_topic_id(&self) -> i64 {
+        self.topics
+            .lock()
+            .expect("topics mutex")
+            .iter()
+            .map(|t| t.id)
+            .max()
+            .unwrap_or(0)
+            + 1
+    }
+
+    fn next_subscription_id(&self) -> i64 {
+        self.subscriptions
+            .lock()
+            .expect("subscriptions mutex")
+            .iter()
+            .map(|s| s.id)
+            .max()
+            .unwrap_or(0)
+            + 1
+    }
+}
+
+#[async_trait]
+impl SnsStore for SnsTestStore {
+    async fn create_topic(&self, mut topic: SnsTopic) -> Result<(), StoreError> {
+        if self
+            .topics
+            .lock()
+            .expect("topics mutex")
+            .iter()
+            .any(|existing| {
+                existing.name == topic.name
+                    && existing.region == topic.region
+                    && existing.account_id == topic.account_id
+            })
+        {
+            return Err(StoreError::Conflict(format!(
+                "topic already exists: {}",
+                topic.name
+            )));
+        }
+
+        topic.id = self.next_topic_id();
+        self.topics
+            .lock()
+            .expect("topics mutex")
+            .push(topic.clone());
+        self.created_topics
+            .lock()
+            .expect("created topics mutex")
+            .push(topic);
+        Ok(())
+    }
+
+    async fn get_topic(&self, topic_arn: &str) -> Result<Option<SnsTopic>, StoreError> {
+        let (region, account_id, name) = Self::parse_topic_arn(topic_arn)
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+        Ok(self
+            .topics
+            .lock()
+            .expect("topics mutex")
+            .iter()
+            .find(|topic| {
+                topic.name == name && topic.region == region && topic.account_id == account_id
+            })
+            .cloned())
+    }
+
+    async fn get_topic_by_id(&self, id: i64) -> Result<Option<SnsTopic>, StoreError> {
+        Ok(self
+            .topics
+            .lock()
+            .expect("topics mutex")
+            .iter()
+            .find(|topic| topic.id == id)
+            .cloned())
+    }
+
+    async fn list_topics(
+        &self,
+        region: &str,
+        account_id: &str,
+        prefix: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsTopic>, StoreError> {
+        let mut topics: Vec<_> = self
+            .topics
+            .lock()
+            .expect("topics mutex")
+            .iter()
+            .filter(|topic| topic.region == region && topic.account_id == account_id)
+            .filter(|topic| prefix.map(|p| topic.name.starts_with(p)).unwrap_or(true))
+            .cloned()
+            .collect();
+        topics.sort_by(|a, b| a.name.cmp(&b.name));
+        if let Some(limit) = limit {
+            topics.truncate(limit as usize);
+        }
+        Ok(topics)
+    }
+
+    async fn delete_topic(&self, topic_arn: &str) -> Result<(), StoreError> {
+        let (region, account_id, name) = Self::parse_topic_arn(topic_arn)
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+        let mut topics = self.topics.lock().expect("topics mutex");
+        let before = topics.len();
+        topics.retain(|topic| {
+            !(topic.name == name && topic.region == region && topic.account_id == account_id)
+        });
+        if topics.len() == before {
+            return Err(StoreError::NotFound("topic not found".to_string()));
+        }
+        drop(topics);
+
+        self.deleted_topic_arns
+            .lock()
+            .expect("deleted topic arns mutex")
+            .push(topic_arn.to_string());
+
+        self.subscriptions
+            .lock()
+            .expect("subscriptions mutex")
+            .retain(|sub| sub.topic_arn != topic_arn);
+        self.topic_tags
+            .lock()
+            .expect("topic tags mutex")
+            .remove(topic_arn);
+
+        Ok(())
+    }
+
+    async fn create_subscription(
+        &self,
+        mut subscription: SnsSubscription,
+    ) -> Result<(), StoreError> {
+        subscription.id = self.next_subscription_id();
+        self.subscriptions
+            .lock()
+            .expect("subscriptions mutex")
+            .push(subscription.clone());
+        self.created_subscriptions
+            .lock()
+            .expect("created subscriptions mutex")
+            .push(subscription);
+        Ok(())
+    }
+
+    async fn get_subscription(
+        &self,
+        subscription_arn: &str,
+    ) -> Result<Option<SnsSubscription>, StoreError> {
+        Ok(self
+            .subscriptions
+            .lock()
+            .expect("subscriptions mutex")
+            .iter()
+            .find(|sub| sub.subscription_arn == subscription_arn)
+            .cloned())
+    }
+
+    async fn get_subscription_by_id(&self, id: i64) -> Result<Option<SnsSubscription>, StoreError> {
+        Ok(self
+            .subscriptions
+            .lock()
+            .expect("subscriptions mutex")
+            .iter()
+            .find(|sub| sub.id == id)
+            .cloned())
+    }
+
+    async fn list_subscriptions(
+        &self,
+        region: &str,
+        account_id: &str,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsSubscription>, StoreError> {
+        let topic_arn_prefix = format!("arn:aws:sns:{region}:{account_id}:");
+        let mut subscriptions = self
+            .subscriptions
+            .lock()
+            .expect("subscriptions mutex")
+            .iter()
+            .filter(|sub| {
+                sub.owner_account_id == account_id && sub.topic_arn.starts_with(&topic_arn_prefix)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        subscriptions.sort_by(|left, right| left.subscription_arn.cmp(&right.subscription_arn));
+        if let Some(limit) = limit {
+            subscriptions.truncate(limit as usize);
+        }
+        Ok(subscriptions)
+    }
+
+    async fn list_subscriptions_by_topic(
+        &self,
+        topic_arn: &str,
+    ) -> Result<Vec<SnsSubscription>, StoreError> {
+        Ok(self
+            .subscriptions
+            .lock()
+            .expect("subscriptions mutex")
+            .iter()
+            .filter(|sub| sub.topic_arn == topic_arn)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_subscription(&self, subscription_arn: &str) -> Result<(), StoreError> {
+        let mut subs = self.subscriptions.lock().expect("subscriptions mutex");
+        let before = subs.len();
+        subs.retain(|sub| sub.subscription_arn != subscription_arn);
+        if subs.len() == before {
+            return Err(StoreError::NotFound("subscription not found".to_string()));
+        }
+        drop(subs);
+        self.deleted_subscription_arns
+            .lock()
+            .expect("deleted subscription arns mutex")
+            .push(subscription_arn.to_string());
+        Ok(())
+    }
+
+    async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError> {
+        let mut subs = self.subscriptions.lock().expect("subscriptions mutex");
+        let before = subs.len();
+        subs.retain(|sub| sub.id != id);
+        if subs.len() == before {
+            return Err(StoreError::NotFound("subscription not found".to_string()));
+        }
+        drop(subs);
+        self.deleted_subscription_ids
+            .lock()
+            .expect("deleted subscription ids mutex")
+            .push(id);
+        Ok(())
+    }
+
+    async fn set_subscription_attributes(
+        &self,
+        subscription_arn: &str,
+        update: SnsSubscriptionAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        let mut subscriptions = self.subscriptions.lock().expect("subscriptions mutex");
+        let subscription = subscriptions
+            .iter_mut()
+            .find(|sub| sub.subscription_arn == subscription_arn)
+            .ok_or_else(|| StoreError::NotFound("subscription not found".to_string()))?;
+
+        if update.delivery_policy.is_some() {
+            subscription.delivery_policy = update.delivery_policy;
+        }
+        if update.filter_policy.is_some() {
+            subscription.filter_policy = update.filter_policy;
+        }
+        if update.filter_policy_scope.is_some() {
+            subscription.filter_policy_scope = update.filter_policy_scope;
+        }
+        if update.raw_message_delivery.is_some() {
+            subscription.raw_message_delivery = update.raw_message_delivery;
+        }
+        if update.redrive_policy.is_some() {
+            subscription.redrive_policy = update.redrive_policy;
+        }
+        if update.subscription_role_arn.is_some() {
+            subscription.subscription_role_arn = update.subscription_role_arn;
+        }
+        if update.replay_policy.is_some() {
+            subscription.replay_policy = update.replay_policy;
+        }
+
+        Ok(())
+    }
+
+    async fn set_topic_attributes(
+        &self,
+        account_id: &str,
+        region: &str,
+        topic_name: &str,
+        update: SnsTopicAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        let mut topics = self.topics.lock().expect("topics mutex");
+        let topic = topics
+            .iter_mut()
+            .find(|topic| {
+                topic.name == topic_name && topic.region == region && topic.account_id == account_id
+            })
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+
+        if update.delivery_policy.is_some() {
+            topic.delivery_policy = update.delivery_policy;
+        }
+        if update.display_name.is_some() {
+            topic.display_name = update.display_name;
+        }
+        if let Some(policy) = update.policy {
+            topic.policy = policy;
+        }
+        if update.tracing_config.is_some() {
+            topic.tracing_config = update.tracing_config;
+        }
+        if update.kms_master_key_id.is_some() {
+            topic.kms_master_key_id = update.kms_master_key_id;
+        }
+        if update.signature_version.is_some() {
+            topic.signature_version = update.signature_version;
+        }
+        if update.fifo_topic.is_some() {
+            topic.fifo_topic = update.fifo_topic;
+        }
+        if update.data_protection_policy.is_some() {
+            topic.data_protection_policy = update.data_protection_policy;
+        }
+        if update.archive_policy.is_some() {
+            topic.archive_policy = update.archive_policy;
+        }
+        if update.beginning_archive_time.is_some() {
+            topic.beginning_archive_time = update.beginning_archive_time;
+        }
+        if update.content_based_deduplication.is_some() {
+            topic.content_based_deduplication = update.content_based_deduplication;
+        }
+
+        Ok(())
+    }
+
+    async fn list_topic_tags(
+        &self,
+        topic_arn: &str,
+    ) -> Result<HashMap<String, String>, StoreError> {
+        self.get_topic(topic_arn)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+
+        Ok(self.topic_tags(topic_arn))
+    }
+
+    async fn tag_topic(
+        &self,
+        topic_arn: &str,
+        tags: HashMap<String, String>,
+    ) -> Result<(), StoreError> {
+        self.get_topic(topic_arn)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+
+        let mut topic_tags = self.topic_tags.lock().expect("topic tags mutex");
+        let tags_for_topic = topic_tags.entry(topic_arn.to_string()).or_default();
+        for (key, value) in tags {
+            tags_for_topic.insert(key, value);
+        }
+        Ok(())
+    }
+
+    async fn untag_topic(&self, topic_arn: &str, tag_keys: Vec<String>) -> Result<(), StoreError> {
+        self.get_topic(topic_arn)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+
+        let mut topic_tags = self.topic_tags.lock().expect("topic tags mutex");
+        if let Some(tags_for_topic) = topic_tags.get_mut(topic_arn) {
+            for key in tag_keys {
+                tags_for_topic.remove(&key);
+            }
+        }
+        Ok(())
+    }
 }

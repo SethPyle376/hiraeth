@@ -7,7 +7,7 @@ pub fn user_arn(account_id: &str, path: &str, user_name: &str) -> String {
 
 pub fn policy_arn(account_id: &str, path: &str, policy_name: &str) -> String {
     format!(
-        "arn:aws:iam::{account_id}:user{}{policy_name}",
+        "arn:aws:iam::{account_id}:policy{}{policy_name}",
         normalize_user_path(path)
     )
 }

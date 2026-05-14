@@ -2,13 +2,20 @@ mod action;
 pub mod arn_util;
 pub mod auth;
 mod config;
+mod macros;
 mod protocol;
 mod request;
 pub mod tracing;
 
+#[doc(hidden)]
+pub mod __private {
+    pub use async_trait::async_trait;
+}
+
 pub use action::{
-    AwsAction, AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionRegistry,
-    AwsActionResponseFormat, TypedAwsAction, TypedAwsActionAdapter, get_query_request_action_name,
+    AwsAction, AwsActionDefaults, AwsActionPayloadFormat, AwsActionPayloadParseError,
+    AwsActionRegistry, AwsActionResponseFormat, TypedAwsAction, TypedAwsActionAdapter,
+    get_query_request_action_name,
 };
 pub use config::{AuthMode, Config};
 pub use protocol::{

@@ -1,0 +1,73 @@
+{% if has_subscriptions %}
+<div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100 shadow-sm">
+  <table class="table table-sm">
+    <thead>
+      <tr class="border-b border-base-300 bg-base-200/50 text-xs font-semibold uppercase tracking-wider">
+        <th class="py-3">Protocol</th>
+        <th class="py-3">Endpoint</th>
+        <th class="py-3">Created</th>
+        <th class="py-3"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sub in subscriptions %}
+      <tr class="hover:bg-base-200/60 transition-colors">
+        <td class="py-3"><span class="badge badge-outline">{{ sub.protocol }}</span></td>
+        <td class="py-3">
+          <div class="break-all font-mono text-xs">{{ sub.endpoint }}</div>
+          <div class="text-xs text-base-content/50">{{ sub.subscription_arn }}</div>
+          <div class="mt-2 flex flex-wrap gap-2 text-[0.68rem] text-base-content/60">
+            {% if sub.raw_message_delivery %}
+            <span class="badge badge-accent badge-xs">Raw delivery</span>
+            {% else %}
+            <span class="badge badge-outline badge-xs">SNS envelope</span>
+            {% endif %}
+            {% match sub.filter_policy %}
+            {% when Some with (policy) %}
+            <span class="badge badge-outline badge-xs" title="{{ policy }}">Filter policy</span>
+            {% when None %}
+            {% endmatch %}
+            {% match sub.redrive_policy %}
+            {% when Some with (policy) %}
+            <span class="badge badge-outline badge-xs" title="{{ policy }}">Redrive</span>
+            {% when None %}
+            {% endmatch %}
+            {% match sub.delivery_policy %}
+            {% when Some with (policy) %}
+            <span class="badge badge-outline badge-xs" title="{{ policy }}">Delivery policy</span>
+            {% when None %}
+            {% endmatch %}
+            {% match sub.filter_policy_scope %}
+            {% when Some with (scope) %}
+            <span class="badge badge-outline badge-xs">{{ scope }}</span>
+            {% when None %}
+            {% endmatch %}
+          </div>
+        </td>
+        <td class="py-3 text-xs text-base-content/60">{{ sub.created_at }}</td>
+        <td class="py-3 text-right">
+          <div class="flex items-center justify-end gap-2">
+            <form method="post" action="/sns/topics/{{ topic_id }}/subscriptions/{{ sub.id }}/raw-message-delivery" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
+              {% if sub.raw_message_delivery %}
+              <input type="hidden" name="enabled" value="false">
+              <button class="btn btn-xs btn-outline" type="submit">Disable raw</button>
+              {% else %}
+              <input type="hidden" name="enabled" value="true">
+              <button class="btn btn-xs btn-outline" type="submit">Enable raw</button>
+              {% endif %}
+            </form>
+            <form method="post" action="/sns/topics/{{ topic_id }}/subscriptions/{{ sub.id }}/delete" onsubmit="return hiraethConfirmSubmit(this, 'Delete this subscription?', 'Deleting...')">
+              <button class="btn btn-xs btn-error" type="submit">Delete</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="rounded-lg border border-dashed border-base-300 bg-base-200/30 p-8 text-center">
+  <p class="text-sm text-base-content/60">Nobody's subscribed yet.</p>
+</div>
+{% endif %}

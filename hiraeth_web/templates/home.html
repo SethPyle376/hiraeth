@@ -3,91 +3,114 @@
 {% block title %}Hiraeth{% endblock %}
 
 {% block content %}
-<section class="mx-auto max-w-[94rem] py-8 lg:py-12">
-  <div class="grid items-end gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
-    <div>
-      <p class="mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-primary">Administration</p>
-      <h1 class="text-balance max-w-4xl text-5xl font-black tracking-tight text-base-content md:text-6xl">
-        Review service state from one place.
-      </h1>
-      <p class="mt-5 max-w-2xl text-base leading-7 text-base-content/70">
-        Use this interface to review queues, identities, and related service data while working
-        locally or in development. It is designed for day-to-day administration, verification,
-        and a focused set of direct actions.
-      </p>
-      <div class="alert mt-5 max-w-3xl border border-warning/50 bg-warning/15 py-3 text-sm text-base-content">
-        <span class="badge badge-warning font-bold text-warning-content">Restricted access</span>
-        <span>
-          This interface is intended for trusted internal use. Restrict access to known networks or hosts.
-        </span>
-      </div>
-      <div class="mt-6 flex flex-wrap gap-3">
-        <a class="btn btn-primary" href="/sqs">Open SQS dashboard</a>
-        <a class="btn btn-outline" href="/iam">Open IAM dashboard</a>
+<section class="mx-auto flex min-h-[calc(100vh-10rem)] max-w-[94rem] items-center">
+  <div class="grid w-full items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(30rem,0.85fr)]">
+    <div class="relative">
+      <div class="absolute -left-10 -top-16 h-56 w-56 rounded-full bg-primary/10 blur-3xl"></div>
+      <div class="relative">
+        <div class="mb-5 inline-flex items-center gap-2 border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-black uppercase tracking-[0.35em] text-primary">
+          Local AWS state
+        </div>
+        <h1 class="text-balance max-w-4xl text-5xl font-black leading-[0.95] tracking-tight text-base-content md:text-7xl">
+          Inspect what your tests created.
+        </h1>
+        <p class="mt-6 max-w-2xl text-lg leading-8 text-base-content/70">
+          Use this UI to check queues, topics, users, policies, and request
+          traces while running against Hiraeth. It is a thin admin layer over the
+          local services, useful when an SDK, CLI, or Terraform run needs a closer look.
+        </p>
+        <div class="mt-8 flex flex-wrap gap-3">
+          <a class="btn btn-primary" href="/sqs">Open SQS</a>
+          <a class="btn btn-outline" href="/sns">Open SNS</a>
+          <a class="btn btn-outline" href="/iam">Open IAM</a>
+          <a class="btn btn-ghost" href="/traces">View traces</a>
+        </div>
       </div>
     </div>
 
-    <div class="grid gap-3 sm:grid-cols-2">
-      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/sqs">
-        <div class="card-body">
-          <div class="flex items-center justify-between">
-            <span class="badge badge-primary badge-outline">Available</span>
-            <span class="text-2xl font-black text-primary">SQS</span>
+    <div class="grid gap-4">
+      <div class="card overflow-hidden border border-primary/25 bg-base-100/90 shadow-xl shadow-primary/5">
+        <div class="card-body p-0">
+          <div class="border-b border-base-300 bg-base-200/60 px-5 py-4">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.28em] text-primary">Services</p>
+                <h2 class="mt-1 text-2xl font-black">Open a dashboard</h2>
+              </div>
+              <span class="badge badge-primary badge-outline">v0.3</span>
+            </div>
           </div>
-          <h2 class="card-title mt-3">SQS queues</h2>
-          <p class="text-base-content/70">Review queues, message counts, attributes, tags, and recent message content.</p>
-        </div>
-      </a>
-      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/iam">
-        <div class="card-body">
-          <div class="flex items-center justify-between">
-            <span class="badge badge-primary badge-outline">Available</span>
-            <span class="text-2xl font-black text-primary">IAM</span>
+          <div class="grid gap-px bg-base-300 sm:grid-cols-2">
+            <a class="group bg-base-100 p-5 transition hover:bg-primary/10" href="/sqs">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h3 class="text-xl font-black">SQS</h3>
+                  <p class="mt-2 text-sm leading-6 text-base-content/60">Queues, messages, attributes, tags, and message actions.</p>
+                </div>
+                <span class="rounded border border-primary/30 px-2 py-1 text-xs font-black text-primary transition group-hover:bg-primary group-hover:text-primary-content">Open</span>
+              </div>
+            </a>
+            <a class="group bg-base-100 p-5 transition hover:bg-secondary/10" href="/sns">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h3 class="text-xl font-black">SNS</h3>
+                  <p class="mt-2 text-sm leading-6 text-base-content/60">Topics, subscriptions, publishes, tags, and attributes.</p>
+                </div>
+                <span class="rounded border border-secondary/30 px-2 py-1 text-xs font-black text-secondary transition group-hover:bg-secondary group-hover:text-secondary-content">Open</span>
+              </div>
+            </a>
+            <a class="group bg-base-100 p-5 transition hover:bg-accent/10" href="/iam">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h3 class="text-xl font-black">IAM</h3>
+                  <p class="mt-2 text-sm leading-6 text-base-content/60">Users, access keys, inline policies, and managed policies.</p>
+                </div>
+                <span class="rounded border border-accent/30 px-2 py-1 text-xs font-black text-accent transition group-hover:bg-accent group-hover:text-accent-content">Open</span>
+              </div>
+            </a>
+            <a class="group bg-base-100 p-5 transition hover:bg-info/10" href="/traces">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h3 class="text-xl font-black">Traces</h3>
+                  <p class="mt-2 text-sm leading-6 text-base-content/60">Request flow, auth decisions, payloads, and responses.</p>
+                </div>
+                <span class="rounded border border-info/30 px-2 py-1 text-xs font-black text-info transition group-hover:bg-info group-hover:text-info-content">Open</span>
+              </div>
+            </a>
           </div>
-          <h2 class="card-title mt-3">IAM data</h2>
-          <p class="text-base-content/70">Review principals, access keys, and inline identity policies.</p>
-        </div>
-      </a>
-      <a class="card border border-primary/40 bg-base-100 transition hover:-translate-y-0.5 hover:border-primary hover:bg-base-200/50" href="/traces">
-        <div class="card-body">
-          <div class="flex items-center justify-between">
-            <span class="badge badge-primary badge-outline">Available</span>
-            <span class="text-2xl font-black text-primary">Trace</span>
-          </div>
-          <h2 class="card-title mt-3">Request traces</h2>
-          <p class="text-base-content/70">Review recent requests, payloads, responses, and recorded processing spans.</p>
-        </div>
-      </a>
-      <div class="card border border-base-300 bg-base-100/70">
-        <div class="card-body">
-          <div class="flex items-center justify-between">
-            <span class="badge badge-ghost">Planned</span>
-            <span class="text-2xl font-black text-base-content/40">SNS</span>
-          </div>
-          <h2 class="card-title mt-3">SNS data</h2>
-          <p class="text-base-content/60">Reserved for future support covering topics, subscriptions, and delivery state.</p>
         </div>
       </div>
-    </div>
-  </div>
 
-  <div class="mt-8 grid gap-3 lg:grid-cols-3">
-    <div class="card border border-base-300 bg-base-100/80">
-      <div class="card-body">
-        <h2 class="card-title">Separate interface</h2>
-        <p class="text-base-content/70">This interface runs on its own port with a dedicated set of administrative routes.</p>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100/80">
-      <div class="card-body">
-        <h2 class="card-title">Shared state</h2>
-        <p class="text-base-content/70">Views reflect the same service state used by the AWS-compatible endpoints.</p>
-      </div>
-    </div>
-    <div class="card border border-base-300 bg-base-100/80">
-      <div class="card-body">
-        <h2 class="card-title">Focused workflow</h2>
-        <p class="text-base-content/70">The current release emphasizes clear visibility with a small set of direct administrative actions.</p>
+      <div class="grid gap-4 sm:grid-cols-[1fr_0.9fr]">
+        <div class="card border border-base-300 bg-base-100/70">
+          <div class="card-body">
+            <p class="text-xs font-black uppercase tracking-[0.28em] text-base-content/50">Typical loop</p>
+            <div class="mt-1 space-y-3">
+              <div class="flex items-center gap-3">
+                <span class="h-2.5 w-2.5 bg-secondary"></span>
+                <span class="text-sm text-base-content/70">Run a test, CLI command, SDK call, or Terraform apply.</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="h-2.5 w-2.5 bg-primary"></span>
+                <span class="text-sm text-base-content/70">Check the stored queues, topics, users, and policies.</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="h-2.5 w-2.5 bg-info"></span>
+                <span class="text-sm text-base-content/70">Open the trace when behavior is surprising.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card border border-base-300 bg-base-100/70">
+          <div class="card-body justify-between">
+            <p class="text-xs font-black uppercase tracking-[0.28em] text-base-content/50">Release focus</p>
+            <div>
+              <p class="text-4xl font-black text-primary">SQS</p>
+              <p class="text-4xl font-black text-secondary">SNS</p>
+              <p class="text-4xl font-black text-accent">IAM</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

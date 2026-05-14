@@ -31,6 +31,11 @@ pub trait PrincipalInlinePolicyStore {
         principal_id: i64,
         policy_name: &str,
     ) -> Result<(), StoreError>;
+    async fn get_principal_policy(
+        &self,
+        principle_id: i64,
+        policy_name: &str,
+    ) -> Result<Option<PrincipalInlinePolicy>, StoreError>;
 }
 
 pub struct InMemoryPrincipalInlinePolicyStore {
@@ -115,5 +120,21 @@ impl PrincipalInlinePolicyStore for InMemoryPrincipalInlinePolicyStore {
 
         policies.remove(index);
         Ok(())
+    }
+
+    async fn get_principal_policy(
+        &self,
+        principle_id: i64,
+        policy_name: &str,
+    ) -> Result<Option<PrincipalInlinePolicy>, StoreError> {
+        let policies = self
+            .policies
+            .read()
+            .expect("in-memory principal inline policy store read lock should not be poisoned");
+
+        Ok(policies
+            .iter()
+            .find(|policy| policy.principal_id == principle_id && policy.policy_name == policy_name)
+            .cloned())
     }
 }

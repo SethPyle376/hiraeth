@@ -6,7 +6,7 @@ pub(super) fn json_payload_format() -> AwsActionPayloadFormat {
     AwsActionPayloadFormat::Json
 }
 
-pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> SqsError {
+pub(crate) fn parse_payload_error(error: AwsActionPayloadParseError) -> SqsError {
     match error {
         AwsActionPayloadParseError::Json(error) => SqsError::from(error),
         AwsActionPayloadParseError::AwsQuery(error) => SqsError::BadRequest(error.to_string()),

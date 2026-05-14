@@ -1,18 +1,28 @@
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use hiraeth_core::{
-    AwsActionPayloadFormat, AwsActionPayloadParseError, ResolvedRequest, TypedAwsAction,
-    auth::AuthorizationCheck,
-    tracing::{TraceContext, TraceRecorder},
-};
-use hiraeth_store::sqs::{SqsQueue, SqsStore};
+use hiraeth_core::ResolvedRequest;
+use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{json_payload_format, parse_payload_error};
 use crate::error::SqsError;
 
 pub(crate) struct ListQueueTagsAction;
+
+hiraeth_core::impl_aws_action! {
+    ListQueueTagsAction<S: SqsStore> {
+        request: ListQueueTagsRequest,
+        response: ListQueueTagsResponse,
+        defaults: crate::SqsActionDefaults,
+        name: "ListQueueTags",
+        handler: handle_list_queue_tags_typed,
+        span: "sqs.queue.list_tags",
+        span_attrs: |_request, payload, _store| {
+            HashMap::from([("queue_url".to_string(), payload.queue_url.clone())])
+        },
+        authorize_action: "sqs:ListQueueTags",
+        authorize_with: crate::auth::resolve_authorization,
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -39,64 +49,6 @@ async fn handle_list_queue_tags_typed<S: SqsStore>(
         .map_err(crate::error::map_store_error)?;
 
     Ok(ListQueueTagsResponse { tags })
-}
-
-#[async_trait]
-impl<S> TypedAwsAction<S> for ListQueueTagsAction
-where
-    S: SqsStore + Send + Sync,
-{
-    type Request = ListQueueTagsRequest;
-    type Response = ListQueueTagsResponse;
-    type Error = SqsError;
-
-    fn name(&self) -> &'static str {
-        "ListQueueTags"
-    }
-
-    fn payload_format(&self) -> AwsActionPayloadFormat {
-        json_payload_format()
-    }
-
-    fn parse_error(&self, error: AwsActionPayloadParseError) -> SqsError {
-        parse_payload_error(error)
-    }
-
-    async fn handle(
-        &self,
-        request: ResolvedRequest,
-        request_body: ListQueueTagsRequest,
-        store: &S,
-        trace_context: &TraceContext,
-        trace_recorder: &dyn TraceRecorder,
-    ) -> Result<ListQueueTagsResponse, SqsError> {
-        let timer = trace_context.start_span();
-        let attributes = HashMap::from([("queue_url".to_string(), request_body.queue_url.clone())]);
-
-        let result = handle_list_queue_tags_typed(&request, store, request_body).await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        trace_context
-            .record_span_or_warn(
-                trace_recorder,
-                timer,
-                "sqs.queue.list_tags",
-                "sqs",
-                status,
-                attributes,
-            )
-            .await;
-
-        result
-    }
-
-    async fn resolve_authorization_typed(
-        &self,
-        request: &ResolvedRequest,
-        _payload: ListQueueTagsRequest,
-        store: &S,
-    ) -> Result<AuthorizationCheck, SqsError> {
-        crate::auth::resolve_authorization("sqs:ListQueueTags", request, store).await
-    }
 }
 
 #[cfg(test)]
