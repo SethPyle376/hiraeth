@@ -80,6 +80,26 @@ aws --endpoint-url http://localhost:4566 sns set-subscription-attributes \
   --attribute-value true
 ```
 
+## Terraform Notes
+
+The SNS implementation is intentionally shaped around SDK and Terraform
+workflows that create a topic, refresh topic attributes, list tags, manage basic
+subscriptions, and publish to SQS. The following Terraform-style paths are
+covered by the current API surface:
+
+- Topic create/read/delete through `CreateTopic`, `GetTopicAttributes`,
+  `ListTopics`, and `DeleteTopic`.
+- Topic tags through create-time tags, `ListTagsForResource`, `TagResource`,
+  and `UntagResource`.
+- Topic policy persistence through `Policy` in `CreateTopic` and
+  `SetTopicAttributes`.
+- SQS subscriptions through `Subscribe`, `GetSubscriptionAttributes`,
+  `ListSubscriptions`, `ListSubscriptionsByTopic`, `SetSubscriptionAttributes`,
+  and `Unsubscribe`.
+
+Filtering, confirmation handshakes, non-SQS protocols, and full FIFO behavior
+are still out of scope.
+
 ## Authorization
 
 SNS currently inherits the same authorization modes as other Hiraeth services
@@ -108,6 +128,7 @@ coverage includes:
 - Subscription creation and deletion, including raw message delivery display and
   toggling.
 - Topic tag inspection and management through the topic detail view.
+- Topic policy inspection through the topic detail view.
 - A read-only JSON API endpoint for topic lists.
 
 The web UI does not use SigV4 authentication. Keep `HIRAETH_WEB_HOST` bound to a
@@ -149,4 +170,6 @@ Status labels:
 - Topic policy evaluation is still limited compared with AWS.
 - Message filtering is not supported.
 - FIFO topic behavior is not implemented beyond storing selected attributes.
+- Topic archive/data protection/delivery policies are stored where supported,
+  but their service-side behavior is not modeled.
 - The web UI is a local admin preview and is not authenticated.

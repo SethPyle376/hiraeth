@@ -35,6 +35,10 @@ Spans include their own ids, parent ids, names, categories, timing, status, and
 attributes. Action spans carry the resolved action name, which powers the action
 filter in the UI.
 
+The UI is intentionally flow-first. Timing is still captured in stored trace
+data, but the pages emphasize request shape, span status, routing,
+authorization, payloads, and response details over sub-millisecond durations.
+
 ## Web UI
 
 Open the tracing dashboard from the web UI navigation or visit:

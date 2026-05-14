@@ -17,8 +17,8 @@ environments, not as a production AWS replacement.
 - SQLite-backed IAM users, access keys, inline policies, managed policies, SQS
   queues, messages, attributes, tags, and SNS topics with SQS subscriptions.
 - SQS-compatible endpoint for common queue and message operations.
-- Partial SNS endpoint support for topics, topic tags, SQS subscriptions,
-  subscription attributes, raw message delivery, and publishing.
+- Partial SNS endpoint support for topics, topic tags, topic attributes, SQS
+  subscriptions, subscription attributes, raw message delivery, and publishing.
 - Partial IAM Query API support for users, access keys, inline user policies,
   managed policies, policy attachments, and policy retrieval.
 - STS `GetCallerIdentity` support.
@@ -69,7 +69,7 @@ recreation.
 Release images are published to GitHub Container Registry:
 
 ```sh
-docker pull ghcr.io/sethpyle376/hiraeth:v0.2.0
+docker pull ghcr.io/sethpyle376/hiraeth:v0.3.0
 ```
 
 Release maintainers can publish a multi-architecture image for `linux/amd64`
@@ -77,7 +77,7 @@ and `linux/arm64` from a local Docker Buildx environment:
 
 ```sh
 docker login ghcr.io
-scripts/publish-image.sh v0.2.0
+scripts/publish-image.sh v0.3.0
 ```
 
 The publish script pushes `ghcr.io/sethpyle376/hiraeth:<tag>`. Tags must match
@@ -122,6 +122,18 @@ trusted interface unless you intentionally want to expose local test state.
 The current UI vendors its JavaScript and CSS assets and serves them from the
 Hiraeth web process.
 
+## Terraform And SDK Testing
+
+Hiraeth is intended to be useful as a lightweight local endpoint for integration
+tests. Configure AWS SDK clients, AWS CLI commands, or Terraform provider
+endpoints to use `http://localhost:4566` with the local `test` / `test`
+credential.
+
+The strongest compatibility coverage today is SQS plus a growing IAM and SNS
+surface. SNS now covers common Terraform topic refresh paths including topic
+attributes, tags, SQS subscriptions, and subscription attributes. See the
+[SNS docs](docs/sns/README.md) for the current support matrix and known gaps.
+
 ## AI Usage
 
 AI tools are used as part of this project's development workflow for code
@@ -135,7 +147,7 @@ checking, and manual review rather than treating AI output as authoritative.
 
 ## Contributing
 
-Compatibility reports, focused bug fixes, docs improvements, and small SQS
+Compatibility reports, focused bug fixes, docs improvements, and small service
 parity improvements are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
 development workflow, suggested issue labels, and starter contribution ideas.
 

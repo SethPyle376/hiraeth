@@ -41,9 +41,9 @@
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-sm">
       <div class="card-body p-5">
-        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Created</div>
-        <div class="mt-1 text-lg font-black text-accent">{{ topic.created_at }}</div>
-        <div class="text-xs text-base-content/50">topic creation time</div>
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Tags</div>
+        <div class="mt-1 text-3xl font-black text-accent">{{ tag_count }}</div>
+        <div class="text-xs text-base-content/50">stored labels</div>
       </div>
     </div>
   </div>
@@ -138,23 +138,12 @@
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Topic metadata</h2>
-              <p class="break-all font-mono text-xs text-base-content/50">id {{ topic_id }}</p>
+              <p class="text-xs text-base-content/60">Core topic details.</p>
             </div>
           </div>
         </summary>
         <div class="collapse-content px-5 pb-5">
-          <div class="space-y-3 text-sm">
-            <div>
-              <div class="text-xs font-semibold uppercase tracking-wider text-base-content/40">ARN</div>
-              <div class="mt-1 flex flex-wrap items-center gap-2">
-                <div class="break-all font-mono">{{ topic_arn }}</div>
-                <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ topic_arn }}" onclick="hiraethCopyText(this)">Copy</button>
-              </div>
-            </div>
-          </div>
-          <div class="mt-4">
-            {{ metadata_list_html|safe }}
-          </div>
+          {{ metadata_list_html|safe }}
         </div>
       </details>
 
@@ -177,17 +166,14 @@
           </div>
           {% endif %}
           <form class="mb-4 grid gap-3" method="post" action="/sns/topics/{{ topic_id }}/tags" onsubmit="return hiraethDisableSubmit(this, 'Saving...')">
-            <div class="grid gap-3 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+            <div class="grid items-end gap-3 sm:grid-cols-2">
               <label class="form-control">
                 <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Tag key</span></div>
-                <input class="input input-bordered font-mono" name="tag_key" value="{{ tag_key }}" maxlength="128" placeholder="environment" required>
+                <input class="input input-bordered h-11 w-full font-mono" name="tag_key" value="{{ tag_key }}" maxlength="128" placeholder="environment" required>
               </label>
               <label class="form-control">
-                <div class="label py-1">
-                  <span class="label-text text-xs font-semibold uppercase tracking-wider">Tag value</span>
-                  <span class="label-text-alt">optional</span>
-                </div>
-                <input class="input input-bordered font-mono" name="tag_value" value="{{ tag_value }}" maxlength="256" placeholder="local">
+                <div class="label py-1"><span class="label-text text-xs font-semibold uppercase tracking-wider">Tag value</span></div>
+                <input class="input input-bordered h-11 w-full font-mono" name="tag_value" value="{{ tag_value }}" maxlength="256" placeholder="local">
               </label>
             </div>
             <button class="btn btn-primary btn-sm" type="submit">Add or update tag</button>
@@ -198,9 +184,15 @@
               <tbody>
                 {% for tag in tags %}
                 <tr class="hover:bg-base-200/50">
-                  <th class="align-top text-base-content/60">{{ tag.key }}</th>
-                  <td class="break-all font-mono">{{ tag.value }}</td>
-                  <td class="text-right">
+                  <th class="w-32 align-top text-base-content/60">
+                    <div class="text-[0.65rem] font-bold uppercase tracking-wider">Key</div>
+                    <div class="mt-1 break-all font-mono text-xs text-base-content">{{ tag.key }}</div>
+                  </th>
+                  <td class="align-top">
+                    <div class="text-[0.65rem] font-bold uppercase tracking-wider text-base-content/60">Value</div>
+                    <div class="mt-1 break-all font-mono text-xs">{{ tag.value }}</div>
+                  </td>
+                  <td class="w-20 align-middle text-right">
                     <form method="post" action="/sns/topics/{{ topic_id }}/tags/delete" onsubmit="return hiraethConfirmSubmit(this, 'Remove this tag?', 'Removing...')">
                       <input type="hidden" name="tag_key" value="{{ tag.key }}">
                       <button class="btn btn-xs btn-error" type="submit">Remove</button>

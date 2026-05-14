@@ -12,10 +12,7 @@
         <span class="font-mono">{{ principal.account_id }}</span>
         <span class="text-base-content/40">/</span>
         <span class="badge badge-outline">{{ principal.kind }}</span>
-        <span class="text-base-content/40">/</span>
-        <span class="font-mono">id {{ principal.id }}</span>
       </p>
-      <p class="mt-2 text-xs text-base-content/50">Created {{ principal.created_at }}</p>
     </div>
 
     {{ action_card_html|safe }}
@@ -278,7 +275,7 @@
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Details</h2>
-              <p class="text-xs text-base-content/60">{{ principal.kind }} in account {{ principal.account_id }}</p>
+              <p class="text-xs text-base-content/60">Identity and timestamps.</p>
             </div>
           </div>
         </summary>

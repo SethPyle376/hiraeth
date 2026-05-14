@@ -76,9 +76,10 @@ Hiraeth supports three authorization modes through `HIRAETH_AUTH_MODE`:
 
 The default mode is `audit`.
 
-For v0.2, identity policies are evaluated for local IAM users. Inline user
+For v0.3, identity policies are evaluated for local IAM users. Inline user
 policies and attached managed policies can allow or deny actions. SQS queue
-resource policies are also evaluated for queue-scoped SQS actions.
+resource policies and SNS topic resource policies are also evaluated for
+supported resource-scoped actions.
 
 Policy support is intentionally pragmatic:
 
@@ -156,6 +157,7 @@ Status labels:
 - Policy conditions are not implemented yet.
 - Policy validation is intentionally light. Hiraeth stores JSON policy
   documents and evaluates the subset it currently understands.
-- IAM list/get/delete APIs are incomplete. Some data is currently available
-  through the web UI before it is available through the IAM Query API.
+- IAM list/get/delete APIs are incomplete. Some administrative operations are
+  currently available through the web UI before they are available through the
+  IAM Query API.
 - STS support is limited to `GetCallerIdentity`.

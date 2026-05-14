@@ -240,8 +240,8 @@ async fn trace_detail(
         eyebrow: "Request Trace".to_string(),
         title: format!("request {}", detail.request_id),
         description: format!(
-            "{} {} returned {} in {} ms",
-            detail.method, detail.path, detail.response_status_code, detail.duration_ms
+            "{} {} returned {}",
+            detail.method, detail.path, detail.response_status_code
         ),
         actions: vec![
             HeaderAction::link("Back", "/traces", "btn btn-ghost"),
@@ -453,7 +453,7 @@ fn trace_graph_view(trace: &TraceDetailView, spans: &[TraceSpanView]) -> TraceGr
         parent_graph_id: String::new(),
         has_parent_graph_id: false,
         label: format!("{} {}", trace.method, trace.path),
-        meta: format!("{} ms total", trace.duration_ms),
+        meta: String::new(),
         status: trace.response_status_code.to_string(),
         status_class: trace.response_status_class,
         node_class: graph_root_node_class_for_http_status(trace.response_status_code),
@@ -527,7 +527,7 @@ fn trace_graph_view(trace: &TraceDetailView, spans: &[TraceSpanView]) -> TraceGr
             parent_graph_id: parent_graph_id.clone(),
             has_parent_graph_id: true,
             label: span.name.clone(),
-            meta: format!("{} / {} ms", span.layer, span.duration_ms),
+            meta: span.layer.clone(),
             status: span.status.clone(),
             status_class: span.status_class,
             node_class: graph_node_class_for_span_status(&span.status, is_tiny),

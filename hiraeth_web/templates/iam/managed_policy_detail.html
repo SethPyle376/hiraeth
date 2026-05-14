@@ -12,10 +12,11 @@
         <span class="font-mono">{{ policy.account_id }}</span>
         <span class="text-base-content/40">/</span>
         <span class="badge badge-outline">{{ policy.policy_path }}</span>
-        <span class="text-base-content/40">/</span>
-        <span class="font-mono">id {{ policy.id }}</span>
       </p>
-      <p class="mt-2 break-all font-mono text-xs text-base-content/50">{{ policy.arn }}</p>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <p class="min-w-0 break-all font-mono text-xs text-base-content/50">{{ policy.arn }}</p>
+        <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ policy.arn }}" onclick="hiraethCopyText(this)">Copy ARN</button>
+      </div>
     </div>
 
     {{ action_card_html|safe }}
@@ -33,9 +34,9 @@
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-sm">
       <div class="card-body p-5">
-        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Path</div>
-        <div class="mt-1 font-mono text-xl font-black text-secondary">{{ policy.policy_path }}</div>
-        <div class="text-xs text-base-content/50">managed policy namespace</div>
+        <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Account</div>
+        <div class="mt-1 font-mono text-xl font-black text-secondary">{{ policy.account_id }}</div>
+        <div class="text-xs text-base-content/50">policy owner</div>
       </div>
     </div>
     <div class="card border border-base-300 bg-base-100 shadow-sm">
@@ -56,7 +57,6 @@
                <h2 class="card-title text-xl">Policy document</h2>
                <p class="text-sm text-base-content/60">The actual JSON that defines what this policy allows.</p>
             </div>
-            <button class="btn btn-outline btn-sm" type="button" data-copy-value="{{ policy.arn }}" onclick="hiraethCopyText(this)">Copy ARN</button>
           </div>
 
           <details class="collapse collapse-arrow rounded-lg border border-primary/20 bg-base-200/35"

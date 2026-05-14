@@ -72,7 +72,6 @@
               <th class="py-3">Action</th>
               <th class="py-3">Principal</th>
               <th class="py-3">Status</th>
-              <th class="py-3 text-right">Duration</th>
               <th class="py-3">Started</th>
               <th class="py-3"></th>
             </tr>
@@ -99,7 +98,6 @@
                 <div class="mt-1 max-w-xs truncate text-xs text-error">{{ trace.error_message }}</div>
                 {% endif %}
               </td>
-              <td class="py-3 text-right font-mono">{{ trace.duration_ms }} ms</td>
               <td class="py-3 text-sm text-base-content/70">{{ trace.started_at }}</td>
               <td class="py-3 text-right">
                 <a class="btn btn-sm btn-primary" href="/traces/{{ trace.request_id }}">Open</a>

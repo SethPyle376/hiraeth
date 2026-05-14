@@ -94,30 +94,12 @@
           <div class="flex items-center justify-between gap-3 pr-6">
             <div>
               <h2 class="text-base font-black">Queue metadata</h2>
-              <p class="break-all font-mono text-xs text-base-content/50">id {{ queue.id }}</p>
+              <p class="text-xs text-base-content/60">Core queue details.</p>
             </div>
           </div>
         </summary>
         <div class="collapse-content px-5 pb-5">
-          <div class="space-y-3 text-sm">
-            <div>
-              <div class="text-xs font-semibold uppercase tracking-wider text-base-content/40">ARN</div>
-              <div class="mt-1 flex flex-wrap items-center gap-2">
-                <div class="break-all font-mono">{{ queue_arn }}</div>
-                <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_arn }}" onclick="hiraethCopyText(this)">Copy</button>
-              </div>
-            </div>
-            <div>
-              <div class="text-xs font-semibold uppercase tracking-wider text-base-content/40">Queue URL</div>
-              <div class="mt-1 flex flex-wrap items-center gap-2">
-                <div class="break-all font-mono">{{ queue_url }}</div>
-                <button class="btn btn-outline btn-xs" type="button" data-copy-value="{{ queue_url }}" onclick="hiraethCopyText(this)">Copy</button>
-              </div>
-            </div>
-          </div>
-          <div class="mt-4">
-            {{ metadata_list_html|safe }}
-          </div>
+          {{ metadata_list_html|safe }}
         </div>
       </details>
 
