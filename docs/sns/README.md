@@ -1,8 +1,8 @@
 # SNS
 
-Hiraeth includes a lightweight SNS implementation focused on topics, subscriptions,
-and message publishing. The current scope supports SQS protocol delivery and a
-web admin UI for managing local topic state.
+Hiraeth includes a lightweight SNS implementation focused on topics,
+subscriptions, tags, and message publishing. The current scope supports SQS
+protocol delivery and a web admin UI for managing local topic state.
 
 This is not full SNS parity. It is intended for local integration tests and
 development workflows that need a small pub/sub surface.
@@ -23,6 +23,14 @@ Create a topic:
 ```sh
 aws --endpoint-url http://localhost:4566 sns create-topic \
   --name local-events
+```
+
+Create a topic with tags:
+
+```sh
+aws --endpoint-url http://localhost:4566 sns create-topic \
+  --name local-events \
+  --tags Key=environment,Value=test Key=owner,Value=hiraeth
 ```
 
 Subscribe an SQS queue to that topic:
@@ -52,6 +60,15 @@ aws --endpoint-url http://localhost:4566 sns publish \
   --message "hello from hiraeth"
 ```
 
+List topics and tags:
+
+```sh
+aws --endpoint-url http://localhost:4566 sns list-topics
+
+aws --endpoint-url http://localhost:4566 sns list-tags-for-resource \
+  --resource-arn arn:aws:sns:us-east-1:000000000000:local-events
+```
+
 ## Authorization
 
 SNS currently inherits the same authorization modes as other Hiraeth services
@@ -76,6 +93,7 @@ coverage includes:
 - Topic detail pages with subscription list, publish form, and subscribe form.
 - Topic creation and deletion.
 - Subscription creation and deletion, including a raw message delivery option.
+- Topic tag inspection and management through the topic detail view.
 - A read-only JSON API endpoint for topic lists.
 
 The web UI does not use SigV4 authentication. Keep `HIRAETH_WEB_HOST` bound to a
@@ -91,19 +109,22 @@ Status labels:
 
 | API | Status | Notes |
 | --- | --- | --- |
-| `CreateTopic` | Supported | Creates a topic with name, region, account, and optional display name. |
-| `Publish` | Partial | Publishes to all SQS subscriptions. Subject and message body are supported. Other protocols are not yet implemented. |
+| `CreateTopic` | Supported | Creates a topic with attributes and optional tags. |
+| `Publish` | Partial | Publishes to all SQS subscriptions. Subject and message body are supported. Other protocols and message filtering are not yet implemented. |
 | `Subscribe` | Partial | Creates an SQS subscription to a topic. Subscription attributes are parsed and stored. Other protocols are not yet implemented. |
 | `ConfirmSubscription` | Not implemented | Subscriptions are created in a confirmed state. |
-| `DeleteTopic` | Not implemented | Topic deletion is available through the web UI but not the Query API yet. |
-| `GetSubscriptionAttributes` | Not implemented | Subscriptions can be inspected in the web UI. |
-| `GetTopicAttributes` | Not implemented | Topic attributes can be inspected in the web UI. |
+| `DeleteTopic` | Supported | Deletes a topic and removes stored subscriptions and tags for it. |
+| `GetSubscriptionAttributes` | Supported | Returns stored subscription metadata and parsed subscription attributes. |
+| `GetTopicAttributes` | Supported | Returns stored topic metadata and topic attributes. |
 | `ListSubscriptions` | Not implemented | Subscriptions can be inspected in the web UI. |
-| `ListSubscriptionsByTopic` | Not implemented | Subscriptions can be inspected in the web UI. |
-| `ListTopics` | Not implemented | Topics can be inspected in the web UI and through the JSON API. |
+| `ListSubscriptionsByTopic` | Supported | Lists subscriptions stored for a topic. Pagination is not implemented yet. |
+| `ListTagsForResource` | Supported | Returns stored tags for a topic ARN. |
+| `ListTopics` | Supported | Lists topics for the current account and region with simple local pagination tokens. |
 | `SetSubscriptionAttributes` | Not implemented | Subscription attributes can be set at creation time but not updated afterward yet. |
-| `SetTopicAttributes` | Not implemented | Topic attributes can be set at creation time but not updated afterward yet. |
-| `Unsubscribe` | Not implemented | Subscription deletion is available through the web UI but not the Query API yet. |
+| `SetTopicAttributes` | Partial | Updates supported topic attributes. Validation is intentionally narrower than AWS. |
+| `TagResource` | Supported | Upserts topic tags and enforces basic tag limits. |
+| `UntagResource` | Supported | Removes requested topic tag keys. |
+| `Unsubscribe` | Supported | Deletes a stored subscription. |
 
 ## Current Gaps
 
@@ -111,9 +132,10 @@ Status labels:
   and other protocols are not implemented.
 - Subscription confirmation is not modeled. All subscriptions are treated as
   confirmed.
-- Topic policies are not evaluated or modifiable through the Query API yet.
+- Topic policy evaluation is still limited compared with AWS.
 - Subscription attributes can be set at creation time but cannot be updated
   afterward through `SetSubscriptionAttributes` yet.
 - Message filtering is not supported.
-- FIFO topics are not supported.
+- FIFO topic behavior is not implemented beyond storing selected attributes.
+- `ListSubscriptionsByTopic` pagination tokens are not implemented yet.
 - The web UI is a local admin preview and is not authenticated.

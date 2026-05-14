@@ -110,46 +110,49 @@ impl SnsStore for SqliteSnsStore {
         prefix: Option<&str>,
         limit: Option<i64>,
     ) -> Result<Vec<SnsTopic>, StoreError> {
-        let limit = limit.unwrap_or(100);
-        let topics = if let Some(prefix) = prefix {
-            sqlx::query_as!(
-                SnsTopic,
-                "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
-                        delivery_policy, fifo_topic, signature_version, tracing_config,
-                        kms_master_key_id, data_protection_policy, archive_policy,
-                        beginning_archive_time, content_based_deduplication, created_at
-                 FROM sns_topics
-                 WHERE region = ? AND account_id = ? AND name LIKE ? || '%'
-                 ORDER BY name
-                 LIMIT ?",
-                region,
-                account_id,
-                prefix,
-                limit
-            )
-            .fetch_all(&self.pool)
-            .await
-        } else {
-            sqlx::query_as!(
-                SnsTopic,
-                "SELECT id as \"id!: i64\", name, region, account_id, display_name, policy,
-                        delivery_policy, fifo_topic, signature_version, tracing_config,
-                        kms_master_key_id, data_protection_policy, archive_policy,
-                        beginning_archive_time, content_based_deduplication, created_at
-                 FROM sns_topics
-                 WHERE region = ? AND account_id = ?
-                 ORDER BY name
-                 LIMIT ?",
-                region,
-                account_id,
-                limit
-            )
-            .fetch_all(&self.pool)
-            .await
-        }
+        let limit = limit.unwrap_or(i64::MAX);
+        let rows = sqlx::query(
+            "SELECT id, name, region, account_id, display_name, policy,
+                    delivery_policy, fifo_topic, signature_version, tracing_config,
+                    kms_master_key_id, data_protection_policy, archive_policy,
+                    beginning_archive_time, content_based_deduplication, created_at
+             FROM sns_topics
+             WHERE region = ?
+               AND account_id = ?
+               AND (? IS NULL OR name LIKE ? || '%')
+             ORDER BY name
+             LIMIT ?",
+        )
+        .bind(region)
+        .bind(account_id)
+        .bind(prefix)
+        .bind(prefix)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
         .map_err(map_sqlx_error)?;
 
-        Ok(topics)
+        Ok(rows
+            .into_iter()
+            .map(|row| SnsTopic {
+                id: row.get("id"),
+                name: row.get("name"),
+                region: row.get("region"),
+                account_id: row.get("account_id"),
+                display_name: row.get("display_name"),
+                policy: row.get("policy"),
+                delivery_policy: row.get("delivery_policy"),
+                fifo_topic: row.get("fifo_topic"),
+                signature_version: row.get("signature_version"),
+                tracing_config: row.get("tracing_config"),
+                kms_master_key_id: row.get("kms_master_key_id"),
+                data_protection_policy: row.get("data_protection_policy"),
+                archive_policy: row.get("archive_policy"),
+                beginning_archive_time: row.get("beginning_archive_time"),
+                content_based_deduplication: row.get("content_based_deduplication"),
+                created_at: row.get("created_at"),
+            })
+            .collect())
     }
 
     async fn delete_topic(&self, topic_arn: &str) -> Result<(), StoreError> {
@@ -160,6 +163,19 @@ impl SnsStore for SqliteSnsStore {
         let region = parts[3];
         let account_id = parts[4];
         let name = parts[5];
+
+        sqlx::query(
+            "DELETE FROM sns_topic_tags
+             WHERE topic_id IN (
+                SELECT id FROM sns_topics WHERE name = ? AND region = ? AND account_id = ?
+             )",
+        )
+        .bind(name)
+        .bind(region)
+        .bind(account_id)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
 
         let result = sqlx::query!(
             "DELETE FROM sns_topics WHERE name = ? AND region = ? AND account_id = ?",
@@ -766,6 +782,34 @@ mod tests {
             .await
             .expect("get subscription should succeed");
         assert!(sub.is_none());
+    }
+
+    #[tokio::test]
+    async fn delete_topic_removes_topic_tags() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_topic(topic("my-topic", "us-east-1", "123456789012"))
+            .await
+            .expect("topic should insert");
+        let arn = topic_arn("my-topic", "us-east-1", "123456789012");
+        store
+            .tag_topic(
+                &arn,
+                [("environment".to_string(), "test".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .await
+            .expect("tags should insert");
+
+        store.delete_topic(&arn).await.expect("topic should delete");
+
+        let tag_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sns_topic_tags")
+            .fetch_one(&store.pool)
+            .await
+            .expect("tag count query should succeed");
+        assert_eq!(tag_count, 0);
     }
 
     #[tokio::test]

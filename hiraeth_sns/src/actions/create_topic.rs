@@ -5,7 +5,7 @@ use hiraeth_core::{ResolvedRequest, auth::AuthorizationCheck};
 use hiraeth_store::sns::{SnsStore, SnsTopic};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{SnsAttributes, is_valid_topic_attribute};
+use super::action_support::{SnsAttributes, SnsTags, is_valid_topic_attribute, validate_tags};
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
@@ -31,6 +31,7 @@ hiraeth_core::impl_aws_action! {
                     )));
                 }
             }
+            validate_tags(payload.tags.as_map(), true)?;
             Ok(())
         },
         handler: handle_create_topic_typed,
@@ -57,6 +58,8 @@ pub(crate) struct CreateTopicRequest {
     name: String,
     #[serde(flatten, default)]
     attributes: SnsAttributes,
+    #[serde(flatten, default)]
+    tags: SnsTags,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +91,7 @@ async fn handle_create_topic_typed<S: SnsStore>(
 
     let now = Utc::now().naive_utc();
     let attrs = &request_body.attributes;
+    let tags = request_body.tags.into_inner();
     let topic = SnsTopic {
         id: 0,
         name: request_body.name,
@@ -110,6 +114,9 @@ async fn handle_create_topic_typed<S: SnsStore>(
     };
 
     store.create_topic(topic).await?;
+    if !tags.is_empty() {
+        store.tag_topic(&topic_arn, tags).await?;
+    }
 
     Ok(CreateTopicResponse {
         xmlns: SNS_XMLNS,
@@ -127,7 +134,11 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use hiraeth_core::{AuthContext, ResolvedRequest, TypedAwsAction};
     use hiraeth_http::IncomingRequest;
-    use hiraeth_store::{principal::Principal, sns::SnsTopic, test_support::SnsTestStore};
+    use hiraeth_store::{
+        principal::Principal,
+        sns::{SnsStore, SnsTopic},
+        test_support::SnsTestStore,
+    };
 
     use super::{CreateTopicAction, CreateTopicRequest, handle_create_topic_typed};
 
@@ -249,6 +260,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_topic_with_tags() {
+        let store = SnsTestStore::default();
+        let request = resolved_request(
+            "Name=test-topic&Tags.member.1.Key=environment&Tags.member.1.Value=test&Tags.member.2.Key=owner&Tags.member.2.Value=hiraeth",
+        );
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        handle_create_topic_typed(&request, &store, body)
+            .await
+            .expect("create topic should succeed");
+
+        let tags = store
+            .list_topic_tags("arn:aws:sns:us-east-1:123456789012:test-topic")
+            .await
+            .expect("topic tags should list");
+        assert_eq!(tags.get("environment"), Some(&"test".to_string()));
+        assert_eq!(tags.get("owner"), Some(&"hiraeth".to_string()));
+    }
+
+    #[tokio::test]
     async fn validation_rejects_empty_name() {
         let store = SnsTestStore::default();
         let request = resolved_request("Name=");
@@ -304,6 +335,18 @@ mod tests {
         assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
     }
 
+    #[tokio::test]
+    async fn validation_rejects_reserved_tag_key_prefix() {
+        let store = SnsTestStore::default();
+        let request = resolved_request(
+            "Name=test-topic&Tags.member.1.Key=aws:reserved&Tags.member.1.Value=value",
+        );
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        let result = CreateTopicAction.validate(&request, &body, &store).await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
+
     #[test]
     fn deserialize_create_topic_request_with_attributes() {
         let encoded = "Name=test-topic&Attributes.entry.1.key=DisplayName&Attributes.entry.1.value=MyDisplay&Attributes.entry.2.key=Policy&Attributes.entry.2.value=%7B%7D";
@@ -314,6 +357,20 @@ mod tests {
         assert_eq!(request.attributes.len(), 2);
         assert_eq!(request.attributes.get("DisplayName"), Some("MyDisplay"));
         assert_eq!(request.attributes.get("Policy"), Some("{}"));
+        assert!(request.tags.as_map().is_empty());
+    }
+
+    #[test]
+    fn deserialize_create_topic_request_with_tags() {
+        let encoded = "Name=test-topic&Tags.member.1.Key=environment&Tags.member.1.Value=test";
+        let request: CreateTopicRequest =
+            serde_urlencoded::from_str(encoded).expect("should deserialize");
+
+        assert_eq!(request.name, "test-topic");
+        assert_eq!(
+            request.tags.as_map().get("environment"),
+            Some(&"test".to_string())
+        );
     }
 
     #[test]

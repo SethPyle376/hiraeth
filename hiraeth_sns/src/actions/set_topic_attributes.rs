@@ -24,6 +24,10 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "SetTopicAttributes",
         validate: |_request, payload, _store| {
+            crate::actions::action_support::validate_topic_arn(&payload.topic_arn, "TopicArn")?;
+            if payload.attribute_name.is_empty() {
+                return Err(SnsError::BadRequest("AttributeName is required".to_string()));
+            }
             if is_valid_topic_attribute(&payload.attribute_name) {
                 Ok(())
             } else {

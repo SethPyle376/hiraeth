@@ -5,7 +5,7 @@ use hiraeth_store::sns::SnsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::action_support::{ResponseMetadata, SNS_XMLNS},
+    actions::action_support::{ResponseMetadata, SNS_XMLNS, validate_topic_arn},
     error::SnsError,
 };
 
@@ -18,10 +18,7 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "ListTagsForResource",
         validate: |_request, payload, _store| {
-            if payload.resource_arn.is_empty() {
-                return Err(SnsError::BadRequest("ResourceArn is required".to_string()));
-            }
-            Ok(())
+            validate_topic_arn(&payload.resource_arn, "ResourceArn")
         },
         handler: handle_list_tags_for_resource,
         span: "sns.resource.list_tags",

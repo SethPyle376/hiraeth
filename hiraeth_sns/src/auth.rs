@@ -14,6 +14,7 @@ pub(crate) fn get_action_name_for_request(request: &ResolvedRequest) -> Result<S
         | "Subscribe"
         | "Unsubscribe"
         | "ListSubscriptionsByTopic"
+        | "ListTopics"
         | "ListTagsForResource"
         | "TagResource"
         | "UntagResource"

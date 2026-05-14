@@ -5,7 +5,9 @@ use hiraeth_store::sns::SnsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::action_support::{ResponseMetadata, SNS_XMLNS, SnsTagKeys, validate_tag_keys},
+    actions::action_support::{
+        ResponseMetadata, SNS_XMLNS, SnsTagKeys, validate_tag_keys, validate_topic_arn,
+    },
     error::SnsError,
 };
 
@@ -18,7 +20,8 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "UntagResource",
         validate: |_request, payload, _store| {
-            validate_tag_keys(&payload.tag_keys.clone().into_inner(), false)
+            validate_topic_arn(&payload.resource_arn, "ResourceArn")?;
+            validate_tag_keys(payload.tag_keys.as_slice(), false)
         },
         handler: handle_untag_resource,
         span: "sns.resource.untag",

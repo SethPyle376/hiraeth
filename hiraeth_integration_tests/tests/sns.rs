@@ -9,7 +9,6 @@ use common::{DEFAULT_REGION, queue_name, sns_test_server, topic_name};
 const TEST_ACCOUNT_ID: &str = "000000000000";
 
 #[tokio::test]
-#[ignore = "ListTopics action not yet implemented"]
 async fn create_topic_then_list_topics() -> anyhow::Result<()> {
     let server = sns_test_server().await?;
     let topic_name = topic_name("create-list");
@@ -37,7 +36,6 @@ async fn create_topic_then_list_topics() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "GetTopicAttributes action not yet implemented"]
 async fn create_topic_then_get_topic_attributes() -> anyhow::Result<()> {
     let server = sns_test_server().await?;
     let topic_name = topic_name("create-attributes");
@@ -67,7 +65,6 @@ async fn create_topic_then_get_topic_attributes() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "DeleteTopic and ListTopics actions not yet implemented"]
 async fn delete_topic_removes_from_list() -> anyhow::Result<()> {
     let server = sns_test_server().await?;
     let topic_name = topic_name("delete-list");
@@ -139,6 +136,59 @@ async fn subscribe_then_list_subscriptions() -> anyhow::Result<()> {
     let subscriptions = listed.subscriptions();
     assert!(
         subscriptions
+            .iter()
+            .any(|s| s.subscription_arn() == Some(subscription_arn))
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn unsubscribe_removes_subscription_from_topic() -> anyhow::Result<()> {
+    let server = sns_test_server().await?;
+    let topic_name = topic_name("unsubscribe");
+
+    let created = server
+        .client
+        .create_topic()
+        .name(&topic_name)
+        .send()
+        .await
+        .context("create topic should succeed")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
+
+    let queue_arn = format!("arn:aws:sqs:{DEFAULT_REGION}:{TEST_ACCOUNT_ID}:test-queue");
+    let subscribed = server
+        .client
+        .subscribe()
+        .topic_arn(topic_arn)
+        .protocol("sqs")
+        .endpoint(&queue_arn)
+        .send()
+        .await
+        .context("subscribe should succeed")?;
+    let subscription_arn = subscribed
+        .subscription_arn()
+        .context("subscription arn should be present")?;
+
+    server
+        .client
+        .unsubscribe()
+        .subscription_arn(subscription_arn)
+        .send()
+        .await
+        .context("unsubscribe should succeed")?;
+
+    let listed = server
+        .client
+        .list_subscriptions_by_topic()
+        .topic_arn(topic_arn)
+        .send()
+        .await
+        .context("list subscriptions should succeed")?;
+    assert!(
+        !listed
+            .subscriptions()
             .iter()
             .any(|s| s.subscription_arn() == Some(subscription_arn))
     );
@@ -350,6 +400,45 @@ async fn tag_resource_lifecycle_persists_topic_tags() -> anyhow::Result<()> {
             .any(|tag| tag.key() == "environment" && tag.value() == "test")
     );
     assert!(!tags.iter().any(|tag| tag.key() == "owner"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_topic_with_tags_persists_topic_tags() -> anyhow::Result<()> {
+    let server = sns_test_server().await?;
+    let topic_name = topic_name("create-tags");
+
+    let created = server
+        .client
+        .create_topic()
+        .name(&topic_name)
+        .tags(
+            Tag::builder()
+                .key("environment")
+                .value("test")
+                .build()
+                .context("environment tag should build")?,
+        )
+        .send()
+        .await
+        .context("create topic should succeed")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
+
+    let listed = server
+        .client
+        .list_tags_for_resource()
+        .resource_arn(topic_arn)
+        .send()
+        .await
+        .context("list tags should succeed")?;
+
+    assert!(
+        listed
+            .tags()
+            .iter()
+            .any(|tag| tag.key() == "environment" && tag.value() == "test")
+    );
 
     Ok(())
 }

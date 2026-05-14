@@ -5,7 +5,7 @@ use hiraeth_store::sns::{SnsStore, SnsSubscription};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::action_support::{ResponseMetadata, SNS_XMLNS},
+    actions::action_support::{ResponseMetadata, SNS_XMLNS, validate_topic_arn},
     error::SnsError,
 };
 
@@ -18,10 +18,7 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "ListSubscriptionsByTopic",
         validate: |_request, payload, _store| {
-            if payload.topic_arn.is_empty() {
-                return Err(SnsError::BadRequest("TopicArn is required".to_string()));
-            }
-            Ok(())
+            validate_topic_arn(&payload.topic_arn, "TopicArn")
         },
         handler: handle_list_subscriptions_by_topic,
         span: "sns.topic.list_subscriptions",

@@ -5,7 +5,9 @@ use hiraeth_store::sns::SnsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::action_support::{ResponseMetadata, SNS_XMLNS, SnsTags, validate_tags},
+    actions::action_support::{
+        ResponseMetadata, SNS_XMLNS, SnsTags, validate_tags, validate_topic_arn,
+    },
     error::SnsError,
 };
 
@@ -18,7 +20,8 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "TagResource",
         validate: |_request, payload, _store| {
-            validate_tags(&payload.tags.clone().into_inner(), false)
+            validate_topic_arn(&payload.resource_arn, "ResourceArn")?;
+            validate_tags(payload.tags.as_map(), false)
         },
         handler: handle_tag_resource,
         span: "sns.resource.tag",

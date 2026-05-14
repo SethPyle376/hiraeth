@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::action_support::{
     ResponseMetadata, SNS_XMLNS, parse_sns_topic_arn, topic_policy_attribute_value,
+    validate_topic_arn,
 };
 use crate::error::SnsError;
 
@@ -18,10 +19,7 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "GetTopicAttributes",
         validate: |_request, payload, _store| {
-            if payload.topic_arn.is_empty() {
-                return Err(SnsError::BadRequest("TopicArn is required".to_string()));
-            }
-            Ok(())
+            validate_topic_arn(&payload.topic_arn, "TopicArn")
         },
         handler: handle_get_topic_attributes_typed,
         span: "sns.topic.get_attributes",

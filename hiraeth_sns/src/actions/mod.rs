@@ -5,10 +5,12 @@ mod get_subscription_attributes;
 mod get_topic_attributes;
 mod list_subscriptions_by_topic;
 mod list_tags_for_resource;
+mod list_topics;
 mod publish;
 mod set_topic_attributes;
 mod subscribe;
 mod tag_resource;
+mod unsubscribe;
 mod untag_resource;
 
 use hiraeth_core::AwsActionRegistry;
@@ -25,9 +27,10 @@ use self::{
     get_subscription_attributes::GetSubscriptionAttributesAction,
     get_topic_attributes::GetTopicAttributesAction,
     list_subscriptions_by_topic::ListSubscriptionsByTopicAction,
-    list_tags_for_resource::ListTagsForResourceAction, publish::PublishAction,
-    set_topic_attributes::SetTopicAttributesAction, subscribe::SubscribeAction,
-    tag_resource::TagResourceAction, untag_resource::UntagResourceAction,
+    list_tags_for_resource::ListTagsForResourceAction, list_topics::ListTopicsAction,
+    publish::PublishAction, set_topic_attributes::SetTopicAttributesAction,
+    subscribe::SubscribeAction, tag_resource::TagResourceAction, unsubscribe::UnsubscribeAction,
+    untag_resource::UntagResourceAction,
 };
 
 pub(crate) fn registry<SS, QS>() -> AwsActionRegistry<SnsServiceStore<SS, QS>>
@@ -43,10 +46,12 @@ where
     registry.register(GetTopicAttributesAction);
     registry.register(GetSubscriptionAttributesAction);
     registry.register(ListSubscriptionsByTopicAction);
+    registry.register(ListTopicsAction);
     registry.register(SetTopicAttributesAction);
     registry.register(ListTagsForResourceAction);
     registry.register(TagResourceAction);
     registry.register(UntagResourceAction);
+    registry.register(UnsubscribeAction);
     registry
 }
 

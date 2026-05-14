@@ -5,54 +5,65 @@ use hiraeth_store::sns::SnsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::action_support::{ResponseMetadata, SNS_XMLNS, validate_topic_arn},
+    actions::action_support::{ResponseMetadata, SNS_XMLNS, validate_subscription_arn},
     error::SnsError,
 };
 
-pub(crate) struct DeleteTopicAction;
+pub(crate) struct UnsubscribeAction;
 
 hiraeth_core::impl_aws_action! {
-    DeleteTopicAction<S: SnsStore> {
-        request: DeleteTopicRequest,
-        response: DeleteTopicResponse,
+    UnsubscribeAction<S: SnsStore> {
+        request: UnsubscribeRequest,
+        response: UnsubscribeResponse,
         defaults: crate::SnsActionDefaults,
-        name: "DeleteTopic",
+        name: "Unsubscribe",
         validate: |_request, payload, _store| {
-            validate_topic_arn(&payload.topic_arn, "TopicArn")
+            validate_subscription_arn(&payload.subscription_arn)
         },
-        handler: handle_delete_topic,
-        span: "sns.topic.delete",
+        handler: handle_unsubscribe,
+        span: "sns.subscription.delete",
         span_attrs: |_request, payload, _store| {
-            HashMap::from([("topic_arn".to_string(), payload.topic_arn.clone())])
+            HashMap::from([("subscription_arn".to_string(), payload.subscription_arn.clone())])
         },
-        authorize_action: "sns:DeleteTopic",
+        authorize_action: "sns:Unsubscribe",
         authorize_with: crate::auth::resolve_authorization,
     }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct DeleteTopicRequest {
-    topic_arn: String,
+pub(crate) struct UnsubscribeRequest {
+    subscription_arn: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename = "DeleteTopicResponse")]
+#[serde(rename = "UnsubscribeResponse")]
 #[serde(rename_all = "PascalCase")]
-pub(crate) struct DeleteTopicResponse {
+pub(crate) struct UnsubscribeResponse {
     #[serde(rename = "@xmlns")]
     xmlns: &'static str,
     response_metadata: ResponseMetadata,
 }
 
-async fn handle_delete_topic<S: SnsStore>(
+async fn handle_unsubscribe<S: SnsStore>(
     request: &ResolvedRequest,
     store: &S,
-    request_body: DeleteTopicRequest,
-) -> Result<DeleteTopicResponse, SnsError> {
-    store.delete_topic(&request_body.topic_arn).await?;
+    request_body: UnsubscribeRequest,
+) -> Result<UnsubscribeResponse, SnsError> {
+    store
+        .get_subscription(&request_body.subscription_arn)
+        .await?
+        .ok_or(SnsError::SubscriptionNotFound)?;
 
-    Ok(DeleteTopicResponse {
+    store
+        .delete_subscription(&request_body.subscription_arn)
+        .await
+        .map_err(|error| match error {
+            hiraeth_store::StoreError::NotFound(_) => SnsError::SubscriptionNotFound,
+            other => SnsError::from(other),
+        })?;
+
+    Ok(UnsubscribeResponse {
         xmlns: SNS_XMLNS,
         response_metadata: ResponseMetadata {
             request_id: request.request_id.clone(),
@@ -69,11 +80,11 @@ mod tests {
     use hiraeth_http::IncomingRequest;
     use hiraeth_store::{
         principal::Principal,
-        sns::{SnsStore, SnsTopic},
+        sns::{SnsStore, SnsSubscription},
         test_support::SnsTestStore,
     };
 
-    use super::{DeleteTopicAction, DeleteTopicResponse, handle_delete_topic};
+    use super::{UnsubscribeAction, UnsubscribeResponse, handle_unsubscribe};
     use crate::{
         actions::action_support::{ResponseMetadata, SNS_XMLNS},
         error::SnsError,
@@ -111,23 +122,21 @@ mod tests {
         }
     }
 
-    fn topic() -> SnsTopic {
-        SnsTopic {
+    fn subscription(subscription_arn: &str) -> SnsSubscription {
+        SnsSubscription {
             id: 1,
-            name: "test-topic".to_string(),
-            region: "us-east-1".to_string(),
-            account_id: "123456789012".to_string(),
-            display_name: None,
-            policy: "{}".to_string(),
+            topic_arn: "arn:aws:sns:us-east-1:123456789012:test-topic".to_string(),
+            protocol: "sqs".to_string(),
+            endpoint: "arn:aws:sqs:us-east-1:123456789012:test-queue".to_string(),
+            owner_account_id: "123456789012".to_string(),
+            subscription_arn: subscription_arn.to_string(),
             delivery_policy: None,
-            fifo_topic: None,
-            signature_version: None,
-            tracing_config: None,
-            kms_master_key_id: None,
-            data_protection_policy: None,
-            archive_policy: None,
-            beginning_archive_time: None,
-            content_based_deduplication: None,
+            filter_policy: None,
+            filter_policy_scope: None,
+            raw_message_delivery: None,
+            redrive_policy: None,
+            subscription_role_arn: None,
+            replay_policy: None,
             created_at: Utc::now().naive_utc(),
         }
     }
@@ -135,46 +144,46 @@ mod tests {
     #[test]
     fn reports_expected_action_name() {
         assert_eq!(
-            <DeleteTopicAction as TypedAwsAction<SnsTestStore>>::name(&DeleteTopicAction),
-            "DeleteTopic"
+            <UnsubscribeAction as TypedAwsAction<SnsTestStore>>::name(&UnsubscribeAction),
+            "Unsubscribe"
         );
     }
 
     #[tokio::test]
-    async fn deletes_existing_topic() {
-        let store = SnsTestStore::with_topic(topic());
-        let topic_arn = "arn:aws:sns:us-east-1:123456789012:test-topic";
-        let request = resolved_request(&format!("TopicArn={topic_arn}"));
+    async fn deletes_existing_subscription() {
+        let subscription_arn = "arn:aws:sns:us-east-1:123456789012:test-topic:sub-1";
+        let store = SnsTestStore::with_subscription(subscription(subscription_arn));
+        let request = resolved_request(&format!("SubscriptionArn={subscription_arn}"));
         let body = crate::actions::test_support::parse_request_body(&request);
 
-        let response = handle_delete_topic(&request, &store, body)
+        handle_unsubscribe(&request, &store, body)
             .await
-            .expect("delete topic should succeed");
+            .expect("unsubscribe should succeed");
 
-        assert_eq!(response.response_metadata.request_id, "test-request-id");
         assert!(
             store
-                .get_topic(topic_arn)
+                .get_subscription(subscription_arn)
                 .await
-                .expect("get topic should succeed")
+                .expect("get subscription should succeed")
                 .is_none()
         );
     }
 
     #[tokio::test]
-    async fn returns_not_found_for_missing_topic() {
+    async fn returns_not_found_for_missing_subscription() {
         let store = SnsTestStore::default();
-        let request = resolved_request("TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic");
+        let request =
+            resolved_request("SubscriptionArn=arn:aws:sns:us-east-1:123456789012:test-topic:sub-1");
         let body = crate::actions::test_support::parse_request_body(&request);
 
-        let result = handle_delete_topic(&request, &store, body).await;
+        let result = handle_unsubscribe(&request, &store, body).await;
 
-        assert!(matches!(result, Err(SnsError::TopicNotFound)));
+        assert!(matches!(result, Err(SnsError::SubscriptionNotFound)));
     }
 
     #[test]
     fn response_serializes_expected_xml_shape() {
-        let response = DeleteTopicResponse {
+        let response = UnsubscribeResponse {
             xmlns: SNS_XMLNS,
             response_metadata: ResponseMetadata {
                 request_id: "test-request-id".to_string(),
@@ -183,7 +192,7 @@ mod tests {
 
         let xml = String::from_utf8(xml_body(&response).unwrap()).unwrap();
 
-        assert!(xml.contains("<DeleteTopicResponse"));
+        assert!(xml.contains("<UnsubscribeResponse"));
         assert!(xml.contains("<ResponseMetadata>"));
         assert!(xml.contains("<RequestId>test-request-id</RequestId>"));
     }

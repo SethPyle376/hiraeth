@@ -729,6 +729,10 @@ impl SnsStore for SnsTestStore {
             .lock()
             .expect("subscriptions mutex")
             .retain(|sub| sub.topic_arn != topic_arn);
+        self.topic_tags
+            .lock()
+            .expect("topic tags mutex")
+            .remove(topic_arn);
 
         Ok(())
     }

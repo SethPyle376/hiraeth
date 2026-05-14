@@ -87,7 +87,14 @@ pub(crate) struct TopicId {
 
 pub(super) fn parse_sns_topic_arn(arn: &str) -> Option<TopicId> {
     let parts: Vec<&str> = arn.split(':').collect();
-    if parts.len() == 6 && parts[0] == "arn" && parts[1] == "aws" && parts[2] == "sns" {
+    if parts.len() == 6
+        && parts[0] == "arn"
+        && parts[1] == "aws"
+        && parts[2] == "sns"
+        && !parts[3].is_empty()
+        && !parts[4].is_empty()
+        && !parts[5].is_empty()
+    {
         return Some(TopicId {
             region: parts[3].to_string(),
             account_id: parts[4].to_string(),
@@ -96,6 +103,41 @@ pub(super) fn parse_sns_topic_arn(arn: &str) -> Option<TopicId> {
     }
 
     None
+}
+
+pub(super) fn validate_topic_arn(arn: &str, field_name: &str) -> Result<(), SnsError> {
+    if arn.is_empty() {
+        return Err(SnsError::BadRequest(format!("{field_name} is required")));
+    }
+
+    parse_sns_topic_arn(arn)
+        .map(|_| ())
+        .ok_or_else(|| SnsError::BadRequest(format!("Invalid {field_name} format")))
+}
+
+pub(super) fn validate_subscription_arn(arn: &str) -> Result<(), SnsError> {
+    if arn.is_empty() {
+        return Err(SnsError::BadRequest(
+            "SubscriptionArn is required".to_string(),
+        ));
+    }
+
+    let parts: Vec<&str> = arn.split(':').collect();
+    if parts.len() == 7
+        && parts[0] == "arn"
+        && parts[1] == "aws"
+        && parts[2] == "sns"
+        && !parts[3].is_empty()
+        && !parts[4].is_empty()
+        && !parts[5].is_empty()
+        && !parts[6].is_empty()
+    {
+        return Ok(());
+    }
+
+    Err(SnsError::BadRequest(
+        "Invalid SubscriptionArn format".to_string(),
+    ))
 }
 
 pub(super) fn topic_policy_attribute_value(
@@ -208,6 +250,10 @@ pub(super) struct SnsTags {
 }
 
 impl SnsTags {
+    pub(super) fn as_map(&self) -> &HashMap<String, String> {
+        &self.inner
+    }
+
     pub(super) fn into_inner(self) -> HashMap<String, String> {
         self.inner
     }
@@ -259,6 +305,10 @@ pub(super) struct SnsTagKeys {
 }
 
 impl SnsTagKeys {
+    pub(super) fn as_slice(&self) -> &[String] {
+        &self.inner
+    }
+
     pub(super) fn into_inner(self) -> Vec<String> {
         self.inner
     }
@@ -366,8 +416,9 @@ mod tests {
     use crate::error::SnsError;
 
     use super::{
-        SnsAttributes, SnsTagKeys, SnsTags, parse_sqs_endpoint_arn, topic_policy_attribute_value,
-        validate_tag_keys, validate_tags,
+        SnsAttributes, SnsTagKeys, SnsTags, parse_sns_topic_arn, parse_sqs_endpoint_arn,
+        topic_policy_attribute_value, validate_subscription_arn, validate_tag_keys, validate_tags,
+        validate_topic_arn,
     };
 
     #[test]
@@ -449,6 +500,25 @@ mod tests {
     #[test]
     fn parse_sqs_endpoint_arn_returns_none_for_invalid_arn() {
         assert!(parse_sqs_endpoint_arn("not-an-arn").is_none());
+    }
+
+    #[test]
+    fn parse_sns_topic_arn_rejects_missing_topic_name() {
+        assert!(parse_sns_topic_arn("arn:aws:sns:us-east-1:123456789012:").is_none());
+    }
+
+    #[test]
+    fn validate_topic_arn_rejects_invalid_shape() {
+        let result = validate_topic_arn("not-an-arn", "TopicArn");
+
+        assert!(matches!(result, Err(SnsError::BadRequest(_))));
+    }
+
+    #[test]
+    fn validate_subscription_arn_rejects_topic_arn_shape() {
+        let result = validate_subscription_arn("arn:aws:sns:us-east-1:123456789012:test-topic");
+
+        assert!(matches!(result, Err(SnsError::BadRequest(_))));
     }
 
     #[test]
