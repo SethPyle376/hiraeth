@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use askama::Template;
 use axum::{
@@ -10,7 +10,7 @@ use axum::{
 use chrono::Utc;
 use hiraeth_store::{
     StoreError,
-    sns::{SnsStore, SnsSubscription, SnsTopic},
+    sns::{SnsStore, SnsSubscription, SnsSubscriptionAttributeUpdate, SnsTopic},
     sqs::{SqsMessage, SqsStore},
 };
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,10 @@ use crate::{
         SnsTopicDetailTemplate, SnsTopicListTemplate, SnsTopicsTemplate,
     },
 };
+
+const MAX_TAGS_PER_TOPIC: usize = 50;
+const MAX_TAG_KEY_LENGTH: usize = 128;
+const MAX_TAG_VALUE_LENGTH: usize = 256;
 
 fn default_region() -> String {
     "us-east-1".to_string()
@@ -80,6 +84,14 @@ struct TopicDetailParams {
     publish_message: Option<String>,
     #[serde(default)]
     publish_subject: Option<String>,
+    #[serde(default)]
+    tag_error: Option<String>,
+    #[serde(default)]
+    tag_key: Option<String>,
+    #[serde(default)]
+    tag_value: Option<String>,
+    #[serde(default)]
+    tags_open: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,6 +120,22 @@ struct PublishForm {
     subject: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct TagTopicForm {
+    tag_key: String,
+    tag_value: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct UntagTopicForm {
+    tag_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct UpdateSubscriptionRawDeliveryForm {
+    enabled: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct TopicListResponse {
     region: String,
@@ -132,7 +160,17 @@ pub(crate) struct SubscriptionSummary {
     pub(crate) endpoint: String,
     pub(crate) subscription_arn: String,
     pub(crate) raw_message_delivery: bool,
+    pub(crate) delivery_policy: Option<String>,
+    pub(crate) filter_policy: Option<String>,
+    pub(crate) filter_policy_scope: Option<String>,
+    pub(crate) redrive_policy: Option<String>,
     pub(crate) created_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TopicTag {
+    pub(crate) key: String,
+    pub(crate) value: String,
 }
 
 struct PageFeedback {
@@ -165,6 +203,14 @@ struct PublishFormFields {
     subject: String,
 }
 
+struct TagFormFields {
+    error: String,
+    has_error: bool,
+    key: String,
+    value: String,
+    open_panel: bool,
+}
+
 pub fn router() -> Router<WebState> {
     Router::new()
         .route("/", get(dashboard))
@@ -180,7 +226,13 @@ pub fn router() -> Router<WebState> {
             "/topics/{topic_id}/subscriptions/{subscription_id}/delete",
             post(delete_subscription),
         )
+        .route(
+            "/topics/{topic_id}/subscriptions/{subscription_id}/raw-message-delivery",
+            post(update_subscription_raw_message_delivery),
+        )
         .route("/topics/{topic_id}/publish", post(publish_message))
+        .route("/topics/{topic_id}/tags", post(tag_topic))
+        .route("/topics/{topic_id}/tags/delete", post(untag_topic))
         .route("/fragments/topics", get(topics_fragment))
         .route("/fragments/dashboard-stats", get(dashboard_stats_fragment))
         .route("/api/topics", get(topics_api))
@@ -396,6 +448,8 @@ async fn topic_detail(
     let feedback = feedback_from_params(&params.feedback_kind, &params.feedback);
     let subscription_fields = subscription_form_fields(&params);
     let publish_fields = publish_form_fields(&params);
+    let tag_fields = tag_form_fields(&params);
+    let tags = topic_tags(state.sns_store.list_topic_tags(&arn).await?);
     let action_card_html = topic_action_card_html(&topic)?;
     let metadata_list_html = topic_metadata_list_html(&topic)?;
 
@@ -417,10 +471,18 @@ async fn topic_detail(
         has_publish_error: publish_fields.has_error,
         publish_message: &publish_fields.message,
         publish_subject: &publish_fields.subject,
+        tag_error: &tag_fields.error,
+        has_tag_error: tag_fields.has_error,
+        tag_key: &tag_fields.key,
+        tag_value: &tag_fields.value,
+        open_tags_panel: tag_fields.open_panel,
         summary: &summary,
         subscriptions: &subscription_summaries,
         subscription_count: subscription_summaries.len(),
         has_subscriptions: !subscription_summaries.is_empty(),
+        tags: &tags,
+        tag_count: tags.len(),
+        has_tags: !tags.is_empty(),
     };
 
     Ok(Html(template.render()?))
@@ -514,6 +576,48 @@ async fn delete_subscription(
     ))
 }
 
+async fn update_subscription_raw_message_delivery(
+    State(state): State<WebState>,
+    Path((topic_id, subscription_id)): Path<(i64, i64)>,
+    Form(form): Form<UpdateSubscriptionRawDeliveryForm>,
+) -> Result<Redirect, WebError> {
+    let topic = load_topic_by_id(&state, topic_id).await?;
+    let subscription = state
+        .sns_store
+        .get_subscription_by_id(subscription_id)
+        .await?
+        .ok_or_else(|| StoreError::NotFound("subscription not found".to_string()))?;
+    let arn = topic_arn(&topic.name, &topic.region, &topic.account_id);
+    if subscription.topic_arn != arn {
+        return Err(WebError::bad_request(
+            "Subscription does not belong to this topic",
+        ));
+    }
+
+    let enabled = form.enabled.trim() == "true";
+    state
+        .sns_store
+        .set_subscription_attributes(
+            &subscription.subscription_arn,
+            SnsSubscriptionAttributeUpdate {
+                raw_message_delivery: Some(enabled.to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+    let message = if enabled {
+        "Enabled raw message delivery."
+    } else {
+        "Disabled raw message delivery."
+    };
+    Ok(feedback_redirect(
+        topic_detail_path(topic_id),
+        "success",
+        message,
+    ))
+}
+
 async fn delete_topic(
     State(state): State<WebState>,
     Path(topic_id): Path<i64>,
@@ -528,6 +632,74 @@ async fn delete_topic(
         ),
         "success",
         &format!("Deleted topic {}.", topic.name),
+    ))
+}
+
+async fn tag_topic(
+    State(state): State<WebState>,
+    Path(topic_id): Path<i64>,
+    Form(form): Form<TagTopicForm>,
+) -> Result<Redirect, WebError> {
+    let topic = load_topic_by_id(&state, topic_id).await?;
+    let tag_key = form.tag_key.trim();
+    let tag_value = form.tag_value.as_str();
+
+    if let Err(error) =
+        validate_tag_key(tag_key).and_then(|_| validate_tag_value(tag_key, tag_value))
+    {
+        return Ok(tag_topic_error_redirect(topic_id, &form, error.message()));
+    }
+
+    let arn = topic_arn(&topic.name, &topic.region, &topic.account_id);
+    let existing_tags = state.sns_store.list_topic_tags(&arn).await?;
+    if !existing_tags.contains_key(tag_key) && existing_tags.len() >= MAX_TAGS_PER_TOPIC {
+        return Ok(tag_topic_error_redirect(
+            topic_id,
+            &form,
+            &format!("A topic can have at most {MAX_TAGS_PER_TOPIC} tags"),
+        ));
+    }
+
+    state
+        .sns_store
+        .tag_topic(
+            &arn,
+            HashMap::from([(tag_key.to_string(), tag_value.to_string())]),
+        )
+        .await?;
+
+    Ok(feedback_redirect(
+        topic_tags_path(topic_id),
+        "success",
+        &format!("Saved tag {tag_key}."),
+    ))
+}
+
+async fn untag_topic(
+    State(state): State<WebState>,
+    Path(topic_id): Path<i64>,
+    Form(form): Form<UntagTopicForm>,
+) -> Result<Redirect, WebError> {
+    let topic = load_topic_by_id(&state, topic_id).await?;
+    let tag_key = form.tag_key.trim();
+    if let Err(error) = validate_tag_key(tag_key) {
+        return Ok(feedback_redirect(
+            topic_tags_path(topic_id),
+            "error",
+            error.message(),
+        ));
+    }
+
+    let arn = topic_arn(&topic.name, &topic.region, &topic.account_id);
+    state
+        .sns_store
+        .untag_topic(&arn, vec![tag_key.to_string()])
+        .await?;
+
+    Ok(feedback_redirect(
+        topic_tags_path(topic_id),
+        "success",
+        &format!("Removed tag {tag_key}."),
     ))
 }
 
@@ -725,6 +897,19 @@ fn publish_form_fields(params: &TopicDetailParams) -> PublishFormFields {
     }
 }
 
+fn tag_form_fields(params: &TopicDetailParams) -> TagFormFields {
+    let error = params.tag_error.clone().unwrap_or_default();
+    let open_panel = !error.is_empty() || params.tags_open.as_deref() == Some("1");
+
+    TagFormFields {
+        has_error: !error.is_empty(),
+        error,
+        key: params.tag_key.clone().unwrap_or_default(),
+        value: params.tag_value.clone().unwrap_or_default(),
+        open_panel,
+    }
+}
+
 fn scoped_page_path(base_path: &str, params: &TopicListParams) -> String {
     let prefix = params.prefix.clone().unwrap_or_default();
     append_query_params(
@@ -783,8 +968,23 @@ fn publish_error_redirect(topic_id: i64, message: &str, subject: &str, error: &s
     ))
 }
 
+fn tag_topic_error_redirect(topic_id: i64, form: &TagTopicForm, message: &str) -> Redirect {
+    Redirect::to(&append_query_params(
+        topic_tags_path(topic_id),
+        &[
+            ("tag_error", message),
+            ("tag_key", form.tag_key.trim()),
+            ("tag_value", form.tag_value.as_str()),
+        ],
+    ))
+}
+
 fn topic_detail_path(topic_id: i64) -> String {
     format!("/sns/topics/{topic_id}")
+}
+
+fn topic_tags_path(topic_id: i64) -> String {
+    append_query_params(topic_detail_path(topic_id), &[("tags_open", "1")])
 }
 
 fn feedback_redirect(path: String, kind: &str, message: &str) -> Redirect {
@@ -1043,8 +1243,19 @@ fn subscription_summary(subscription: SnsSubscription) -> SubscriptionSummary {
         endpoint: subscription.endpoint,
         subscription_arn: subscription.subscription_arn,
         raw_message_delivery: subscription.raw_message_delivery.as_deref() == Some("true"),
+        delivery_policy: subscription.delivery_policy,
+        filter_policy: subscription.filter_policy,
+        filter_policy_scope: subscription.filter_policy_scope,
+        redrive_policy: subscription.redrive_policy,
         created_at: format_datetime(subscription.created_at),
     }
+}
+
+fn topic_tags(tags: HashMap<String, String>) -> Vec<TopicTag> {
+    BTreeMap::from_iter(tags)
+        .into_iter()
+        .map(|(key, value)| TopicTag { key, value })
+        .collect()
 }
 
 fn validate_required(field_name: &str, value: &str) -> Result<(), WebError> {
@@ -1064,10 +1275,54 @@ fn validate_topic_name(topic_name: &str) -> Result<(), WebError> {
 
     let valid_chars = topic_name
         .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.');
     if !valid_chars {
         return Err(WebError::bad_request(
-            "Topic name may only contain alphanumeric characters, hyphens, and underscores",
+            "Topic name may only contain alphanumeric characters, hyphens, underscores, and periods",
+        ));
+    }
+
+    if topic_name.ends_with(".fifo") {
+        return Err(WebError::bad_request(
+            "FIFO topics are not currently available through the web UI",
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_tag_key(key: &str) -> Result<(), WebError> {
+    if key.is_empty() {
+        return Err(WebError::bad_request("Tag key is required"));
+    }
+    if key.chars().count() > MAX_TAG_KEY_LENGTH {
+        return Err(WebError::bad_request(format!(
+            "Tag key must be at most {MAX_TAG_KEY_LENGTH} characters"
+        )));
+    }
+    if key.starts_with("aws:") {
+        return Err(WebError::bad_request(
+            "Tag keys cannot use the reserved aws: prefix",
+        ));
+    }
+    if key.chars().any(char::is_control) {
+        return Err(WebError::bad_request(
+            "Tag key cannot contain control characters",
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_tag_value(_key: &str, value: &str) -> Result<(), WebError> {
+    if value.chars().count() > MAX_TAG_VALUE_LENGTH {
+        return Err(WebError::bad_request(format!(
+            "Tag value must be at most {MAX_TAG_VALUE_LENGTH} characters"
+        )));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(WebError::bad_request(
+            "Tag value cannot contain control characters",
         ));
     }
 
@@ -1098,8 +1353,14 @@ mod tests {
 
     #[test]
     fn validate_topic_name_accepts_valid_name() {
-        let result = validate_topic_name("orders-billing_123");
+        let result = validate_topic_name("orders-billing_123.dev");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_topic_name_rejects_fifo_names() {
+        let result = validate_topic_name("orders.fifo");
+        assert!(result.is_err());
     }
 
     #[test]

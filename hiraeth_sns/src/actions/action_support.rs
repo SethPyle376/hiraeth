@@ -7,6 +7,9 @@ use serde::Serialize;
 use crate::error::SnsError;
 
 pub(crate) const SNS_XMLNS: &str = "http://sns.amazonaws.com/doc/2010-03-31/";
+pub(super) const MAX_MESSAGE_BYTES: usize = 262_144;
+pub(super) const MAX_SUBJECT_CHARS: usize = 100;
+const MAX_TOPIC_NAME_CHARS: usize = 256;
 const MAX_TAGS_PER_RESOURCE: usize = 50;
 const MAX_TAG_KEY_LENGTH: usize = 128;
 const MAX_TAG_VALUE_LENGTH: usize = 256;
@@ -46,6 +49,114 @@ pub(super) const VALID_TOPIC_ATTRIBUTES: &[&str] = &[
 
 pub(super) fn is_valid_topic_attribute(name: &str) -> bool {
     VALID_TOPIC_ATTRIBUTES.contains(&name)
+}
+
+pub(super) const VALID_SUBSCRIPTION_ATTRIBUTES: &[&str] = &[
+    "DeliveryPolicy",
+    "FilterPolicy",
+    "FilterPolicyScope",
+    "RawMessageDelivery",
+    "RedrivePolicy",
+    "SubscriptionRoleArn",
+    "ReplayPolicy",
+];
+
+pub(super) fn is_valid_subscription_attribute(name: &str) -> bool {
+    VALID_SUBSCRIPTION_ATTRIBUTES.contains(&name)
+}
+
+pub(super) fn validate_topic_name(name: &str, fifo_topic: Option<&str>) -> Result<(), SnsError> {
+    let length = name.chars().count();
+    if length == 0 || length > MAX_TOPIC_NAME_CHARS {
+        return Err(SnsError::BadRequest(format!(
+            "Topic name must be between 1 and {MAX_TOPIC_NAME_CHARS} characters"
+        )));
+    }
+
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return Err(SnsError::BadRequest(
+            "Topic name may only contain letters, numbers, hyphens, underscores, and periods"
+                .to_string(),
+        ));
+    }
+
+    let fifo_requested = fifo_topic
+        .map(|value| value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if fifo_requested && !name.ends_with(".fifo") {
+        return Err(SnsError::BadRequest(
+            "FIFO topic names must end with .fifo".to_string(),
+        ));
+    }
+    if !fifo_requested && name.ends_with(".fifo") {
+        return Err(SnsError::BadRequest(
+            "FIFO topic names require FifoTopic=true".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+pub(super) fn validate_json_attribute(
+    attribute_name: &str,
+    attribute_value: &str,
+) -> Result<(), SnsError> {
+    match attribute_name {
+        "Policy"
+        | "DeliveryPolicy"
+        | "DataProtectionPolicy"
+        | "ArchivePolicy"
+        | "FilterPolicy"
+        | "RedrivePolicy"
+        | "ReplayPolicy" => {
+            serde_json::from_str::<serde_json::Value>(attribute_value).map_err(|error| {
+                SnsError::BadRequest(format!("{} must be valid JSON: {}", attribute_name, error))
+            })?;
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+pub(super) fn validate_raw_message_delivery(value: &str) -> Result<(), SnsError> {
+    match value {
+        "true" | "false" | "True" | "False" | "TRUE" | "FALSE" => Ok(()),
+        _ => Err(SnsError::BadRequest(
+            "RawMessageDelivery must be true or false".to_string(),
+        )),
+    }
+}
+
+pub(super) fn validate_publish_payload(
+    message: &str,
+    subject: Option<&str>,
+) -> Result<(), SnsError> {
+    if message.is_empty() {
+        return Err(SnsError::BadRequest("Message is required".to_string()));
+    }
+    if message.len() > MAX_MESSAGE_BYTES {
+        return Err(SnsError::BadRequest(format!(
+            "Message must be at most {MAX_MESSAGE_BYTES} bytes"
+        )));
+    }
+    if let Some(subject) = subject {
+        if subject.chars().count() > MAX_SUBJECT_CHARS {
+            return Err(SnsError::BadRequest(format!(
+                "Subject must be at most {MAX_SUBJECT_CHARS} characters"
+            )));
+        }
+        if subject.chars().any(char::is_control) {
+            return Err(SnsError::BadRequest(
+                "Subject cannot contain control characters".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -408,6 +519,12 @@ fn validate_tag_key(key: &str) -> Result<(), SnsError> {
         ));
     }
 
+    if key.chars().any(char::is_control) {
+        return Err(SnsError::BadRequest(
+            "Tag keys cannot contain control characters".to_string(),
+        ));
+    }
+
     Ok(())
 }
 
@@ -418,7 +535,7 @@ mod tests {
     use super::{
         SnsAttributes, SnsTagKeys, SnsTags, parse_sns_topic_arn, parse_sqs_endpoint_arn,
         topic_policy_attribute_value, validate_subscription_arn, validate_tag_keys, validate_tags,
-        validate_topic_arn,
+        validate_topic_arn, validate_topic_name,
     };
 
     #[test]
@@ -517,6 +634,25 @@ mod tests {
     #[test]
     fn validate_subscription_arn_rejects_topic_arn_shape() {
         let result = validate_subscription_arn("arn:aws:sns:us-east-1:123456789012:test-topic");
+
+        assert!(matches!(result, Err(SnsError::BadRequest(_))));
+    }
+
+    #[test]
+    fn validate_topic_name_rejects_spaces() {
+        let result = validate_topic_name("bad topic", None);
+
+        assert!(matches!(result, Err(SnsError::BadRequest(_))));
+    }
+
+    #[test]
+    fn validate_topic_name_accepts_fifo_topic_with_suffix() {
+        assert!(validate_topic_name("events.fifo", Some("true")).is_ok());
+    }
+
+    #[test]
+    fn validate_topic_name_rejects_fifo_suffix_without_attribute() {
+        let result = validate_topic_name("events.fifo", None);
 
         assert!(matches!(result, Err(SnsError::BadRequest(_))));
     }

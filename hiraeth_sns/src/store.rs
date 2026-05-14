@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use hiraeth_iam::AuthorizationMode;
 use hiraeth_store::StoreError;
-use hiraeth_store::sns::{SnsStore, SnsSubscription, SnsTopic, SnsTopicAttributeUpdate};
+use hiraeth_store::sns::{
+    SnsStore, SnsSubscription, SnsSubscriptionAttributeUpdate, SnsTopic, SnsTopicAttributeUpdate,
+};
 use hiraeth_store::sqs::SqsStore;
 use std::collections::HashMap;
 
@@ -74,6 +76,17 @@ where
         self.sns_store.get_subscription_by_id(id).await
     }
 
+    async fn list_subscriptions(
+        &self,
+        region: &str,
+        account_id: &str,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsSubscription>, StoreError> {
+        self.sns_store
+            .list_subscriptions(region, account_id, limit)
+            .await
+    }
+
     async fn list_subscriptions_by_topic(
         &self,
         topic_arn: &str,
@@ -87,6 +100,16 @@ where
 
     async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError> {
         self.sns_store.delete_subscription_by_id(id).await
+    }
+
+    async fn set_subscription_attributes(
+        &self,
+        subscription_arn: &str,
+        update: SnsSubscriptionAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        self.sns_store
+            .set_subscription_attributes(subscription_arn, update)
+            .await
     }
 
     async fn set_topic_attributes(

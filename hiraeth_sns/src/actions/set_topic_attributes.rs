@@ -11,6 +11,7 @@ use crate::{
     SnsServiceStore,
     actions::action_support::{
         ResponseMetadata, SNS_XMLNS, is_valid_topic_attribute, parse_sns_topic_arn,
+        validate_json_attribute,
     },
     error::SnsError,
 };
@@ -28,6 +29,7 @@ hiraeth_core::impl_aws_action! {
             if payload.attribute_name.is_empty() {
                 return Err(SnsError::BadRequest("AttributeName is required".to_string()));
             }
+            validate_json_attribute(&payload.attribute_name, &payload.attribute_value)?;
             if is_valid_topic_attribute(&payload.attribute_name) {
                 Ok(())
             } else {
@@ -325,6 +327,26 @@ mod tests {
         let result = SetTopicAttributesAction
             .validate(&request, &body, &store)
             .await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn validation_rejects_invalid_policy_json() {
+        let store = SnsServiceStore::new(
+            SnsTestStore::with_topic(topic()),
+            SqsTestStore::default(),
+            AuthorizationMode::Off,
+        );
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&AttributeName=Policy&AttributeValue=%7B",
+        );
+        let body: SetTopicAttributesRequest =
+            crate::actions::test_support::parse_request_body(&request);
+
+        let result = SetTopicAttributesAction
+            .validate(&request, &body, &store)
+            .await;
+
         assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
     }
 

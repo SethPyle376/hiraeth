@@ -9,6 +9,8 @@ use crate::{
     error::SnsError,
 };
 
+const LIST_SUBSCRIPTIONS_BY_TOPIC_PAGE_SIZE: usize = 100;
+
 pub(crate) struct ListSubscriptionsByTopicAction;
 
 hiraeth_core::impl_aws_action! {
@@ -18,7 +20,13 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "ListSubscriptionsByTopic",
         validate: |_request, payload, _store| {
-            validate_topic_arn(&payload.topic_arn, "TopicArn")
+            validate_topic_arn(&payload.topic_arn, "TopicArn")?;
+            if let Some(next_token) = &payload.next_token
+                && next_token.parse::<usize>().is_err()
+            {
+                return Err(SnsError::BadRequest("NextToken is invalid".to_string()));
+            }
+            Ok(())
         },
         handler: handle_list_subscriptions_by_topic,
         span: "sns.topic.list_subscriptions",
@@ -77,21 +85,28 @@ async fn handle_list_subscriptions_by_topic<S: SnsStore>(
     store: &S,
     request_body: ListSubscriptionsByTopicRequest,
 ) -> Result<ListSubscriptionsByTopicResponse, SnsError> {
-    if request_body.next_token.is_some() {
-        return Err(SnsError::BadRequest(
-            "NextToken is not supported yet".to_string(),
-        ));
-    }
+    let offset = request_body
+        .next_token
+        .as_deref()
+        .map(str::parse::<usize>)
+        .transpose()
+        .map_err(|_| SnsError::BadRequest("NextToken is invalid".to_string()))?
+        .unwrap_or(0);
 
     store
         .get_topic(&request_body.topic_arn)
         .await?
         .ok_or(SnsError::TopicNotFound)?;
 
-    let subscriptions = store
+    let all_subscriptions = store
         .list_subscriptions_by_topic(&request_body.topic_arn)
-        .await?
+        .await?;
+    let next_offset = offset + LIST_SUBSCRIPTIONS_BY_TOPIC_PAGE_SIZE;
+    let next_token = (next_offset < all_subscriptions.len()).then(|| next_offset.to_string());
+    let subscriptions = all_subscriptions
         .into_iter()
+        .skip(offset)
+        .take(LIST_SUBSCRIPTIONS_BY_TOPIC_PAGE_SIZE)
         .map(subscription_summary)
         .collect();
 
@@ -101,7 +116,7 @@ async fn handle_list_subscriptions_by_topic<S: SnsStore>(
             subscriptions: SubscriptionList {
                 member: subscriptions,
             },
-            next_token: None,
+            next_token,
         },
         response_metadata: ResponseMetadata {
             request_id: request.request_id.clone(),
@@ -281,6 +296,39 @@ mod tests {
                 .subscriptions
                 .member
                 .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_next_token_when_more_subscriptions_remain() {
+        let store = SnsTestStore::with_topics([topic()]);
+        for index in 0..101 {
+            store
+                .create_subscription(subscription(
+                    &format!("arn:aws:sns:us-east-1:123456789012:test-topic:sub-{index:03}"),
+                    "arn:aws:sqs:us-east-1:123456789012:test-queue",
+                ))
+                .await
+                .expect("subscription should seed");
+        }
+        let request = resolved_request("TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic");
+        let body = crate::actions::test_support::parse_request_body(&request);
+
+        let response = handle_list_subscriptions_by_topic(&request, &store, body)
+            .await
+            .expect("list subscriptions should succeed");
+
+        assert_eq!(
+            response
+                .list_subscriptions_by_topic_result
+                .subscriptions
+                .member
+                .len(),
+            100
+        );
+        assert_eq!(
+            response.list_subscriptions_by_topic_result.next_token,
+            Some("100".to_string())
         );
     }
 

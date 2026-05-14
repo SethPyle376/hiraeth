@@ -5,7 +5,10 @@ use hiraeth_core::{ResolvedRequest, auth::AuthorizationCheck};
 use hiraeth_store::sns::{SnsStore, SnsTopic};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{SnsAttributes, SnsTags, is_valid_topic_attribute, validate_tags};
+use super::action_support::{
+    SnsAttributes, SnsTags, is_valid_topic_attribute, validate_json_attribute, validate_tags,
+    validate_topic_name,
+};
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
@@ -20,15 +23,16 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "CreateTopic",
         validate: |_request, payload, _store| {
-            if payload.name.is_empty() {
-                return Err(SnsError::BadRequest("Name is required".to_string()));
-            }
+            validate_topic_name(&payload.name, payload.attributes.get("FifoTopic"))?;
             for key in payload.attributes.keys() {
                 if !is_valid_topic_attribute(key) {
                     return Err(SnsError::BadRequest(format!(
                         "Unsupported attribute name: {}",
                         key
                     )));
+                }
+                if let Some(value) = payload.attributes.get(key) {
+                    validate_json_attribute(key, value)?;
                 }
             }
             validate_tags(payload.tags.as_map(), true)?;
@@ -283,6 +287,38 @@ mod tests {
     async fn validation_rejects_empty_name() {
         let store = SnsTestStore::default();
         let request = resolved_request("Name=");
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        let result = CreateTopicAction.validate(&request, &body, &store).await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn validation_rejects_invalid_topic_name() {
+        let store = SnsTestStore::default();
+        let request = resolved_request("Name=bad topic");
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        let result = CreateTopicAction.validate(&request, &body, &store).await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn validation_rejects_fifo_name_without_fifo_attribute() {
+        let store = SnsTestStore::default();
+        let request = resolved_request("Name=test-topic.fifo");
+        let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
+
+        let result = CreateTopicAction.validate(&request, &body, &store).await;
+        assert!(matches!(result, Err(crate::error::SnsError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn validation_rejects_invalid_policy_json() {
+        let store = SnsTestStore::default();
+        let request = resolved_request(
+            "Name=test-topic&Attributes.entry.1.key=Policy&Attributes.entry.1.value=%7B",
+        );
         let body: CreateTopicRequest = crate::actions::test_support::parse_request_body(&request);
 
         let result = CreateTopicAction.validate(&request, &body, &store).await;

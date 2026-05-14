@@ -1,10 +1,10 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn,\n                    delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,\n                    redrive_policy, subscription_role_arn, replay_policy, created_at\n             FROM sns_subscriptions\n             WHERE subscription_arn = ?",
+  "query": "SELECT id, topic_arn, protocol, endpoint, owner_account_id, subscription_arn,\n                    delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,\n                    redrive_policy, subscription_role_arn, replay_policy, created_at\n             FROM sns_subscriptions\n             WHERE subscription_arn = ?",
   "describe": {
     "columns": [
       {
-        "name": "id!: i64",
+        "name": "id",
         "ordinal": 0,
         "type_info": "Integer"
       },
@@ -94,5 +94,5 @@
       false
     ]
   },
-  "hash": "151d5263bf494f90f0c622a457b53a9ddf29b153918e1ced3f0f4bb487dfe319"
+  "hash": "1bd00311179127d749717caa0314cfaac0ae7e2458fe453d29d856abdfad805c"
 }

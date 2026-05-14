@@ -290,10 +290,18 @@ pub(crate) struct SnsTopicDetailTemplate<'a> {
     pub(crate) has_publish_error: bool,
     pub(crate) publish_message: &'a str,
     pub(crate) publish_subject: &'a str,
+    pub(crate) tag_error: &'a str,
+    pub(crate) has_tag_error: bool,
+    pub(crate) tag_key: &'a str,
+    pub(crate) tag_value: &'a str,
+    pub(crate) open_tags_panel: bool,
     pub(crate) summary: &'a TopicSummary,
     pub(crate) subscriptions: &'a [SubscriptionSummary],
     pub(crate) subscription_count: usize,
     pub(crate) has_subscriptions: bool,
+    pub(crate) tags: &'a [crate::sns::TopicTag],
+    pub(crate) tag_count: usize,
+    pub(crate) has_tags: bool,
 }
 
 #[derive(Template)]

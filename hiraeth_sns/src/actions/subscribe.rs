@@ -5,7 +5,10 @@ use hiraeth_core::ResolvedRequest;
 use hiraeth_store::sns::{SnsStore, SnsSubscription};
 use serde::{Deserialize, Serialize};
 
-use super::action_support::SnsAttributes;
+use super::action_support::{
+    SnsAttributes, is_valid_subscription_attribute, validate_json_attribute,
+    validate_raw_message_delivery,
+};
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS, validate_topic_arn},
     error::SnsError,
@@ -26,6 +29,20 @@ hiraeth_core::impl_aws_action! {
             }
             if payload.endpoint.is_empty() {
                 return Err(SnsError::BadRequest("Endpoint is required".to_string()));
+            }
+            for key in payload.attributes.keys() {
+                if !is_valid_subscription_attribute(key) {
+                    return Err(SnsError::BadRequest(format!(
+                        "Unsupported attribute name: {}",
+                        key
+                    )));
+                }
+                if let Some(value) = payload.attributes.get(key) {
+                    validate_json_attribute(key, value)?;
+                    if key == "RawMessageDelivery" {
+                        validate_raw_message_delivery(value)?;
+                    }
+                }
             }
             Ok(())
         },

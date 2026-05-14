@@ -5,7 +5,7 @@ use hiraeth_store::sns::SnsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::action_support::{ResponseMetadata, SNS_XMLNS},
+    actions::action_support::{ResponseMetadata, SNS_XMLNS, validate_subscription_arn},
     error::SnsError,
 };
 
@@ -18,10 +18,7 @@ hiraeth_core::impl_aws_action! {
         defaults: crate::SnsActionDefaults,
         name: "GetSubscriptionAttributes",
         validate: |_request, payload, _store| {
-            if payload.subscription_arn.is_empty() {
-                return Err(SnsError::BadRequest("SubscriptionArn is required".to_string()));
-            }
-            Ok(())
+            validate_subscription_arn(&payload.subscription_arn)
         },
         handler: handle_get_subscription_attributes,
         span: "sns.subscription.get_attributes",

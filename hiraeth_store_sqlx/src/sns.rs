@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use hiraeth_store::StoreError;
-use hiraeth_store::sns::{SnsStore, SnsSubscription, SnsTopic, SnsTopicAttributeUpdate};
+use hiraeth_store::sns::{
+    SnsStore, SnsSubscription, SnsSubscriptionAttributeUpdate, SnsTopic, SnsTopicAttributeUpdate,
+};
 use sqlx::Row;
 use std::collections::HashMap;
 
@@ -23,6 +25,25 @@ fn map_sqlx_error(err: sqlx::Error) -> StoreError {
     }
 
     StoreError::StorageFailure(err.to_string())
+}
+
+fn row_to_subscription(row: sqlx::sqlite::SqliteRow) -> SnsSubscription {
+    SnsSubscription {
+        id: row.get("id"),
+        topic_arn: row.get("topic_arn"),
+        protocol: row.get("protocol"),
+        endpoint: row.get("endpoint"),
+        owner_account_id: row.get("owner_account_id"),
+        subscription_arn: row.get("subscription_arn"),
+        delivery_policy: row.get("delivery_policy"),
+        filter_policy: row.get("filter_policy"),
+        filter_policy_scope: row.get("filter_policy_scope"),
+        raw_message_delivery: row.get("raw_message_delivery"),
+        redrive_policy: row.get("redrive_policy"),
+        subscription_role_arn: row.get("subscription_role_arn"),
+        replay_policy: row.get("replay_policy"),
+        created_at: row.get("created_at"),
+    }
 }
 
 #[async_trait]
@@ -233,37 +254,62 @@ impl SnsStore for SqliteSnsStore {
         &self,
         subscription_arn: &str,
     ) -> Result<Option<SnsSubscription>, StoreError> {
-        let sub = sqlx::query_as!(
-            SnsSubscription,
-            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
+        let row = sqlx::query(
+            "SELECT id, topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
                     delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,
                     redrive_policy, subscription_role_arn, replay_policy, created_at
              FROM sns_subscriptions
              WHERE subscription_arn = ?",
-            subscription_arn
         )
+        .bind(subscription_arn)
         .fetch_optional(&self.pool)
         .await
         .map_err(map_sqlx_error)?;
 
-        Ok(sub)
+        Ok(row.map(row_to_subscription))
     }
 
     async fn get_subscription_by_id(&self, id: i64) -> Result<Option<SnsSubscription>, StoreError> {
-        let sub = sqlx::query_as!(
-            SnsSubscription,
-            "SELECT id as \"id!: i64\", topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
+        let row = sqlx::query(
+            "SELECT id, topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
                     delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,
                     redrive_policy, subscription_role_arn, replay_policy, created_at
              FROM sns_subscriptions
              WHERE id = ?",
-            id
         )
+        .bind(id)
         .fetch_optional(&self.pool)
         .await
         .map_err(map_sqlx_error)?;
 
-        Ok(sub)
+        Ok(row.map(row_to_subscription))
+    }
+
+    async fn list_subscriptions(
+        &self,
+        region: &str,
+        account_id: &str,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsSubscription>, StoreError> {
+        let limit = limit.unwrap_or(i64::MAX);
+        let topic_arn_prefix = format!("arn:aws:sns:{region}:{account_id}:%");
+        let rows = sqlx::query(
+            "SELECT id, topic_arn, protocol, endpoint, owner_account_id, subscription_arn,
+                    delivery_policy, filter_policy, filter_policy_scope, raw_message_delivery,
+                    redrive_policy, subscription_role_arn, replay_policy, created_at
+             FROM sns_subscriptions
+             WHERE owner_account_id = ? AND topic_arn LIKE ?
+             ORDER BY subscription_arn
+             LIMIT ?",
+        )
+        .bind(account_id)
+        .bind(topic_arn_prefix)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+
+        Ok(rows.into_iter().map(row_to_subscription).collect())
     }
 
     async fn list_subscriptions_by_topic(
@@ -311,6 +357,51 @@ impl SnsStore for SqliteSnsStore {
         if result.rows_affected() == 0 {
             return Err(StoreError::NotFound("subscription not found".to_string()));
         }
+
+        Ok(())
+    }
+
+    async fn set_subscription_attributes(
+        &self,
+        subscription_arn: &str,
+        update: SnsSubscriptionAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        let subscription = self
+            .get_subscription(subscription_arn)
+            .await?
+            .ok_or(StoreError::NotFound("subscription not found".to_string()))?;
+
+        let new_delivery_policy = update.delivery_policy.or(subscription.delivery_policy);
+        let new_filter_policy = update.filter_policy.or(subscription.filter_policy);
+        let new_filter_policy_scope = update
+            .filter_policy_scope
+            .or(subscription.filter_policy_scope);
+        let new_raw_message_delivery = update
+            .raw_message_delivery
+            .or(subscription.raw_message_delivery);
+        let new_redrive_policy = update.redrive_policy.or(subscription.redrive_policy);
+        let new_subscription_role_arn = update
+            .subscription_role_arn
+            .or(subscription.subscription_role_arn);
+        let new_replay_policy = update.replay_policy.or(subscription.replay_policy);
+
+        sqlx::query(
+            "UPDATE sns_subscriptions SET delivery_policy = ?, filter_policy = ?,
+             filter_policy_scope = ?, raw_message_delivery = ?, redrive_policy = ?,
+             subscription_role_arn = ?, replay_policy = ?
+             WHERE id = ?",
+        )
+        .bind(new_delivery_policy)
+        .bind(new_filter_policy)
+        .bind(new_filter_policy_scope)
+        .bind(new_raw_message_delivery)
+        .bind(new_redrive_policy)
+        .bind(new_subscription_role_arn)
+        .bind(new_replay_policy)
+        .bind(subscription.id)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
 
         Ok(())
     }
@@ -455,7 +546,10 @@ mod tests {
     use crate::{get_store_pool, run_migrations};
     use hiraeth_store::{
         StoreError,
-        sns::{SnsStore, SnsSubscription, SnsTopic, SnsTopicAttributeUpdate},
+        sns::{
+            SnsStore, SnsSubscription, SnsSubscriptionAttributeUpdate, SnsTopic,
+            SnsTopicAttributeUpdate,
+        },
     };
 
     async fn test_store() -> (TempDir, SqliteSnsStore) {
@@ -1048,6 +1142,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_subscriptions_filters_by_region_and_owner() {
+        let (_temp_dir, store) = test_store().await;
+
+        let arn1 = topic_arn("topic-1", "us-east-1", "123456789012");
+        let arn2 = topic_arn("topic-2", "us-west-2", "123456789012");
+        let arn3 = topic_arn("topic-3", "us-east-1", "999999999999");
+
+        store
+            .create_subscription(subscription(
+                &arn1,
+                "sqs",
+                "arn:aws:sqs:us-east-1:123456789012:queue1",
+                "123456789012",
+                "arn:aws:sns:us-east-1:123456789012:topic-1:sub-1",
+            ))
+            .await
+            .expect("sub 1 should insert");
+        store
+            .create_subscription(subscription(
+                &arn2,
+                "sqs",
+                "arn:aws:sqs:us-west-2:123456789012:queue2",
+                "123456789012",
+                "arn:aws:sns:us-west-2:123456789012:topic-2:sub-1",
+            ))
+            .await
+            .expect("sub 2 should insert");
+        store
+            .create_subscription(subscription(
+                &arn3,
+                "sqs",
+                "arn:aws:sqs:us-east-1:999999999999:queue3",
+                "999999999999",
+                "arn:aws:sns:us-east-1:999999999999:topic-3:sub-1",
+            ))
+            .await
+            .expect("sub 3 should insert");
+
+        let subs = store
+            .list_subscriptions("us-east-1", "123456789012", None)
+            .await
+            .expect("list subscriptions should succeed");
+
+        assert_eq!(subs.len(), 1);
+        assert_eq!(
+            subs[0].subscription_arn,
+            "arn:aws:sns:us-east-1:123456789012:topic-1:sub-1"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_subscriptions_respects_limit() {
+        let (_temp_dir, store) = test_store().await;
+
+        for index in 0..3 {
+            let topic_arn = topic_arn(&format!("topic-{index}"), "us-east-1", "123456789012");
+            store
+                .create_subscription(subscription(
+                    &topic_arn,
+                    "sqs",
+                    "arn:aws:sqs:us-east-1:123456789012:queue",
+                    "123456789012",
+                    &format!("arn:aws:sns:us-east-1:123456789012:topic-{index}:sub-1"),
+                ))
+                .await
+                .expect("sub should insert");
+        }
+
+        let subs = store
+            .list_subscriptions("us-east-1", "123456789012", Some(2))
+            .await
+            .expect("list subscriptions should succeed");
+
+        assert_eq!(subs.len(), 2);
+    }
+
+    #[tokio::test]
     async fn delete_subscription_removes_subscription() {
         let (_temp_dir, store) = test_store().await;
 
@@ -1117,6 +1288,47 @@ mod tests {
             .expect("get subscription by id should succeed");
 
         assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn set_subscription_attributes_updates_values() {
+        let (_temp_dir, store) = test_store().await;
+
+        let arn = topic_arn("my-topic", "us-east-1", "123456789012");
+        store
+            .create_subscription(subscription(
+                &arn,
+                "sqs",
+                "arn:aws:sqs:us-east-1:123456789012:queue",
+                "123456789012",
+                "arn:aws:sns:us-east-1:123456789012:my-topic:sub-1",
+            ))
+            .await
+            .expect("subscription should insert");
+
+        store
+            .set_subscription_attributes(
+                "arn:aws:sns:us-east-1:123456789012:my-topic:sub-1",
+                SnsSubscriptionAttributeUpdate {
+                    raw_message_delivery: Some("true".to_string()),
+                    filter_policy: Some(r#"{"event":["created"]}"#.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("set subscription attributes should succeed");
+
+        let found = store
+            .get_subscription("arn:aws:sns:us-east-1:123456789012:my-topic:sub-1")
+            .await
+            .expect("get subscription should succeed")
+            .expect("subscription should exist");
+
+        assert_eq!(found.raw_message_delivery, Some("true".to_string()));
+        assert_eq!(
+            found.filter_policy,
+            Some(r#"{"event":["created"]}"#.to_string())
+        );
     }
 
     #[tokio::test]

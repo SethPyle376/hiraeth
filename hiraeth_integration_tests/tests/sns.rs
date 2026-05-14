@@ -144,6 +144,107 @@ async fn subscribe_then_list_subscriptions() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn subscribe_then_list_account_subscriptions() -> anyhow::Result<()> {
+    let server = sns_test_server().await?;
+    let topic_name = topic_name("subscribe-account-list");
+
+    let created = server
+        .client
+        .create_topic()
+        .name(&topic_name)
+        .send()
+        .await
+        .context("create topic should succeed")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
+
+    let queue_arn = format!("arn:aws:sqs:{DEFAULT_REGION}:{TEST_ACCOUNT_ID}:test-queue");
+    let subscribed = server
+        .client
+        .subscribe()
+        .topic_arn(topic_arn)
+        .protocol("sqs")
+        .endpoint(&queue_arn)
+        .send()
+        .await
+        .context("subscribe should succeed")?;
+    let subscription_arn = subscribed
+        .subscription_arn()
+        .context("subscription arn should be present")?;
+
+    let listed = server
+        .client
+        .list_subscriptions()
+        .send()
+        .await
+        .context("list subscriptions should succeed")?;
+    let subscriptions = listed.subscriptions();
+    assert!(
+        subscriptions
+            .iter()
+            .any(|s| s.subscription_arn() == Some(subscription_arn))
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_subscription_attribute_updates_attributes() -> anyhow::Result<()> {
+    let server = sns_test_server().await?;
+    let topic_name = topic_name("set-sub-attr");
+
+    let created = server
+        .client
+        .create_topic()
+        .name(&topic_name)
+        .send()
+        .await
+        .context("create topic should succeed")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
+
+    let queue_arn = format!("arn:aws:sqs:{DEFAULT_REGION}:{TEST_ACCOUNT_ID}:test-queue");
+    let subscribed = server
+        .client
+        .subscribe()
+        .topic_arn(topic_arn)
+        .protocol("sqs")
+        .endpoint(&queue_arn)
+        .send()
+        .await
+        .context("subscribe should succeed")?;
+    let subscription_arn = subscribed
+        .subscription_arn()
+        .context("subscription arn should be present")?;
+
+    server
+        .client
+        .set_subscription_attributes()
+        .subscription_arn(subscription_arn)
+        .attribute_name("RawMessageDelivery")
+        .attribute_value("true")
+        .send()
+        .await
+        .context("set subscription attributes should succeed")?;
+
+    let attributes = server
+        .client
+        .get_subscription_attributes()
+        .subscription_arn(subscription_arn)
+        .send()
+        .await
+        .context("get subscription attributes should succeed")?
+        .attributes()
+        .context("response should include attributes")?
+        .clone();
+
+    assert_eq!(
+        attributes.get("RawMessageDelivery"),
+        Some(&"true".to_string())
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn unsubscribe_removes_subscription_from_topic() -> anyhow::Result<()> {
     let server = sns_test_server().await?;
     let topic_name = topic_name("unsubscribe");

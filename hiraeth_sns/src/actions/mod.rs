@@ -3,10 +3,12 @@ mod create_topic;
 mod delete_topic;
 mod get_subscription_attributes;
 mod get_topic_attributes;
+mod list_subscriptions;
 mod list_subscriptions_by_topic;
 mod list_tags_for_resource;
 mod list_topics;
 mod publish;
+mod set_subscription_attributes;
 mod set_topic_attributes;
 mod subscribe;
 mod tag_resource;
@@ -25,11 +27,12 @@ pub(crate) use action_support::parse_payload_error;
 use self::{
     create_topic::CreateTopicAction, delete_topic::DeleteTopicAction,
     get_subscription_attributes::GetSubscriptionAttributesAction,
-    get_topic_attributes::GetTopicAttributesAction,
+    get_topic_attributes::GetTopicAttributesAction, list_subscriptions::ListSubscriptionsAction,
     list_subscriptions_by_topic::ListSubscriptionsByTopicAction,
     list_tags_for_resource::ListTagsForResourceAction, list_topics::ListTopicsAction,
-    publish::PublishAction, set_topic_attributes::SetTopicAttributesAction,
-    subscribe::SubscribeAction, tag_resource::TagResourceAction, unsubscribe::UnsubscribeAction,
+    publish::PublishAction, set_subscription_attributes::SetSubscriptionAttributesAction,
+    set_topic_attributes::SetTopicAttributesAction, subscribe::SubscribeAction,
+    tag_resource::TagResourceAction, unsubscribe::UnsubscribeAction,
     untag_resource::UntagResourceAction,
 };
 
@@ -45,8 +48,10 @@ where
     registry.register(PublishAction);
     registry.register(GetTopicAttributesAction);
     registry.register(GetSubscriptionAttributesAction);
+    registry.register(ListSubscriptionsAction);
     registry.register(ListSubscriptionsByTopicAction);
     registry.register(ListTopicsAction);
+    registry.register(SetSubscriptionAttributesAction);
     registry.register(SetTopicAttributesAction);
     registry.register(ListTagsForResourceAction);
     registry.register(TagResourceAction);

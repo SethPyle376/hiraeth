@@ -69,6 +69,17 @@ aws --endpoint-url http://localhost:4566 sns list-tags-for-resource \
   --resource-arn arn:aws:sns:us-east-1:000000000000:local-events
 ```
 
+List subscriptions and update subscription attributes:
+
+```sh
+aws --endpoint-url http://localhost:4566 sns list-subscriptions
+
+aws --endpoint-url http://localhost:4566 sns set-subscription-attributes \
+  --subscription-arn arn:aws:sns:us-east-1:000000000000:local-events:subscription-id \
+  --attribute-name RawMessageDelivery \
+  --attribute-value true
+```
+
 ## Authorization
 
 SNS currently inherits the same authorization modes as other Hiraeth services
@@ -80,9 +91,11 @@ through `HIRAETH_AUTH_MODE`:
 | `enforce` | Enforces policy decisions and denies by default. |
 | `off` | Skips authorization checks entirely. |
 
-The default mode is `audit`. SNS topic policy evaluation is planned but not yet
-implemented. In the meantime, IAM identity policies are evaluated for
-SNS-scoped actions in `enforce` mode.
+The default mode is `audit`. SNS actions participate in the same IAM identity
+policy evaluation as other services, and topic-scoped actions can also include a
+stored topic resource policy in the authorization check. Policy behavior is
+still intentionally smaller than AWS, but it is useful for local allow/deny
+testing.
 
 ## Web UI
 
@@ -92,7 +105,8 @@ coverage includes:
 - Topic browsing with account, region, and prefix filters.
 - Topic detail pages with subscription list, publish form, and subscribe form.
 - Topic creation and deletion.
-- Subscription creation and deletion, including a raw message delivery option.
+- Subscription creation and deletion, including raw message delivery display and
+  toggling.
 - Topic tag inspection and management through the topic detail view.
 - A read-only JSON API endpoint for topic lists.
 
@@ -116,12 +130,12 @@ Status labels:
 | `DeleteTopic` | Supported | Deletes a topic and removes stored subscriptions and tags for it. |
 | `GetSubscriptionAttributes` | Supported | Returns stored subscription metadata and parsed subscription attributes. |
 | `GetTopicAttributes` | Supported | Returns stored topic metadata and topic attributes. |
-| `ListSubscriptions` | Not implemented | Subscriptions can be inspected in the web UI. |
-| `ListSubscriptionsByTopic` | Supported | Lists subscriptions stored for a topic. Pagination is not implemented yet. |
+| `ListSubscriptions` | Supported | Lists account subscriptions for the current region with simple local pagination tokens. |
+| `ListSubscriptionsByTopic` | Supported | Lists subscriptions stored for a topic with simple local pagination tokens. |
 | `ListTagsForResource` | Supported | Returns stored tags for a topic ARN. |
 | `ListTopics` | Supported | Lists topics for the current account and region with simple local pagination tokens. |
-| `SetSubscriptionAttributes` | Not implemented | Subscription attributes can be set at creation time but not updated afterward yet. |
-| `SetTopicAttributes` | Partial | Updates supported topic attributes. Validation is intentionally narrower than AWS. |
+| `SetSubscriptionAttributes` | Partial | Updates stored subscription attributes including raw delivery and filter/redrive JSON. |
+| `SetTopicAttributes` | Partial | Updates supported topic attributes and validates JSON policy-shaped attributes. |
 | `TagResource` | Supported | Upserts topic tags and enforces basic tag limits. |
 | `UntagResource` | Supported | Removes requested topic tag keys. |
 | `Unsubscribe` | Supported | Deletes a stored subscription. |
@@ -133,9 +147,6 @@ Status labels:
 - Subscription confirmation is not modeled. All subscriptions are treated as
   confirmed.
 - Topic policy evaluation is still limited compared with AWS.
-- Subscription attributes can be set at creation time but cannot be updated
-  afterward through `SetSubscriptionAttributes` yet.
 - Message filtering is not supported.
 - FIFO topic behavior is not implemented beyond storing selected attributes.
-- `ListSubscriptionsByTopic` pagination tokens are not implemented yet.
 - The web UI is a local admin preview and is not authenticated.

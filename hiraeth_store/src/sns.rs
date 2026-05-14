@@ -42,6 +42,53 @@ pub struct SnsSubscription {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SnsSubscriptionAttributeUpdate {
+    pub delivery_policy: Option<String>,
+    pub filter_policy: Option<String>,
+    pub filter_policy_scope: Option<String>,
+    pub raw_message_delivery: Option<String>,
+    pub redrive_policy: Option<String>,
+    pub subscription_role_arn: Option<String>,
+    pub replay_policy: Option<String>,
+}
+
+impl SnsSubscriptionAttributeUpdate {
+    pub fn from_attribute_name_and_value(attribute_name: &str, attribute_value: &str) -> Self {
+        match attribute_name {
+            "DeliveryPolicy" => Self {
+                delivery_policy: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "FilterPolicy" => Self {
+                filter_policy: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "FilterPolicyScope" => Self {
+                filter_policy_scope: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "RawMessageDelivery" => Self {
+                raw_message_delivery: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "RedrivePolicy" => Self {
+                redrive_policy: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "SubscriptionRoleArn" => Self {
+                subscription_role_arn: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            "ReplayPolicy" => Self {
+                replay_policy: Some(attribute_value.to_string()),
+                ..Default::default()
+            },
+            _ => Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SnsTopicAttributeUpdate {
     pub delivery_policy: Option<String>,
     pub display_name: Option<String>,
@@ -124,12 +171,23 @@ pub trait SnsStore {
         subscription_arn: &str,
     ) -> Result<Option<SnsSubscription>, StoreError>;
     async fn get_subscription_by_id(&self, id: i64) -> Result<Option<SnsSubscription>, StoreError>;
+    async fn list_subscriptions(
+        &self,
+        region: &str,
+        account_id: &str,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsSubscription>, StoreError>;
     async fn list_subscriptions_by_topic(
         &self,
         topic_arn: &str,
     ) -> Result<Vec<SnsSubscription>, StoreError>;
     async fn delete_subscription(&self, subscription_arn: &str) -> Result<(), StoreError>;
     async fn delete_subscription_by_id(&self, id: i64) -> Result<(), StoreError>;
+    async fn set_subscription_attributes(
+        &self,
+        subscription_arn: &str,
+        update: SnsSubscriptionAttributeUpdate,
+    ) -> Result<(), StoreError>;
     async fn set_topic_attributes(
         &self,
         account_id: &str,

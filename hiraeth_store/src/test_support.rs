@@ -492,7 +492,7 @@ fn apply_queue_attribute_update(queue: &mut SqsQueue, attributes: SqsQueueAttrib
 
 // ─── SNS Test Store ───────────────────────────────────────────────────────────
 
-use crate::sns::{SnsStore, SnsSubscription, SnsTopic};
+use crate::sns::{SnsStore, SnsSubscription, SnsSubscriptionAttributeUpdate, SnsTopic};
 
 #[derive(Debug)]
 pub struct SnsTestStore {
@@ -776,6 +776,30 @@ impl SnsStore for SnsTestStore {
             .cloned())
     }
 
+    async fn list_subscriptions(
+        &self,
+        region: &str,
+        account_id: &str,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnsSubscription>, StoreError> {
+        let topic_arn_prefix = format!("arn:aws:sns:{region}:{account_id}:");
+        let mut subscriptions = self
+            .subscriptions
+            .lock()
+            .expect("subscriptions mutex")
+            .iter()
+            .filter(|sub| {
+                sub.owner_account_id == account_id && sub.topic_arn.starts_with(&topic_arn_prefix)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        subscriptions.sort_by(|left, right| left.subscription_arn.cmp(&right.subscription_arn));
+        if let Some(limit) = limit {
+            subscriptions.truncate(limit as usize);
+        }
+        Ok(subscriptions)
+    }
+
     async fn list_subscriptions_by_topic(
         &self,
         topic_arn: &str,
@@ -817,6 +841,42 @@ impl SnsStore for SnsTestStore {
             .lock()
             .expect("deleted subscription ids mutex")
             .push(id);
+        Ok(())
+    }
+
+    async fn set_subscription_attributes(
+        &self,
+        subscription_arn: &str,
+        update: SnsSubscriptionAttributeUpdate,
+    ) -> Result<(), StoreError> {
+        let mut subscriptions = self.subscriptions.lock().expect("subscriptions mutex");
+        let subscription = subscriptions
+            .iter_mut()
+            .find(|sub| sub.subscription_arn == subscription_arn)
+            .ok_or_else(|| StoreError::NotFound("subscription not found".to_string()))?;
+
+        if update.delivery_policy.is_some() {
+            subscription.delivery_policy = update.delivery_policy;
+        }
+        if update.filter_policy.is_some() {
+            subscription.filter_policy = update.filter_policy;
+        }
+        if update.filter_policy_scope.is_some() {
+            subscription.filter_policy_scope = update.filter_policy_scope;
+        }
+        if update.raw_message_delivery.is_some() {
+            subscription.raw_message_delivery = update.raw_message_delivery;
+        }
+        if update.redrive_policy.is_some() {
+            subscription.redrive_policy = update.redrive_policy;
+        }
+        if update.subscription_role_arn.is_some() {
+            subscription.subscription_role_arn = update.subscription_role_arn;
+        }
+        if update.replay_policy.is_some() {
+            subscription.replay_policy = update.replay_policy;
+        }
+
         Ok(())
     }
 

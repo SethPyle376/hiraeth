@@ -11,7 +11,9 @@ use hiraeth_store::sqs::SqsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    actions::action_support::{ResponseMetadata, SNS_XMLNS, validate_topic_arn},
+    actions::action_support::{
+        ResponseMetadata, SNS_XMLNS, validate_publish_payload, validate_topic_arn,
+    },
     error::SnsError,
     store::SnsServiceStore,
 };
@@ -26,10 +28,7 @@ hiraeth_core::impl_aws_action! {
         name: "Publish",
         validate: |_request, payload, _store| {
             validate_topic_arn(&payload.topic_arn, "TopicArn")?;
-            if payload.message.is_empty() {
-                return Err(SnsError::BadRequest("Message is required".to_string()));
-            }
-            Ok(())
+            validate_publish_payload(&payload.message, payload.subject.as_deref())
         },
         handler: handle_publish,
         authorize: |request, _payload, store| {
