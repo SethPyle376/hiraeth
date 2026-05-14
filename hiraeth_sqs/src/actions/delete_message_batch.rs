@@ -8,10 +8,11 @@ use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error
 
 pub(crate) struct DeleteMessageBatchAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     DeleteMessageBatchAction<S: SqsStore> {
         request: DeleteMessageBatchRequest,
         response: DeleteMessageBatchResponse,
+        defaults: crate::SqsActionDefaults,
         name: "DeleteMessageBatch",
         validate: |_request, delete_request, _store| {
             crate::util::validate_batch_request(
@@ -35,6 +36,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:DeleteMessage",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

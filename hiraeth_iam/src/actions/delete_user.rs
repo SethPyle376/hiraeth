@@ -14,16 +14,18 @@ use crate::{
 
 pub(crate) struct DeleteUserAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     DeleteUserAction<S: IamStore> {
         request: DeleteUserRequest,
         response: DeleteUserResponse,
+        defaults: crate::IamActionDefaults,
         name: "DeleteUser",
         validate: |_request, delete_request, _store| {
             validate_user_name(&delete_request.user_name)
         },
         handler: handle_delete_user,
         authorize_action: "iam:DeleteUser",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

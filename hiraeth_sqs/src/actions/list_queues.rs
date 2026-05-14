@@ -8,10 +8,11 @@ use crate::error::SqsError;
 
 pub(crate) struct ListQueuesAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     ListQueuesAction<S: SqsStore> {
         request: ListQueuesRequest,
         response: ListQueuesResponse,
+        defaults: crate::SqsActionDefaults,
         name: "ListQueues",
         validate: |_request, payload, _store| {
             validate_list_queues_request(payload)
@@ -43,6 +44,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:ListQueues",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

@@ -16,10 +16,11 @@ use crate::{
 
 pub(crate) struct DetachUserPolicyAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     DetachUserPolicyAction<S: IamStore> {
         request: DetachUserPolicyRequest,
         response: DetachUserPolicyResponse,
+        defaults: crate::IamActionDefaults,
         name: "DetachUserPolicy",
         validate: |_request, detach_policy_request, _store| {
             validate_user_name(&detach_policy_request.user_name)?;
@@ -28,6 +29,7 @@ crate::impl_iam_action! {
         },
         handler: handle_detach_user_policy,
         authorize_action: "iam:DetachUserPolicy",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

@@ -10,10 +10,11 @@ use crate::error::{SqsError, batch_error_details, map_receipt_handle_store_error
 
 pub(crate) struct ChangeMessageVisibilityBatchAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     ChangeMessageVisibilityBatchAction<S: SqsStore> {
         request: ChangeMessageVisibilityBatchRequest,
         response: ChangeMessageVisibilityBatchResponse,
+        defaults: crate::SqsActionDefaults,
         name: "ChangeMessageVisibilityBatch",
         validate: |_request, change_request, _store| {
             crate::util::validate_batch_request(
@@ -37,6 +38,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:ChangeMessageVisibility",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

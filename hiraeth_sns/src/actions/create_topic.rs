@@ -9,15 +9,15 @@ use super::action_support::{SnsAttributes, is_valid_topic_attribute};
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
-    impl_sns_action,
 };
 
 pub(crate) struct CreateTopicAction;
 
-impl_sns_action! {
+hiraeth_core::impl_aws_action! {
     CreateTopicAction<S: SnsStore> {
         request: CreateTopicRequest,
         response: CreateTopicResponse,
+        defaults: crate::SnsActionDefaults,
         name: "CreateTopic",
         validate: |_request, payload, _store| {
             if payload.name.is_empty() {

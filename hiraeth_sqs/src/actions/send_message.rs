@@ -11,10 +11,11 @@ use crate::{
 
 pub(crate) struct SendMessageAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     SendMessageAction<S: SqsStore> {
         request: SendMessageRequest,
         response: SendMessageResponse,
+        defaults: crate::SqsActionDefaults,
         name: "SendMessage",
         validate: |request, payload, store| {
             let queue = crate::util::load_queue_from_url(request, store, &payload.queue_url).await?;
@@ -73,6 +74,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:SendMessage",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

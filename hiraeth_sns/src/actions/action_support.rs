@@ -7,6 +7,9 @@ use serde::Serialize;
 use crate::error::SnsError;
 
 pub(crate) const SNS_XMLNS: &str = "http://sns.amazonaws.com/doc/2010-03-31/";
+const MAX_TAGS_PER_RESOURCE: usize = 50;
+const MAX_TAG_KEY_LENGTH: usize = 128;
+const MAX_TAG_VALUE_LENGTH: usize = 256;
 
 /// All valid SNS topic attribute names accepted by `CreateTopic` and `SetTopicAttributes`.
 ///
@@ -55,7 +58,7 @@ pub(super) fn query_payload_format() -> AwsActionPayloadFormat {
     AwsActionPayloadFormat::AwsQuery
 }
 
-pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> SnsError {
+pub(crate) fn parse_payload_error(error: AwsActionPayloadParseError) -> SnsError {
     match error {
         AwsActionPayloadParseError::AwsQuery(error) => SnsError::BadRequest(error.to_string()),
         AwsActionPayloadParseError::Json(error) => SnsError::from(error),
@@ -93,6 +96,51 @@ pub(super) fn parse_sns_topic_arn(arn: &str) -> Option<TopicId> {
     }
 
     None
+}
+
+pub(super) fn topic_policy_attribute_value(
+    stored_policy: &str,
+    topic_arn: &str,
+    account_id: &str,
+) -> String {
+    if stored_policy.trim().is_empty() || stored_policy.trim() == "{}" {
+        return default_topic_policy(topic_arn, account_id);
+    }
+
+    stored_policy.to_string()
+}
+
+fn default_topic_policy(topic_arn: &str, account_id: &str) -> String {
+    serde_json::json!({
+        "Version": "2008-10-17",
+        "Id": "__default_policy_ID",
+        "Statement": [
+            {
+                "Sid": "__default_statement_ID",
+                "Effect": "Allow",
+                "Principal": {
+                    "AWS": "*"
+                },
+                "Action": [
+                    "SNS:GetTopicAttributes",
+                    "SNS:SetTopicAttributes",
+                    "SNS:AddPermission",
+                    "SNS:RemovePermission",
+                    "SNS:DeleteTopic",
+                    "SNS:Subscribe",
+                    "SNS:ListSubscriptionsByTopic",
+                    "SNS:Publish"
+                ],
+                "Resource": topic_arn,
+                "Condition": {
+                    "StringEquals": {
+                        "AWS:SourceOwner": account_id
+                    }
+                }
+            }
+        ]
+    })
+    .to_string()
 }
 
 /// Reusable `HashMap<String, String>` that deserializes from SNS `Attributes.entry.N.key/value` pairs.
@@ -154,9 +202,173 @@ impl<'de> serde::Deserialize<'de> for SnsAttributes {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct SnsTags {
+    inner: HashMap<String, String>,
+}
+
+impl SnsTags {
+    pub(super) fn into_inner(self) -> HashMap<String, String> {
+        self.inner
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub(super) fn keys(&self) -> impl Iterator<Item = &String> {
+        self.inner.keys()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SnsTags {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = HashMap::<String, String>::deserialize(deserializer)?;
+        let mut entries = HashMap::<String, (Option<String>, Option<String>)>::new();
+
+        for (key, value) in raw {
+            if let Some(rest) = key.strip_prefix("Tags.member.")
+                && let Some(dot_pos) = rest.find('.')
+            {
+                let index = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+                let entry = entries.entry(index.to_string()).or_insert((None, None));
+                match suffix {
+                    "Key" => entry.0 = Some(value),
+                    "Value" => entry.1 = Some(value),
+                    _ => {}
+                }
+            }
+        }
+
+        let inner = entries
+            .into_values()
+            .filter_map(|(k, v)| Some((k?, v?)))
+            .collect();
+
+        Ok(SnsTags { inner })
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct SnsTagKeys {
+    inner: Vec<String>,
+}
+
+impl SnsTagKeys {
+    pub(super) fn into_inner(self) -> Vec<String> {
+        self.inner
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub(super) fn join(&self, separator: &str) -> String {
+        self.inner.join(separator)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SnsTagKeys {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = HashMap::<String, String>::deserialize(deserializer)?;
+        let mut entries = raw
+            .into_iter()
+            .filter_map(|(key, value)| {
+                key.strip_prefix("TagKeys.member.")
+                    .map(|index| (index.to_string(), value))
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+        Ok(SnsTagKeys {
+            inner: entries.into_iter().map(|(_, value)| value).collect(),
+        })
+    }
+}
+
+pub(super) fn validate_tags(
+    tags: &HashMap<String, String>,
+    allow_empty: bool,
+) -> Result<(), SnsError> {
+    if !allow_empty && tags.is_empty() {
+        return Err(SnsError::BadRequest(
+            "Tags must contain at least one entry".to_string(),
+        ));
+    }
+
+    if tags.len() > MAX_TAGS_PER_RESOURCE {
+        return Err(SnsError::BadRequest(format!(
+            "A resource can have at most {MAX_TAGS_PER_RESOURCE} tags"
+        )));
+    }
+
+    for (key, value) in tags {
+        validate_tag_key(key)?;
+        if value.chars().count() > MAX_TAG_VALUE_LENGTH {
+            return Err(SnsError::BadRequest(format!(
+                "Tag value for '{}' must be at most {} characters",
+                key, MAX_TAG_VALUE_LENGTH
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+pub(super) fn validate_tag_keys(tag_keys: &[String], allow_empty: bool) -> Result<(), SnsError> {
+    if !allow_empty && tag_keys.is_empty() {
+        return Err(SnsError::BadRequest(
+            "TagKeys must contain at least one entry".to_string(),
+        ));
+    }
+
+    if tag_keys.len() > MAX_TAGS_PER_RESOURCE {
+        return Err(SnsError::BadRequest(format!(
+            "TagKeys can contain at most {MAX_TAGS_PER_RESOURCE} entries"
+        )));
+    }
+
+    for key in tag_keys {
+        validate_tag_key(key)?;
+    }
+
+    Ok(())
+}
+
+fn validate_tag_key(key: &str) -> Result<(), SnsError> {
+    let key_length = key.chars().count();
+
+    if key_length == 0 || key_length > MAX_TAG_KEY_LENGTH {
+        return Err(SnsError::BadRequest(format!(
+            "Tag keys must be between 1 and {} characters",
+            MAX_TAG_KEY_LENGTH
+        )));
+    }
+
+    if key.starts_with("aws:") {
+        return Err(SnsError::BadRequest(
+            "Tag keys cannot start with the reserved aws: prefix".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SnsAttributes, parse_sqs_endpoint_arn};
+    use crate::error::SnsError;
+
+    use super::{
+        SnsAttributes, SnsTagKeys, SnsTags, parse_sqs_endpoint_arn, topic_policy_attribute_value,
+        validate_tag_keys, validate_tags,
+    };
 
     #[test]
     fn sns_attributes_deserializes_from_flat_query_keys() {
@@ -189,6 +401,42 @@ mod tests {
     }
 
     #[test]
+    fn sns_tags_deserializes_member_style_tags() {
+        let encoded = "Tags.member.1.Key=team&Tags.member.1.Value=platform&Tags.member.2.Key=env&Tags.member.2.Value=dev";
+        let tags: SnsTags = serde_urlencoded::from_str(encoded).expect("should deserialize");
+
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags.into_inner()["team"], "platform");
+    }
+
+    #[test]
+    fn sns_tag_keys_deserializes_member_style_keys() {
+        let encoded = "TagKeys.member.1=team&TagKeys.member.2=env";
+        let tag_keys: SnsTagKeys = serde_urlencoded::from_str(encoded).expect("should deserialize");
+
+        assert_eq!(tag_keys.into_inner(), vec!["team", "env"]);
+    }
+
+    #[test]
+    fn validates_reserved_tag_prefix() {
+        let result = validate_tags(
+            &[("aws:reserved".to_string(), "value".to_string())]
+                .into_iter()
+                .collect(),
+            false,
+        );
+
+        assert!(matches!(result, Err(SnsError::BadRequest(_))));
+    }
+
+    #[test]
+    fn validates_empty_tag_key_list() {
+        let result = validate_tag_keys(&[], false);
+
+        assert!(matches!(result, Err(SnsError::BadRequest(_))));
+    }
+
+    #[test]
     fn parse_sqs_endpoint_arn_extracts_arn_components() {
         let queue_id = parse_sqs_endpoint_arn("arn:aws:sqs:us-east-1:123456789012:my-queue")
             .expect("should parse queue arn");
@@ -201,5 +449,39 @@ mod tests {
     #[test]
     fn parse_sqs_endpoint_arn_returns_none_for_invalid_arn() {
         assert!(parse_sqs_endpoint_arn("not-an-arn").is_none());
+    }
+
+    #[test]
+    fn topic_policy_attribute_value_renders_default_policy_for_empty_object() {
+        let policy = topic_policy_attribute_value(
+            "{}",
+            "arn:aws:sns:us-east-1:123456789012:test-topic",
+            "123456789012",
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&policy).unwrap();
+
+        assert_eq!(parsed["Version"], "2008-10-17");
+        assert_eq!(
+            parsed["Statement"][0]["Resource"],
+            "arn:aws:sns:us-east-1:123456789012:test-topic"
+        );
+        assert_eq!(
+            parsed["Statement"][0]["Condition"]["StringEquals"]["AWS:SourceOwner"],
+            "123456789012"
+        );
+    }
+
+    #[test]
+    fn topic_policy_attribute_value_preserves_explicit_policy() {
+        let policy = r#"{"Version":"2012-10-17","Statement":[]}"#;
+
+        assert_eq!(
+            topic_policy_attribute_value(
+                policy,
+                "arn:aws:sns:us-east-1:123456789012:test-topic",
+                "123456789012",
+            ),
+            policy
+        );
     }
 }

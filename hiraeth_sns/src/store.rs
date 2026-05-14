@@ -3,6 +3,7 @@ use hiraeth_iam::AuthorizationMode;
 use hiraeth_store::StoreError;
 use hiraeth_store::sns::{SnsStore, SnsSubscription, SnsTopic, SnsTopicAttributeUpdate};
 use hiraeth_store::sqs::SqsStore;
+use std::collections::HashMap;
 
 /// Composite store passed to SNS actions. It provides the SNS store interface
 /// while also giving actions access to the SQS store and authorization mode
@@ -98,5 +99,24 @@ where
         self.sns_store
             .set_topic_attributes(account_id, region, topic_name, update)
             .await
+    }
+
+    async fn list_topic_tags(
+        &self,
+        topic_arn: &str,
+    ) -> Result<HashMap<String, String>, StoreError> {
+        self.sns_store.list_topic_tags(topic_arn).await
+    }
+
+    async fn tag_topic(
+        &self,
+        topic_arn: &str,
+        tags: HashMap<String, String>,
+    ) -> Result<(), StoreError> {
+        self.sns_store.tag_topic(topic_arn, tags).await
+    }
+
+    async fn untag_topic(&self, topic_arn: &str, tag_keys: Vec<String>) -> Result<(), StoreError> {
+        self.sns_store.untag_topic(topic_arn, tag_keys).await
     }
 }

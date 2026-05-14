@@ -9,10 +9,11 @@ use crate::error::SqsError;
 
 pub(crate) struct UntagQueueAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     UntagQueueAction<S: SqsStore> {
         request: UntagQueueRequest,
         response: (),
+        defaults: crate::SqsActionDefaults,
         name: "UntagQueue",
         response_format: Empty,
         validate: |_request, request_body, _store| {
@@ -31,6 +32,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:UntagQueue",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

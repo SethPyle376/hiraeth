@@ -8,10 +8,11 @@ use crate::error::SqsError;
 
 pub(crate) struct DeleteQueueAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     DeleteQueueAction<S: SqsStore> {
         request: DeleteQueueRequest,
         response: (),
+        defaults: crate::SqsActionDefaults,
         name: "DeleteQueue",
         response_format: Empty,
         handler: handle_delete_queue_typed,
@@ -20,6 +21,7 @@ crate::impl_sqs_action! {
             HashMap::from([("queue_url".to_string(), payload.queue_url.clone())])
         },
         authorize_action: "sqs:DeleteQueue",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

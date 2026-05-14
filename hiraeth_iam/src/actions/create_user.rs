@@ -17,10 +17,11 @@ use crate::{
 
 pub(crate) struct CreateUserAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     CreateUserAction<S: IamStore> {
         request: CreateUserRequest,
         response: CreateUserResponse,
+        defaults: crate::IamActionDefaults,
         name: "CreateUser",
         validate: |_request, create_user_request, _store| {
             validate_user_name(&create_user_request.user_name)?;
@@ -34,6 +35,7 @@ crate::impl_iam_action! {
         },
         handler: handle_create_user,
         authorize_action: "iam:CreateUser",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

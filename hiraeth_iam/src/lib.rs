@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use hiraeth_auth::AuthenticatedRequest;
 use hiraeth_core::{
-    ApiError, AuthContext, AuthMode, AwsActionRegistry, ResolvedRequest, ServiceResponse,
+    ApiError, AuthContext, AuthMode, AwsActionDefaults, AwsActionPayloadFormat,
+    AwsActionPayloadParseError, AwsActionRegistry, AwsActionResponseFormat, ResolvedRequest,
+    ServiceResponse,
     auth::AuthorizationCheck,
     get_query_request_action_name,
     tracing::{TraceContext, TraceRecorder},
@@ -13,7 +15,20 @@ mod actions;
 mod auth;
 mod authorize;
 mod error;
-mod macros;
+
+pub(crate) struct IamActionDefaults;
+
+impl AwsActionDefaults for IamActionDefaults {
+    type Error = error::IamError;
+
+    const PAYLOAD_FORMAT: AwsActionPayloadFormat = AwsActionPayloadFormat::AwsQuery;
+    const RESPONSE_FORMAT: AwsActionResponseFormat = AwsActionResponseFormat::Xml;
+    const SPAN_SERVICE: &'static str = "iam";
+
+    fn parse_error(error: AwsActionPayloadParseError) -> Self::Error {
+        actions::parse_payload_error(error)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthorizationMode {

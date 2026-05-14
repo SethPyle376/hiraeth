@@ -9,10 +9,11 @@ use crate::error::SqsError;
 
 pub(crate) struct GetQueueUrlAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     GetQueueUrlAction<S: SqsStore> {
         request: GetQueueUrlRequest,
         response: GetQueueUrlResponse,
+        defaults: crate::SqsActionDefaults,
         name: "GetQueueUrl",
         validate: |_request, payload, _store| {
             queue_support::validate_queue_name(
@@ -36,6 +37,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:GetQueueUrl",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

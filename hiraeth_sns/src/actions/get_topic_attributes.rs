@@ -4,15 +4,18 @@ use hiraeth_core::ResolvedRequest;
 use hiraeth_store::sns::SnsStore;
 use serde::{Deserialize, Serialize};
 
-use super::action_support::{ResponseMetadata, SNS_XMLNS, parse_sns_topic_arn};
-use crate::{error::SnsError, impl_sns_action};
+use super::action_support::{
+    ResponseMetadata, SNS_XMLNS, parse_sns_topic_arn, topic_policy_attribute_value,
+};
+use crate::error::SnsError;
 
 pub(crate) struct GetTopicAttributesAction;
 
-impl_sns_action! {
+hiraeth_core::impl_aws_action! {
     GetTopicAttributesAction<S: SnsStore> {
         request: GetTopicAttributesRequest,
         response: GetTopicAttributesResponse,
+        defaults: crate::SnsActionDefaults,
         name: "GetTopicAttributes",
         validate: |_request, payload, _store| {
             if payload.topic_arn.is_empty() {
@@ -26,6 +29,7 @@ impl_sns_action! {
             HashMap::from([("topic_arn".to_string(), payload.topic_arn.clone())])
         },
         authorize_action: "sns:GetTopicAttributes",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 
@@ -79,7 +83,7 @@ async fn handle_get_topic_attributes_typed<S: SnsStore>(
     let mut entries = vec![
         AttributeEntry {
             key: "TopicArn".to_string(),
-            value: topic_arn,
+            value: topic_arn.clone(),
         },
         AttributeEntry {
             key: "Owner".to_string(),
@@ -87,7 +91,7 @@ async fn handle_get_topic_attributes_typed<S: SnsStore>(
         },
         AttributeEntry {
             key: "Policy".to_string(),
-            value: topic.policy.clone(),
+            value: topic_policy_attribute_value(&topic.policy, &topic_arn, &topic.account_id),
         },
     ];
 
@@ -269,7 +273,18 @@ mod tests {
             Some(&"arn:aws:sns:us-east-1:123456789012:test-topic".to_string())
         );
         assert_eq!(attrs.get("Owner"), Some(&"123456789012".to_string()));
-        assert_eq!(attrs.get("Policy"), Some(&"{}".to_string()));
+        let policy = attrs.get("Policy").expect("policy should be present");
+        let policy: serde_json::Value =
+            serde_json::from_str(policy).expect("policy should be valid json");
+        assert_eq!(policy["Version"], "2008-10-17");
+        assert_eq!(
+            policy["Statement"][0]["Resource"],
+            "arn:aws:sns:us-east-1:123456789012:test-topic"
+        );
+        assert_eq!(
+            policy["Statement"][0]["Condition"]["StringEquals"]["AWS:SourceOwner"],
+            "123456789012"
+        );
         assert_eq!(attrs.get("DisplayName"), Some(&"MyDisplay".to_string()));
         assert_eq!(
             attrs.get("DeliveryPolicy"),

@@ -13,16 +13,16 @@ use serde::{Deserialize, Serialize};
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
-    impl_sns_action,
     store::SnsServiceStore,
 };
 
 pub(crate) struct PublishAction;
 
-impl_sns_action! {
+hiraeth_core::impl_aws_action! {
     PublishAction<SnsServiceStore<SS, QS>> where SS: SnsStore, QS: SqsStore {
         request: PublishRequest,
         response: PublishResponse,
+        defaults: crate::SnsActionDefaults,
         name: "Publish",
         validate: |_request, payload, _store| {
             if payload.topic_arn.is_empty() {
@@ -34,7 +34,9 @@ impl_sns_action! {
             Ok(())
         },
         handler: handle_publish,
-        authorize_action: "sns:Publish",
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization("sns:Publish", request, &store.sns_store).await
+        },
     }
 }
 
@@ -118,9 +120,41 @@ where
         .await?
         .ok_or(SnsError::TopicNotFound)?;
 
+    let resolved_topic_arn = format!(
+        "arn:aws:sns:{}:{}:{}",
+        topic.region, topic.account_id, topic.name
+    );
     let subscriptions = store
-        .list_subscriptions_by_topic(&request_body.topic_arn)
+        .list_subscriptions_by_topic(&resolved_topic_arn)
         .await?;
+
+    let subscription_timer = trace_context.start_span();
+    let subscription_context = trace_context.child_context(&subscription_timer);
+    subscription_context
+        .record_span_or_warn(
+            trace_recorder,
+            subscription_timer,
+            "sns.subscriptions.resolve",
+            "sns",
+            "ok",
+            HashMap::from([
+                ("topic_arn".to_string(), request_body.topic_arn.clone()),
+                ("resolved_topic_arn".to_string(), resolved_topic_arn.clone()),
+                (
+                    "subscription_count".to_string(),
+                    subscriptions.len().to_string(),
+                ),
+                (
+                    "subscription_endpoints".to_string(),
+                    subscriptions
+                        .iter()
+                        .map(|subscription| subscription.endpoint.as_str())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            ]),
+        )
+        .await;
 
     let message_id = uuid::Uuid::new_v4().to_string();
 
@@ -206,15 +240,7 @@ where
         sqs_queue.region, sqs_queue.account_id, sqs_queue.name
     );
 
-    let resource_policy: Policy = if sqs_queue.policy.is_empty() || sqs_queue.policy == "{}" {
-        Policy {
-            version: "2012-10-17".to_string(),
-            statement: vec![],
-        }
-    } else {
-        serde_json::from_str(&sqs_queue.policy)
-            .map_err(|e| SnsError::InternalError(format!("invalid queue policy: {}", e)))?
-    };
+    let resource_policy = parse_sqs_resource_policy(&sqs_queue.policy)?;
 
     let caller = PolicyPrincipal::Service("sns.amazonaws.com".to_string());
     let eval_result =
@@ -286,6 +312,10 @@ where
         .to_string()
     };
 
+    let delivery_date = Utc::now();
+    let visible_at = delivery_date.naive_utc() + chrono::Duration::seconds(sqs_queue.delay_seconds);
+    let body_bytes = body.len();
+
     let enqueue_result = hiraeth_sqs::operations::enqueue_message(
         &store.sqs_store,
         &sqs_queue,
@@ -294,7 +324,7 @@ where
         None,
         None,
         None,
-        Utc::now(),
+        delivery_date,
     )
     .await;
 
@@ -303,11 +333,30 @@ where
     } else {
         "error"
     };
-    let deliver_attributes = HashMap::from([
+    let mut deliver_attributes = HashMap::from([
         ("topic_arn".to_string(), request_body.topic_arn.clone()),
         ("protocol".to_string(), subscription.protocol.clone()),
         ("endpoint".to_string(), subscription.endpoint.clone()),
+        ("queue_id".to_string(), sqs_queue.id.to_string()),
+        ("queue_name".to_string(), sqs_queue.name.clone()),
+        ("queue_region".to_string(), sqs_queue.region.clone()),
+        ("queue_account_id".to_string(), sqs_queue.account_id.clone()),
+        (
+            "queue_delay_seconds".to_string(),
+            sqs_queue.delay_seconds.to_string(),
+        ),
+        ("visible_at".to_string(), visible_at.to_string()),
+        ("raw_message_delivery".to_string(), raw_delivery.to_string()),
+        ("body_bytes".to_string(), body_bytes.to_string()),
     ]);
+    match &enqueue_result {
+        Ok(sqs_message_id) => {
+            deliver_attributes.insert("sqs_message_id".to_string(), sqs_message_id.clone());
+        }
+        Err(error) => {
+            deliver_attributes.insert("error".to_string(), error.to_string());
+        }
+    }
 
     deliver_context
         .record_span_or_warn(
@@ -325,6 +374,18 @@ where
         .map_err(|e| SnsError::InternalError(format!("sqs delivery failed: {}", e)))
 }
 
+fn parse_sqs_resource_policy(policy: &str) -> Result<Policy, SnsError> {
+    if policy.trim().is_empty() || policy.trim() == "{}" {
+        return Ok(Policy {
+            version: "2012-10-17".to_string(),
+            statement: vec![],
+        });
+    }
+
+    serde_json::from_str(policy)
+        .map_err(|e| SnsError::InternalError(format!("invalid queue policy: {}", e)))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -339,10 +400,12 @@ mod tests {
     use hiraeth_store::{
         principal::Principal,
         sns::{SnsStore, SnsSubscription, SnsTopic},
+        sqs::SqsQueue,
         test_support::{SnsTestStore, SqsTestStore},
     };
 
-    use super::{PublishAction, PublishRequest, handle_publish_typed};
+    use super::{PublishAction, PublishRequest, handle_publish_typed, parse_sqs_resource_policy};
+    use crate::error::SnsError;
     use crate::store::SnsServiceStore;
 
     fn resolved_request(body: &str) -> ResolvedRequest {
@@ -420,6 +483,32 @@ mod tests {
         }
     }
 
+    fn queue() -> SqsQueue {
+        SqsQueue {
+            id: 7,
+            name: "test-queue".to_string(),
+            region: "us-east-1".to_string(),
+            account_id: "123456789012".to_string(),
+            queue_type: "standard".to_string(),
+            visibility_timeout_seconds: 30,
+            delay_seconds: 120,
+            maximum_message_size: 262_144,
+            message_retention_period_seconds: 345_600,
+            receive_message_wait_time_seconds: 0,
+            policy: "{}".to_string(),
+            redrive_policy: "{}".to_string(),
+            content_based_deduplication: false,
+            kms_master_key_id: None,
+            kms_data_key_reuse_period_seconds: 300,
+            deduplication_scope: "queue".to_string(),
+            fifo_throughput_limit: "perQueue".to_string(),
+            redrive_allow_policy: "{}".to_string(),
+            sqs_managed_sse_enabled: false,
+            created_at: Utc::now().naive_utc(),
+            updated_at: Utc::now().naive_utc(),
+        }
+    }
+
     fn service_store(
         sns: SnsTestStore,
         sqs: SqsTestStore,
@@ -476,6 +565,74 @@ mod tests {
                 .expect("publish should succeed despite sqs delivery failure");
 
         assert!(!response.publish_result.message_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn publish_to_topic_with_matching_sqs_subscription_enqueues_message() {
+        let sns = SnsTestStore::with_topic(topic());
+        sns.create_subscription(subscription())
+            .await
+            .expect("setup subscription should succeed");
+        let sqs = SqsTestStore::with_queue(queue());
+        let store = service_store(sns, sqs);
+        let request = resolved_request(
+            "TopicArn=arn:aws:sns:us-east-1:123456789012:test-topic&Message=hello",
+        );
+        let body: PublishRequest = crate::actions::test_support::parse_request_body(&request);
+        let trace_context = TraceContext::new("test-request-id");
+
+        let response =
+            handle_publish_typed(&request, &store, body, &trace_context, &NoopTraceRecorder)
+                .await
+                .expect("publish should succeed");
+
+        assert!(!response.publish_result.message_id.is_empty());
+        let sent_messages = store.sqs_store.sent_messages();
+        assert_eq!(sent_messages.len(), 1);
+        assert_eq!(sent_messages[0].queue_id, 7);
+        assert!(sent_messages[0].body.contains("hello"));
+        assert_eq!(
+            sent_messages[0].visible_at - sent_messages[0].sent_at,
+            chrono::Duration::seconds(120)
+        );
+    }
+
+    #[test]
+    fn parse_sqs_resource_policy_rejects_statement_without_resource() {
+        let result = parse_sqs_resource_policy(
+            r#"{
+                "Version":"2012-10-17",
+                "Statement":[
+                    {
+                        "Effect":"Allow",
+                        "Principal":{"Service":"sns.amazonaws.com"},
+                        "Action":"sqs:SendMessage"
+                    }
+                ]
+            }"#,
+        );
+
+        assert!(matches!(result, Err(SnsError::InternalError(_))));
+    }
+
+    #[test]
+    fn parse_sqs_resource_policy_accepts_statement_with_resource() {
+        let policy = parse_sqs_resource_policy(
+            r#"{
+                "Version":"2012-10-17",
+                "Statement":[
+                    {
+                        "Effect":"Allow",
+                        "Principal":{"Service":"sns.amazonaws.com"},
+                        "Action":"sqs:SendMessage",
+                        "Resource":"arn:aws:sqs:us-east-1:123456789012:test-queue"
+                    }
+                ]
+            }"#,
+        )
+        .expect("policy should parse");
+
+        assert_eq!(policy.statement.len(), 1);
     }
 
     #[tokio::test]

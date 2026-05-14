@@ -503,6 +503,7 @@ pub struct SnsTestStore {
     created_subscriptions: Mutex<Vec<SnsSubscription>>,
     deleted_subscription_arns: Mutex<Vec<String>>,
     deleted_subscription_ids: Mutex<Vec<i64>>,
+    topic_tags: Mutex<HashMap<String, HashMap<String, String>>>,
 }
 
 impl Default for SnsTestStore {
@@ -515,6 +516,7 @@ impl Default for SnsTestStore {
             created_subscriptions: Mutex::new(Vec::new()),
             deleted_subscription_arns: Mutex::new(Vec::new()),
             deleted_subscription_ids: Mutex::new(Vec::new()),
+            topic_tags: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -579,6 +581,15 @@ impl SnsTestStore {
             .lock()
             .expect("deleted subscription ids mutex")
             .clone()
+    }
+
+    pub fn topic_tags(&self, topic_arn: &str) -> HashMap<String, String> {
+        self.topic_tags
+            .lock()
+            .expect("topic tags mutex")
+            .get(topic_arn)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn parse_topic_arn(arn: &str) -> Option<(String, String, String)> {
@@ -854,6 +865,48 @@ impl SnsStore for SnsTestStore {
             topic.content_based_deduplication = update.content_based_deduplication;
         }
 
+        Ok(())
+    }
+
+    async fn list_topic_tags(
+        &self,
+        topic_arn: &str,
+    ) -> Result<HashMap<String, String>, StoreError> {
+        self.get_topic(topic_arn)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+
+        Ok(self.topic_tags(topic_arn))
+    }
+
+    async fn tag_topic(
+        &self,
+        topic_arn: &str,
+        tags: HashMap<String, String>,
+    ) -> Result<(), StoreError> {
+        self.get_topic(topic_arn)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+
+        let mut topic_tags = self.topic_tags.lock().expect("topic tags mutex");
+        let tags_for_topic = topic_tags.entry(topic_arn.to_string()).or_default();
+        for (key, value) in tags {
+            tags_for_topic.insert(key, value);
+        }
+        Ok(())
+    }
+
+    async fn untag_topic(&self, topic_arn: &str, tag_keys: Vec<String>) -> Result<(), StoreError> {
+        self.get_topic(topic_arn)
+            .await?
+            .ok_or_else(|| StoreError::NotFound("topic not found".to_string()))?;
+
+        let mut topic_tags = self.topic_tags.lock().expect("topic tags mutex");
+        if let Some(tags_for_topic) = topic_tags.get_mut(topic_arn) {
+            for key in tag_keys {
+                tags_for_topic.remove(&key);
+            }
+        }
         Ok(())
     }
 }

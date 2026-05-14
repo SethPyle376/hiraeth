@@ -9,15 +9,15 @@ use super::action_support::SnsAttributes;
 use crate::{
     actions::action_support::{ResponseMetadata, SNS_XMLNS},
     error::SnsError,
-    impl_sns_action,
 };
 
 pub(crate) struct SubscribeAction;
 
-impl_sns_action! {
+hiraeth_core::impl_aws_action! {
     SubscribeAction<S: SnsStore> {
         request: SubscribeRequest,
         response: SubscribeResponse,
+        defaults: crate::SnsActionDefaults,
         name: "Subscribe",
         validate: |_request, payload, _store| {
             if payload.topic_arn.is_empty() {
@@ -41,6 +41,7 @@ impl_sns_action! {
             ])
         },
         authorize_action: "sns:Subscribe",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

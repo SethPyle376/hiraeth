@@ -13,8 +13,9 @@ pub mod __private {
 }
 
 pub use action::{
-    AwsAction, AwsActionPayloadFormat, AwsActionPayloadParseError, AwsActionRegistry,
-    AwsActionResponseFormat, TypedAwsAction, TypedAwsActionAdapter, get_query_request_action_name,
+    AwsAction, AwsActionDefaults, AwsActionPayloadFormat, AwsActionPayloadParseError,
+    AwsActionRegistry, AwsActionResponseFormat, TypedAwsAction, TypedAwsActionAdapter,
+    get_query_request_action_name,
 };
 pub use config::{AuthMode, Config};
 pub use protocol::{

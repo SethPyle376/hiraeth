@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use hiraeth_store::StoreError;
 use hiraeth_store::sns::{SnsStore, SnsSubscription, SnsTopic, SnsTopicAttributeUpdate};
+use sqlx::Row;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct SqliteSnsStore {
@@ -353,10 +355,83 @@ impl SnsStore for SqliteSnsStore {
 
         Ok(())
     }
+
+    async fn list_topic_tags(
+        &self,
+        topic_arn: &str,
+    ) -> Result<HashMap<String, String>, StoreError> {
+        let topic = self
+            .get_topic(topic_arn)
+            .await?
+            .ok_or(StoreError::NotFound("topic not found".to_string()))?;
+
+        let rows =
+            sqlx::query("SELECT key, value FROM sns_topic_tags WHERE topic_id = ? ORDER BY key")
+                .bind(topic.id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx_error)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get::<String, _>("key"), row.get::<String, _>("value")))
+            .collect())
+    }
+
+    async fn tag_topic(
+        &self,
+        topic_arn: &str,
+        tags: HashMap<String, String>,
+    ) -> Result<(), StoreError> {
+        let topic = self
+            .get_topic(topic_arn)
+            .await?
+            .ok_or(StoreError::NotFound("topic not found".to_string()))?;
+
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        for (key, value) in tags {
+            sqlx::query(
+                "INSERT INTO sns_topic_tags (topic_id, key, value)
+                 VALUES (?, ?, ?)
+                 ON CONFLICT(topic_id, key) DO UPDATE SET value = excluded.value",
+            )
+            .bind(topic.id)
+            .bind(key)
+            .bind(value)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx_error)?;
+        }
+        tx.commit().await.map_err(map_sqlx_error)?;
+
+        Ok(())
+    }
+
+    async fn untag_topic(&self, topic_arn: &str, tag_keys: Vec<String>) -> Result<(), StoreError> {
+        let topic = self
+            .get_topic(topic_arn)
+            .await?
+            .ok_or(StoreError::NotFound("topic not found".to_string()))?;
+
+        let mut tx = self.pool.begin().await.map_err(map_sqlx_error)?;
+        for key in tag_keys {
+            sqlx::query("DELETE FROM sns_topic_tags WHERE topic_id = ? AND key = ?")
+                .bind(topic.id)
+                .bind(key)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx_error)?;
+        }
+        tx.commit().await.map_err(map_sqlx_error)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use chrono::Utc;
     use tempfile::TempDir;
 
@@ -480,6 +555,34 @@ mod tests {
             .expect("subscription should exist");
 
         assert_eq!(found.topic_arn, arn);
+    }
+
+    #[tokio::test]
+    async fn run_migrations_creates_sns_topic_tags_table() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_topic(topic("my-topic", "us-east-1", "123456789012"))
+            .await
+            .expect("topic should insert");
+        let arn = topic_arn("my-topic", "us-east-1", "123456789012");
+
+        store
+            .tag_topic(
+                &arn,
+                [("environment".to_string(), "test".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .await
+            .expect("tags should insert after migrations");
+
+        let tags = store
+            .list_topic_tags(&arn)
+            .await
+            .expect("list topic tags should succeed");
+
+        assert_eq!(tags["environment"], "test");
     }
 
     #[tokio::test]
@@ -663,6 +766,94 @@ mod tests {
             .await
             .expect("get subscription should succeed");
         assert!(sub.is_none());
+    }
+
+    #[tokio::test]
+    async fn tag_topic_merges_and_updates_tags() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_topic(topic("my-topic", "us-east-1", "123456789012"))
+            .await
+            .expect("topic should insert");
+        let arn = topic_arn("my-topic", "us-east-1", "123456789012");
+
+        store
+            .tag_topic(
+                &arn,
+                [
+                    ("environment".to_string(), "test".to_string()),
+                    ("owner".to_string(), "hiraeth".to_string()),
+                ]
+                .into_iter()
+                .collect(),
+            )
+            .await
+            .expect("tags should insert");
+        store
+            .tag_topic(
+                &arn,
+                [("environment".to_string(), "prod".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .await
+            .expect("tags should update");
+
+        let tags = store
+            .list_topic_tags(&arn)
+            .await
+            .expect("list topic tags should succeed");
+
+        assert_eq!(
+            tags,
+            [
+                ("environment".to_string(), "prod".to_string()),
+                ("owner".to_string(), "hiraeth".to_string()),
+            ]
+            .into_iter()
+            .collect::<HashMap<_, _>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn untag_topic_removes_requested_tags() {
+        let (_temp_dir, store) = test_store().await;
+
+        store
+            .create_topic(topic("my-topic", "us-east-1", "123456789012"))
+            .await
+            .expect("topic should insert");
+        let arn = topic_arn("my-topic", "us-east-1", "123456789012");
+
+        store
+            .tag_topic(
+                &arn,
+                [
+                    ("environment".to_string(), "test".to_string()),
+                    ("owner".to_string(), "hiraeth".to_string()),
+                ]
+                .into_iter()
+                .collect(),
+            )
+            .await
+            .expect("tags should insert");
+        store
+            .untag_topic(&arn, vec!["owner".to_string()])
+            .await
+            .expect("tag should delete");
+
+        let tags = store
+            .list_topic_tags(&arn)
+            .await
+            .expect("list topic tags should succeed");
+
+        assert_eq!(
+            tags,
+            [("environment".to_string(), "test".to_string())]
+                .into_iter()
+                .collect()
+        );
     }
 
     #[tokio::test]

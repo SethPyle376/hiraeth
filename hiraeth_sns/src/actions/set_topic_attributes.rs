@@ -13,15 +13,15 @@ use crate::{
         ResponseMetadata, SNS_XMLNS, is_valid_topic_attribute, parse_sns_topic_arn,
     },
     error::SnsError,
-    impl_sns_action,
 };
 
 pub(crate) struct SetTopicAttributesAction;
 
-impl_sns_action! {
+hiraeth_core::impl_aws_action! {
     SetTopicAttributesAction<SnsServiceStore<SS, QS>> where SS: SnsStore, QS: SqsStore {
         request: SetTopicAttributesRequest,
         response: SetTopicAttributesResponse,
+        defaults: crate::SnsActionDefaults,
         name: "SetTopicAttributes",
         validate: |_request, payload, _store| {
             if is_valid_topic_attribute(&payload.attribute_name) {
@@ -42,7 +42,14 @@ impl_sns_action! {
                 ("attribute_value".to_string(), payload.attribute_value.clone()),
             ])
         },
-        authorize_action: "sns:SetTopicAttributes",
+        authorize: |request, _payload, store| {
+            crate::auth::resolve_authorization(
+                "sns:SetTopicAttributes",
+                request,
+                &store.sns_store,
+            )
+            .await
+        },
     }
 }
 

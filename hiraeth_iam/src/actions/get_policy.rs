@@ -14,13 +14,15 @@ use crate::{
 
 pub(crate) struct GetPolicyAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     GetPolicyAction<S: IamStore> {
         request: GetPolicyRequest,
         response: GetPolicyResponse,
+        defaults: crate::IamActionDefaults,
         name: "GetPolicy",
         handler: handle_get_policy,
         authorize_action: "iam:GetPolicy",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

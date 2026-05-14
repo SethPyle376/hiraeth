@@ -14,10 +14,11 @@ use crate::{
 
 pub(crate) struct AttachUserPolicyAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     AttachUserPolicyAction<S: IamStore> {
         request: AttachUserPolicyRequest,
         response: AttachUserPolicyResponse,
+        defaults: crate::IamActionDefaults,
         name: "AttachUserPolicy",
         validate: |_request, attach_policy_request, _store| {
             validate_user_name(&attach_policy_request.user_name)?;
@@ -26,6 +27,7 @@ crate::impl_iam_action! {
         },
         handler: handle_attach_user_policy,
         authorize_action: "iam:AttachUserPolicy",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

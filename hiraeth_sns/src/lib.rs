@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AuthContext, AwsActionRegistry, ResolvedRequest, ServiceResponse,
+    ApiError, AuthContext, AwsActionDefaults, AwsActionPayloadFormat, AwsActionPayloadParseError,
+    AwsActionRegistry, AwsActionResponseFormat, ResolvedRequest, ServiceResponse,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -12,10 +13,23 @@ use hiraeth_store::sqs::SqsStore;
 mod actions;
 mod auth;
 pub mod error;
-mod macros;
 mod store;
 
 pub use store::SnsServiceStore;
+
+pub(crate) struct SnsActionDefaults;
+
+impl AwsActionDefaults for SnsActionDefaults {
+    type Error = error::SnsError;
+
+    const PAYLOAD_FORMAT: AwsActionPayloadFormat = AwsActionPayloadFormat::AwsQuery;
+    const RESPONSE_FORMAT: AwsActionResponseFormat = AwsActionResponseFormat::Xml;
+    const SPAN_SERVICE: &'static str = "sns";
+
+    fn parse_error(error: AwsActionPayloadParseError) -> Self::Error {
+        actions::parse_payload_error(error)
+    }
+}
 
 pub struct SnsService<SS, QS> {
     store: SnsServiceStore<SS, QS>,

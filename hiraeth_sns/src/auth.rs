@@ -14,6 +14,10 @@ pub(crate) fn get_action_name_for_request(request: &ResolvedRequest) -> Result<S
         | "Subscribe"
         | "Unsubscribe"
         | "ListSubscriptionsByTopic"
+        | "ListTagsForResource"
+        | "TagResource"
+        | "UntagResource"
+        | "GetSubscriptionAttributes"
         | "SetTopicAttributes"
         | "GetTopicAttributes"
         | "Publish" => Ok(action_name),
@@ -58,5 +62,9 @@ async fn extract_topic_arn_from_request(
     let params = hiraeth_core::parse_aws_query_params(&request.request)
         .map_err(|e| SnsError::BadRequest(e.to_string()))?;
 
-    Ok(params.get("TopicArn").map(String::from))
+    Ok(params
+        .get("TopicArn")
+        .or_else(|| params.get("ResourceArn"))
+        .or_else(|| params.get("SubscriptionArn"))
+        .map(String::from))
 }

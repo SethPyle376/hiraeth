@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use hiraeth_core::{
-    ApiError, AuthContext, AwsActionRegistry, ResolvedRequest, ServiceResponse,
+    ApiError, AuthContext, AwsActionDefaults, AwsActionPayloadFormat, AwsActionPayloadParseError,
+    AwsActionRegistry, AwsActionResponseFormat, ResolvedRequest, ServiceResponse,
     auth::AuthorizationCheck,
     tracing::{TraceContext, TraceRecorder},
 };
@@ -10,9 +11,22 @@ use hiraeth_store::sqs::SqsStore;
 mod actions;
 mod auth;
 pub mod error;
-mod macros;
 pub mod operations;
 pub mod util;
+
+pub(crate) struct SqsActionDefaults;
+
+impl AwsActionDefaults for SqsActionDefaults {
+    type Error = error::SqsError;
+
+    const PAYLOAD_FORMAT: AwsActionPayloadFormat = AwsActionPayloadFormat::Json;
+    const RESPONSE_FORMAT: AwsActionResponseFormat = AwsActionResponseFormat::Json;
+    const SPAN_SERVICE: &'static str = "sqs";
+
+    fn parse_error(error: AwsActionPayloadParseError) -> Self::Error {
+        actions::parse_payload_error(error)
+    }
+}
 
 pub struct SqsService<S: SqsStore> {
     store: S,

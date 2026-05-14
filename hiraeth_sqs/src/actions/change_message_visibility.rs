@@ -9,10 +9,11 @@ use crate::error::SqsError;
 
 pub(crate) struct ChangeMessageVisibilityAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     ChangeMessageVisibilityAction<S: SqsStore> {
         request: ChangeMessageVisibilityRequest,
         response: (),
+        defaults: crate::SqsActionDefaults,
         name: "ChangeMessageVisibility",
         response_format: Empty,
         validate: |_request, change_request, _store| {
@@ -34,6 +35,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:ChangeMessageVisibility",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

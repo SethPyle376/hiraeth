@@ -95,6 +95,16 @@ pub enum AwsActionPayloadParseError {
     Json(RequestBodyParseError),
 }
 
+pub trait AwsActionDefaults {
+    type Error: From<ResponseSerializationError> + Into<ServiceResponse> + Send;
+
+    const PAYLOAD_FORMAT: AwsActionPayloadFormat;
+    const RESPONSE_FORMAT: AwsActionResponseFormat;
+    const SPAN_SERVICE: &'static str;
+
+    fn parse_error(error: AwsActionPayloadParseError) -> Self::Error;
+}
+
 pub struct TypedAwsActionAdapter<A> {
     action: A,
 }

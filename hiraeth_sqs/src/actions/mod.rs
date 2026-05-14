@@ -23,6 +23,8 @@ mod untag_queue;
 use hiraeth_core::AwsActionRegistry;
 use hiraeth_store::sqs::SqsStore;
 
+pub(crate) use action_support::parse_payload_error;
+
 use self::{
     change_message_visibility::ChangeMessageVisibilityAction,
     change_message_visibility_batch::ChangeMessageVisibilityBatchAction,

@@ -8,10 +8,11 @@ use crate::error::SqsError;
 
 pub(crate) struct DeleteMessageAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     DeleteMessageAction<S: SqsStore> {
         request: DeleteMessageRequest,
         response: (),
+        defaults: crate::SqsActionDefaults,
         name: "DeleteMessage",
         response_format: Empty,
         handler: handle_delete_message_typed,
@@ -26,6 +27,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:DeleteMessage",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

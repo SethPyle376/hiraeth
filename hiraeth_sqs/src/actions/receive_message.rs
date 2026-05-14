@@ -12,10 +12,11 @@ use crate::{error::SqsError, util};
 
 pub(crate) struct ReceiveMessageAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     ReceiveMessageAction<S: SqsStore> {
         request: ReceiveMessageRequest,
         response: ReceiveMessageResponse,
+        defaults: crate::SqsActionDefaults,
         name: "ReceiveMessage",
         validate: |_request, payload, _store| {
             validate_receive_request(payload)
@@ -61,6 +62,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:ReceiveMessage",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

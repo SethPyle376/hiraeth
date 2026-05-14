@@ -17,10 +17,11 @@ use crate::{
 
 pub(crate) struct ListAttachedUserPoliciesAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     ListAttachedUserPoliciesAction<S: IamStore> {
         request: ListAttachedUserPoliciesRequest,
         response: ListAttachedUserPoliciesResponse,
+        defaults: crate::IamActionDefaults,
         name: "ListAttachedUserPolicies",
         validate: |_request, list_request, _store| {
             if let Some(user_name) = &list_request.user_name {
@@ -31,6 +32,7 @@ crate::impl_iam_action! {
         },
         handler: handle_list_attached_user_policies,
         authorize_action: "iam:ListAttachedUserPolicies",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

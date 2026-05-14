@@ -1,9 +1,15 @@
 mod action_support;
 mod create_topic;
+mod delete_topic;
+mod get_subscription_attributes;
 mod get_topic_attributes;
+mod list_subscriptions_by_topic;
+mod list_tags_for_resource;
 mod publish;
 mod set_topic_attributes;
 mod subscribe;
+mod tag_resource;
+mod untag_resource;
 
 use hiraeth_core::AwsActionRegistry;
 use hiraeth_store::sns::SnsStore;
@@ -12,10 +18,16 @@ use serde::Serialize;
 
 use crate::store::SnsServiceStore;
 
+pub(crate) use action_support::parse_payload_error;
+
 use self::{
-    create_topic::CreateTopicAction, get_topic_attributes::GetTopicAttributesAction,
-    publish::PublishAction, set_topic_attributes::SetTopicAttributesAction,
-    subscribe::SubscribeAction,
+    create_topic::CreateTopicAction, delete_topic::DeleteTopicAction,
+    get_subscription_attributes::GetSubscriptionAttributesAction,
+    get_topic_attributes::GetTopicAttributesAction,
+    list_subscriptions_by_topic::ListSubscriptionsByTopicAction,
+    list_tags_for_resource::ListTagsForResourceAction, publish::PublishAction,
+    set_topic_attributes::SetTopicAttributesAction, subscribe::SubscribeAction,
+    tag_resource::TagResourceAction, untag_resource::UntagResourceAction,
 };
 
 pub(crate) fn registry<SS, QS>() -> AwsActionRegistry<SnsServiceStore<SS, QS>>
@@ -25,10 +37,16 @@ where
 {
     let mut registry = AwsActionRegistry::new();
     registry.register(CreateTopicAction);
+    registry.register(DeleteTopicAction);
     registry.register(SubscribeAction);
     registry.register(PublishAction);
     registry.register(GetTopicAttributesAction);
+    registry.register(GetSubscriptionAttributesAction);
+    registry.register(ListSubscriptionsByTopicAction);
     registry.register(SetTopicAttributesAction);
+    registry.register(ListTagsForResourceAction);
+    registry.register(TagResourceAction);
+    registry.register(UntagResourceAction);
     registry
 }
 

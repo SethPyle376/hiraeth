@@ -15,13 +15,15 @@ use crate::{
 
 pub(crate) struct GetPolicyVersionAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     GetPolicyVersionAction<S: IamStore> {
         request: GetPolicyVersionRequest,
         response: GetPolicyVersionResponse,
+        defaults: crate::IamActionDefaults,
         name: "GetPolicyVersion",
         handler: handle_get_policy_version,
         authorize_action: "iam:GetPolicyVersion",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

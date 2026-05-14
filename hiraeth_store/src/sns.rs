@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 use crate::StoreError;
 
@@ -136,4 +137,12 @@ pub trait SnsStore {
         topic_name: &str,
         update: SnsTopicAttributeUpdate,
     ) -> Result<(), StoreError>;
+    async fn list_topic_tags(&self, topic_arn: &str)
+    -> Result<HashMap<String, String>, StoreError>;
+    async fn tag_topic(
+        &self,
+        topic_arn: &str,
+        tags: HashMap<String, String>,
+    ) -> Result<(), StoreError>;
+    async fn untag_topic(&self, topic_arn: &str, tag_keys: Vec<String>) -> Result<(), StoreError>;
 }

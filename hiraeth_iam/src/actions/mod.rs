@@ -17,6 +17,8 @@ mod util;
 use hiraeth_core::AwsActionRegistry;
 use hiraeth_store::IamStore;
 
+pub(crate) use util::parse_payload_error;
+
 use crate::actions::{
     attach_user_policy::AttachUserPolicyAction, create_access_key::CreateAccessKeyAction,
     create_policy::CreatePolicyAction, create_user::CreateUserAction,

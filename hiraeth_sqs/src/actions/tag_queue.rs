@@ -9,10 +9,11 @@ use crate::error::SqsError;
 
 pub(crate) struct TagQueueAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     TagQueueAction<S: SqsStore> {
         request: TagQueueRequest,
         response: (),
+        defaults: crate::SqsActionDefaults,
         name: "TagQueue",
         response_format: Empty,
         validate: |_request, request_body, _store| {
@@ -36,6 +37,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:TagQueue",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

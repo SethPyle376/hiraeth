@@ -1,4 +1,5 @@
 use anyhow::Context;
+use aws_sdk_sns::types::Tag;
 use aws_sdk_sqs::Client as SqsClient;
 
 mod common;
@@ -101,7 +102,6 @@ async fn delete_topic_removes_from_list() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "ListSubscriptionsByTopic action not yet implemented"]
 async fn subscribe_then_list_subscriptions() -> anyhow::Result<()> {
     let server = sns_test_server().await?;
     let topic_name = topic_name("subscribe-list");
@@ -271,6 +271,85 @@ async fn set_topic_attribute_succeeds() -> anyhow::Result<()> {
         .send()
         .await
         .context("set topic attributes should succeed")?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn tag_resource_lifecycle_persists_topic_tags() -> anyhow::Result<()> {
+    let server = sns_test_server().await?;
+    let topic_name = topic_name("tag-lifecycle");
+
+    let created = server
+        .client
+        .create_topic()
+        .name(&topic_name)
+        .send()
+        .await
+        .context("create topic should succeed")?;
+    let topic_arn = created.topic_arn().context("topic arn should be present")?;
+
+    server
+        .client
+        .tag_resource()
+        .resource_arn(topic_arn)
+        .tags(
+            Tag::builder()
+                .key("environment")
+                .value("test")
+                .build()
+                .context("environment tag should build")?,
+        )
+        .tags(
+            Tag::builder()
+                .key("owner")
+                .value("hiraeth")
+                .build()
+                .context("owner tag should build")?,
+        )
+        .send()
+        .await
+        .context("tag resource should succeed")?;
+
+    let listed = server
+        .client
+        .list_tags_for_resource()
+        .resource_arn(topic_arn)
+        .send()
+        .await
+        .context("list tags should succeed")?;
+    let tags = listed.tags();
+    assert!(
+        tags.iter()
+            .any(|tag| tag.key() == "environment" && tag.value() == "test")
+    );
+    assert!(
+        tags.iter()
+            .any(|tag| tag.key() == "owner" && tag.value() == "hiraeth")
+    );
+
+    server
+        .client
+        .untag_resource()
+        .resource_arn(topic_arn)
+        .tag_keys("owner")
+        .send()
+        .await
+        .context("untag resource should succeed")?;
+
+    let listed = server
+        .client
+        .list_tags_for_resource()
+        .resource_arn(topic_arn)
+        .send()
+        .await
+        .context("list tags after untag should succeed")?;
+    let tags = listed.tags();
+    assert!(
+        tags.iter()
+            .any(|tag| tag.key() == "environment" && tag.value() == "test")
+    );
+    assert!(!tags.iter().any(|tag| tag.key() == "owner"));
 
     Ok(())
 }

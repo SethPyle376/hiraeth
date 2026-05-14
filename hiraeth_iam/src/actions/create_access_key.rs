@@ -19,10 +19,11 @@ use crate::{
 
 pub(crate) struct CreateAccessKeyAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     CreateAccessKeyAction<S: IamStore> {
         request: CreateAccessKeyRequest,
         response: CreateAccessKeyResponse,
+        defaults: crate::IamActionDefaults,
         name: "CreateAccessKey",
         validate: |_request, create_access_key_request, _store| {
             if let Some(user_name) = &create_access_key_request.user_name {
@@ -32,6 +33,7 @@ crate::impl_iam_action! {
         },
         handler: handle_create_access_key,
         authorize_action: "iam:CreateAccessKey",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

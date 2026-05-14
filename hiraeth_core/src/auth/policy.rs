@@ -3,6 +3,10 @@ use serde::{Deserialize, Deserializer, de::IntoDeserializer};
 use crate::auth::principal::{PolicyPrincipal, deserialize_principals};
 use crate::auth::util::deserialize_one_or_many;
 
+fn default_policy_version() -> String {
+    "2012-10-17".to_string()
+}
+
 fn deserialize_optional_principals<'de, D>(
     deserializer: D,
 ) -> Result<Vec<PolicyPrincipal>, D::Error>
@@ -22,7 +26,9 @@ where
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub struct Policy {
+    #[serde(default = "default_policy_version")]
     pub version: String,
+    #[serde(default)]
     pub statement: Vec<PolicyStatement>,
 }
 
@@ -190,6 +196,37 @@ mod tests {
 
         assert_eq!(policy.statement.len(), 1);
         assert!(policy.statement[0].principal.is_empty());
+    }
+
+    #[test]
+    fn deserializes_policy_without_version() {
+        let policy = serde_json::from_str::<Policy>(
+            r#"{
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": "*",
+                        "Action": "sqs:SendMessage",
+                        "Resource": "*"
+                    }
+                ]
+            }"#,
+        )
+        .expect("policy should deserialize with a default version");
+
+        assert_eq!(policy.version, "2012-10-17");
+    }
+
+    #[test]
+    fn deserializes_policy_without_statement_as_empty_policy() {
+        let policy = serde_json::from_str::<Policy>(
+            r#"{
+                "Version": "2012-10-17"
+            }"#,
+        )
+        .expect("policy should deserialize without statements");
+
+        assert!(policy.statement.is_empty());
     }
 
     #[test]

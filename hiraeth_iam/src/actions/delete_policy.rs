@@ -14,10 +14,11 @@ use crate::{
 
 pub(crate) struct DeletePolicyAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     DeletePolicyAction<S: IamStore> {
         request: DeletePolicyRequest,
         response: DeletePolicyResponse,
+        defaults: crate::IamActionDefaults,
         name: "DeletePolicy",
         validate: |_request, delete_request, _store| {
             util::parse_policy_arn(&delete_request.policy_arn)?;
@@ -25,6 +26,7 @@ crate::impl_iam_action! {
         },
         handler: handle_delete_policy,
         authorize_action: "iam:DeletePolicy",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

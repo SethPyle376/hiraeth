@@ -9,10 +9,11 @@ use crate::error::SqsError;
 
 pub(crate) struct GetQueueAttributesAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     GetQueueAttributesAction<S: SqsStore> {
         request: GetQueueAttributesRequest,
         response: GetQueueAttributesResponse,
+        defaults: crate::SqsActionDefaults,
         name: "GetQueueAttributes",
         handler: handle_get_queue_attributes_typed,
         span: "sqs.queue.get_attributes",
@@ -33,6 +34,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:GetQueueAttributes",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

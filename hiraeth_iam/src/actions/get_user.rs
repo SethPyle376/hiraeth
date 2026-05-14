@@ -17,10 +17,11 @@ use crate::{
 
 pub(crate) struct GetUserAction;
 
-crate::impl_iam_action! {
+hiraeth_core::impl_aws_action! {
     GetUserAction<S: IamStore> {
         request: GetUserRequest,
         response: GetUserResponse,
+        defaults: crate::IamActionDefaults,
         name: "GetUser",
         validate: |_request, get_user_request, _store| {
             if let Some(user_name) = &get_user_request.user_name {
@@ -30,6 +31,7 @@ crate::impl_iam_action! {
         },
         handler: handle_get_user,
         authorize_action: "iam:GetUser",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

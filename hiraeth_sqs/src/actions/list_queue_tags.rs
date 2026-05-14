@@ -8,10 +8,11 @@ use crate::error::SqsError;
 
 pub(crate) struct ListQueueTagsAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     ListQueueTagsAction<S: SqsStore> {
         request: ListQueueTagsRequest,
         response: ListQueueTagsResponse,
+        defaults: crate::SqsActionDefaults,
         name: "ListQueueTags",
         handler: handle_list_queue_tags_typed,
         span: "sqs.queue.list_tags",
@@ -19,6 +20,7 @@ crate::impl_sqs_action! {
             HashMap::from([("queue_url".to_string(), payload.queue_url.clone())])
         },
         authorize_action: "sqs:ListQueueTags",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

@@ -9,10 +9,11 @@ use crate::error::SqsError;
 
 pub(crate) struct SetQueueAttributesAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     SetQueueAttributesAction<S: SqsStore> {
         request: SetQueueAttributesRequest,
         response: (),
+        defaults: crate::SqsActionDefaults,
         name: "SetQueueAttributes",
         response_format: Empty,
         validate: |_request, request_body, _store| {
@@ -40,6 +41,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:SetQueueAttributes",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

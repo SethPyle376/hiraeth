@@ -18,7 +18,7 @@ pub(super) struct PolicyArn {
     pub policy_name: String,
 }
 
-pub(super) fn parse_payload_error(error: AwsActionPayloadParseError) -> IamError {
+pub(crate) fn parse_payload_error(error: AwsActionPayloadParseError) -> IamError {
     match error {
         AwsActionPayloadParseError::AwsQuery(error) => IamError::from(error),
         AwsActionPayloadParseError::Json(error) => IamError::BadRequest(error.to_string()),

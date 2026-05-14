@@ -12,10 +12,11 @@ use crate::{
 
 pub(crate) struct SendMessageBatchAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     SendMessageBatchAction<S: SqsStore> {
         request: SendMessageBatchRequest,
         response: SendMessageBatchResponse,
+        defaults: crate::SqsActionDefaults,
         name: "SendMessageBatch",
         validate: |request, payload, store| {
             let queue =
@@ -87,6 +88,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:SendMessage",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 

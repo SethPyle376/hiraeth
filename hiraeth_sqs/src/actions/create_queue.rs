@@ -14,10 +14,11 @@ use crate::error::SqsError;
 
 pub(crate) struct CreateQueueAction;
 
-crate::impl_sqs_action! {
+hiraeth_core::impl_aws_action! {
     CreateQueueAction<S: SqsStore> {
         request: CreateQueueRequest,
         response: CreateQueueResponse,
+        defaults: crate::SqsActionDefaults,
         name: "CreateQueue",
         validate: |_request, payload, _store| {
             let queue_attributes = QueueAttributeValues::from_attribute_map(&payload.attributes)?;
@@ -52,6 +53,7 @@ crate::impl_sqs_action! {
             ])
         },
         authorize_action: "sqs:CreateQueue",
+        authorize_with: crate::auth::resolve_authorization,
     }
 }
 
